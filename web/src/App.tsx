@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { fetchAssess, fetchBrief, fetchFires } from './api'
 import { BriefingCard } from './components/BriefingCard'
 import { ClimatologyLine } from './components/ClimatologyLine'
@@ -17,14 +17,39 @@ import {
   type Workload,
 } from './types'
 
+type ActiveLocation = { lat: number; lon: number; label: string }
+
+type GeocodeHit = {
+  id: number
+  name: string
+  latitude: number
+  longitude: number
+  country?: string
+  admin1?: string
+}
+
 function useTextMode(): boolean {
   return useMemo(() => new URLSearchParams(window.location.search).get('text') === '1', [])
 }
 
+function formatGeocodeLabel(h: GeocodeHit): string {
+  const parts = [h.name, h.admin1, h.country].filter(Boolean)
+  return parts.join(', ')
+}
+
 export default function App() {
   const textMode = useTextMode()
-  const [locKey, setLocKey] = useState<(typeof DEMO_LOCATIONS)[number]['key']>('hot_smoky')
-  const loc = DEMO_LOCATIONS.find((l) => l.key === locKey) ?? DEMO_LOCATIONS[1]
+  const [loc, setLoc] = useState<ActiveLocation>({
+    lat: DEMO_LOCATIONS[1].lat,
+    lon: DEMO_LOCATIONS[1].lon,
+    label: DEMO_LOCATIONS[1].label,
+  })
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchHits, setSearchHits] = useState<GeocodeHit[]>([])
+  const [searchBusy, setSearchBusy] = useState(false)
+  const [searchError, setSearchError] = useState<string | null>(null)
+  const [latInput, setLatInput] = useState(String(DEMO_LOCATIONS[1].lat))
+  const [lonInput, setLonInput] = useState(String(DEMO_LOCATIONS[1].lon))
   const [workload, setWorkload] = useState<Workload>('moderate')
   const [acclimatized, setAcclimatized] = useState(false)
   const [lang, setLang] = useState<Lang>('en')
@@ -34,6 +59,14 @@ export default function App() {
   const [loading, setLoading] = useState(true)
   const [briefLoading, setBriefLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const applyLocation = useCallback((next: ActiveLocation) => {
+    setLoc(next)
+    setLatInput(String(next.lat))
+    setLonInput(String(next.lon))
+    setSearchHits([])
+    setSearchError(null)
+  }, [])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -94,9 +127,56 @@ export default function App() {
     document.body.classList.toggle('text-mode', textMode)
   }, [textMode])
 
+  async function runSearch(e?: FormEvent) {
+    e?.preventDefault()
+    const q = searchQuery.trim()
+    if (q.length < 2) {
+      setSearchError('Type at least 2 characters')
+      return
+    }
+    setSearchBusy(true)
+    setSearchError(null)
+    try {
+      const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=5&language=en&format=json`
+      const res = await fetch(url)
+      if (!res.ok) throw new Error('Geocoding failed')
+      const data = (await res.json()) as { results?: GeocodeHit[] }
+      const hits = data.results ?? []
+      setSearchHits(hits)
+      if (hits.length === 0) setSearchError('No places found')
+    } catch (err) {
+      setSearchHits([])
+      setSearchError(err instanceof Error ? err.message : 'Search failed')
+    } finally {
+      setSearchBusy(false)
+    }
+  }
+
+  function goLatLon(e?: FormEvent) {
+    e?.preventDefault()
+    const lat = Number(latInput)
+    const lon = Number(lonInput)
+    if (!Number.isFinite(lat) || lat < -90 || lat > 90) {
+      setError('Latitude must be between -90 and 90')
+      return
+    }
+    if (!Number.isFinite(lon) || lon < -180 || lon > 180) {
+      setError('Longitude must be between -180 and 180')
+      return
+    }
+    applyLocation({
+      lat: Math.round(lat * 1000) / 1000,
+      lon: Math.round(lon * 1000) / 1000,
+      label: `${lat.toFixed(3)}, ${lon.toFixed(3)}`,
+    })
+  }
+
   return (
     <div className="mx-auto max-w-xl px-4 py-4 pb-16">
-      <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:bg-white focus:p-2">
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:bg-white focus:p-2"
+      >
         Skip to content
       </a>
       <header className="mb-4">
@@ -107,21 +187,114 @@ export default function App() {
         </p>
       </header>
 
-      <nav aria-label="Location and settings" className="mb-4 space-y-3 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4">
-        <label className="block text-sm font-semibold">
-          Demo location
-          <select
-            className="touch-target mt-1 w-full rounded-xl border border-black bg-white px-3 text-base"
-            value={locKey}
-            onChange={(e) => setLocKey(e.target.value as typeof locKey)}
+      <nav
+        aria-label="Location and settings"
+        className="mb-4 space-y-3 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4"
+      >
+        <div>
+          <p className="text-sm font-semibold mb-2">Quick demos</p>
+          <div className="flex flex-wrap gap-2">
+            {DEMO_LOCATIONS.map((d) => {
+              const active = Math.abs(loc.lat - d.lat) < 0.01 && Math.abs(loc.lon - d.lon) < 0.01
+              return (
+                <button
+                  key={d.key}
+                  type="button"
+                  className={`touch-target rounded-xl border px-3 py-2 text-sm font-semibold ${
+                    active ? 'bg-black text-white border-black' : 'border-black bg-white'
+                  }`}
+                  onClick={() =>
+                    applyLocation({ lat: d.lat, lon: d.lon, label: d.label })
+                  }
+                >
+                  {d.label.split(' (')[0]}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        <form onSubmit={(e) => void runSearch(e)} className="space-y-2">
+          <label className="block text-sm font-semibold" htmlFor="place-search">
+            Search any place
+          </label>
+          <div className="flex gap-2">
+            <input
+              id="place-search"
+              className="touch-target min-w-0 flex-1 rounded-xl border border-black bg-white px-3 text-base"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="City or town"
+              autoComplete="off"
+            />
+            <button
+              type="submit"
+              className="touch-target shrink-0 rounded-xl bg-black px-4 text-sm font-semibold text-white disabled:opacity-50"
+              disabled={searchBusy}
+            >
+              {searchBusy ? '…' : 'Search'}
+            </button>
+          </div>
+          {searchError && <p className="text-sm text-[var(--oi-vermillion)]">{searchError}</p>}
+          {searchHits.length > 0 && (
+            <ul className="rounded-xl border border-[var(--border)] divide-y divide-[var(--border)]">
+              {searchHits.map((h) => (
+                <li key={h.id}>
+                  <button
+                    type="button"
+                    className="touch-target w-full px-3 py-2 text-left text-sm hover:bg-[var(--bg)]"
+                    onClick={() =>
+                      applyLocation({
+                        lat: h.latitude,
+                        lon: h.longitude,
+                        label: formatGeocodeLabel(h),
+                      })
+                    }
+                  >
+                    {formatGeocodeLabel(h)}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </form>
+
+        <form onSubmit={goLatLon} className="space-y-2">
+          <p className="text-sm font-semibold">Or enter coordinates</p>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="block text-xs font-semibold">
+              Latitude
+              <input
+                type="number"
+                step="any"
+                className="touch-target mt-1 w-full rounded-xl border border-black bg-white px-3 text-base"
+                value={latInput}
+                onChange={(e) => setLatInput(e.target.value)}
+              />
+            </label>
+            <label className="block text-xs font-semibold">
+              Longitude
+              <input
+                type="number"
+                step="any"
+                className="touch-target mt-1 w-full rounded-xl border border-black bg-white px-3 text-base"
+                value={lonInput}
+                onChange={(e) => setLonInput(e.target.value)}
+              />
+            </label>
+          </div>
+          <button
+            type="submit"
+            className="touch-target w-full rounded-xl border border-black px-4 py-2 text-sm font-semibold"
           >
-            {DEMO_LOCATIONS.map((l) => (
-              <option key={l.key} value={l.key}>
-                {l.label}
-              </option>
-            ))}
-          </select>
-        </label>
+            Go to coordinates
+          </button>
+        </form>
+
+        <p className="text-xs text-[var(--muted)]">
+          Active: <strong>{loc.label}</strong> ({loc.lat.toFixed(3)}, {loc.lon.toFixed(3)})
+        </p>
+
         <div className="grid grid-cols-2 gap-3">
           <label className="block text-sm font-semibold">
             Workload
@@ -161,7 +334,10 @@ export default function App() {
 
       <main id="main" className="space-y-4">
         {loading && (
-          <div role="status" className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6 font-semibold">
+          <div
+            role="status"
+            className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6 font-semibold"
+          >
             Loading assessment…
           </div>
         )}
@@ -169,14 +345,21 @@ export default function App() {
           <div role="alert" className="rounded-2xl border-2 border-[var(--stop)] bg-white p-4">
             <p className="font-bold">Could not load assessment</p>
             <p className="text-sm mt-1">{error}</p>
-            <button type="button" className="touch-target mt-3 rounded-xl bg-black px-4 py-2 text-white" onClick={() => void load()}>
+            <button
+              type="button"
+              className="touch-target mt-3 rounded-xl bg-black px-4 py-2 text-white"
+              onClick={() => void load()}
+            >
               Retry
             </button>
           </div>
         )}
         {assess && !loading && (
           <>
-            <StaleBanner freshness={assess.data_freshness} servedFromCache={assess.served_from_cache} />
+            <StaleBanner
+              freshness={assess.data_freshness}
+              servedFromCache={assess.served_from_cache}
+            />
             <VerdictCard
               verdict={assess.current.verdict}
               hardStop={assess.schedule.hard_stop_window}
@@ -215,7 +398,10 @@ export default function App() {
         </p>
         <p>
           Limitations:{' '}
-          <a className="underline" href="https://github.com/rahulvuta/ShadeCast/blob/main/docs/limitations.md">
+          <a
+            className="underline"
+            href="https://github.com/rahulvuta/ShadeCast/blob/main/docs/limitations.md"
+          >
             docs/limitations.md
           </a>
           {' · '}

@@ -143,6 +143,14 @@ def build_assessment(
             return cached
         # Fall through to DB-backed rebuild without network
 
+    if allow_network and not settings.demo_mode:
+        try:
+            from api.services.ensure_location_data import ensure_location_data
+
+            ensure_location_data(session, lat, lon)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("ensure_location_data failed: %s", exc)
+
     fires = _fires_near(session, lat, lon)
     fire_inputs = [
         FireDetectionInput(latitude=f.latitude, longitude=f.longitude, frp=f.frp) for f in fires
