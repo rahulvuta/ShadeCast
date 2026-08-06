@@ -5,7 +5,7 @@ ShadeCast ships a [`render.yaml`](../render.yaml) Blueprint with four resources:
 1. `shadecast-db` — Postgres
 2. `shadecast-api` — FastAPI web service (`/healthz`)
 3. `shadecast-web` — static Vite build
-4. `shadecast-ingest` — cron every 20 minutes
+4. `shadecast-ingest` — cron every 20 minutes (Starter plan; Free is not valid for cron on Render)
 
 ## Manual steps (no Render API key in this environment)
 
