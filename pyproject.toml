@@ -1,0 +1,36 @@
+[tool.poetry]
+name = "shadecast"
+version = "0.1.0"
+description = "Crew-level work/rest scheduler for compound heat and wildfire-smoke risk"
+authors = ["ShadeCast Team"]
+readme = "README.md"
+package-mode = false
+packages = [
+    { include = "api" },
+    { include = "ingest" },
+]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+fastapi = "^0.115.0"
+uvicorn = { extras = ["standard"], version = "^0.32.0" }
+sqlalchemy = "^2.0.36"
+pydantic = "^2.9.0"
+pydantic-settings = "^2.6.0"
+httpx = "^0.28.0"
+psycopg = { extras = ["binary"], version = "^3.2.0" }
+alembic = "^1.14.0"
+python-dotenv = "^1.0.1"
+openai = "^1.55.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.0"
+pytest-asyncio = "^0.24.0"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
