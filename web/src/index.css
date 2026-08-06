@@ -1,0 +1,82 @@
+@import "tailwindcss";
+@import "maplibre-gl/dist/maplibre-gl.css";
+
+:root {
+  /* Okabe-Ito colorblind-safe palette */
+  --oi-black: #000000;
+  --oi-orange: #e69f00;
+  --oi-sky: #56b4e9;
+  --oi-green: #009e73;
+  --oi-yellow: #f0e442;
+  --oi-blue: #0072b2;
+  --oi-vermillion: #d55e00;
+  --oi-purple: #cc79a7;
+
+  --go: var(--oi-green);
+  --caution: var(--oi-orange);
+  --restrict: var(--oi-vermillion);
+  --stop: var(--oi-blue);
+
+  --bg: #f7f4ef;
+  --ink: #111111;
+  --muted: #444444;
+  --card: #ffffff;
+  --border: #d6d0c4;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family:
+    "IBM Plex Sans",
+    "Segoe UI",
+    system-ui,
+    -apple-system,
+    sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  line-height: 1.4;
+}
+
+.touch-target {
+  min-width: 48px;
+  min-height: 48px;
+}
+
+.text-mode body,
+body.text-mode {
+  background: #fff;
+}
+
+.verdict-go {
+  background: var(--go);
+  color: #fff;
+}
+.verdict-caution {
+  background: var(--caution);
+  color: #111;
+}
+.verdict-restrict {
+  background: var(--restrict);
+  color: #fff;
+}
+.verdict-stop {
+  background: var(--stop);
+  color: #fff;
+}
