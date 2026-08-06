@@ -98,12 +98,24 @@ def generate_brief(
                         "temperature": 0.2,
                         "max_tokens": 400,
                         "messages": messages,
-                        "response_format": {"type": "json_object"},
                     },
                 )
                 resp.raise_for_status()
                 payload = resp.json()
-                raw_text = payload["choices"][0]["message"]["content"]
+                message = payload["choices"][0]["message"]
+                raw_text = message.get("content") or message.get("reasoning")
+                if isinstance(raw_text, str):
+                    raw_text = raw_text.strip()
+                    if raw_text.startswith("```"):
+                        raw_text = raw_text.strip("`")
+                        if raw_text.startswith("json"):
+                            raw_text = raw_text[4:].strip()
+                    # If the model buried JSON inside reasoning prose, extract object
+                    if raw_text and not raw_text.startswith("{"):
+                        start = raw_text.find("{")
+                        end = raw_text.rfind("}")
+                        if start >= 0 and end > start:
+                            raw_text = raw_text[start : end + 1]
                 break
         except Exception as exc:  # noqa: BLE001
             logger.warning("Featherless attempt %s failed: %s", attempt + 1, exc)
