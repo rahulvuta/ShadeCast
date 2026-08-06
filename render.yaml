@@ -56,7 +56,7 @@ services:
   - type: cron
     name: shadecast-ingest
     runtime: python
-    plan: free
+    plan: starter
     rootDir: .
     schedule: "*/20 * * * *"
     buildCommand: pip install poetry && poetry config virtualenvs.create false && poetry install --only main --no-interaction
