@@ -4,7 +4,17 @@ from __future__ import annotations
 
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def normalize_database_url(url: str) -> str:
+    """Render injects postgresql://; SQLAlchemy+psycopg3 needs postgresql+psycopg://."""
+    if url.startswith("postgres://"):
+        url = "postgresql://" + url[len("postgres://") :]
+    if url.startswith("postgresql://") and not url.startswith("postgresql+psycopg://"):
+        url = "postgresql+psycopg://" + url[len("postgresql://") :]
+    return url
 
 
 class Settings(BaseSettings):
@@ -27,8 +37,13 @@ class Settings(BaseSettings):
     stale_after_minutes: int = 60
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
-    # Demo / seed locations (lat, lon, label)
-    # hot_clear: Phoenix AZ; hot_smoky: Inland Empire CA; benign: Seattle WA
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def _normalize_db_url(cls, v: object) -> object:
+        if isinstance(v, str):
+            return normalize_database_url(v)
+        return v
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
