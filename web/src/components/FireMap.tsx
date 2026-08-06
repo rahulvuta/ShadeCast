@@ -16,15 +16,52 @@ export function FireMap({
   textMode: boolean
 }) {
   const [open, setOpen] = useState(false)
-  const mapEl = useRef<HTMLDivElement | null>(null)
+  const containerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
+  const markersRef = useRef<maplibregl.Marker[]>([])
+  const userMarkerRef = useRef<maplibregl.Marker | null>(null)
 
+  function clearMarkers() {
+    for (const m of markersRef.current) m.remove()
+    markersRef.current = []
+    if (userMarkerRef.current) {
+      userMarkerRef.current.remove()
+      userMarkerRef.current = null
+    }
+  }
+
+  function placeMarkers(map: maplibregl.Map) {
+    clearMarkers()
+    userMarkerRef.current = new maplibregl.Marker({ color: '#0072B2' }).setLngLat([lon, lat]).addTo(map)
+    for (const f of fires.slice(0, 200)) {
+      const marker = new maplibregl.Marker({ color: '#D55E00', scale: 0.6 })
+        .setLngLat([f.longitude, f.latitude])
+        .setPopup(
+          new maplibregl.Popup({ offset: 12 }).setText(
+            `FRP ${f.frp ?? 'n/a'} · ${f.acq_date} ${f.acq_time} · ${f.satellite}`,
+          ),
+        )
+        .addTo(map)
+      markersRef.current.push(marker)
+    }
+  }
+
+  // Create / destroy map when expanded
   useEffect(() => {
-    if (!open || textMode || !mapEl.current) return
-    if (mapRef.current) return
+    if (!open || textMode) {
+      if (mapRef.current) {
+        clearMarkers()
+        mapRef.current.remove()
+        mapRef.current = null
+      }
+      return
+    }
+
+    const el = containerRef.current
+    if (!el) return
 
     const map = new maplibregl.Map({
-      container: mapEl.current,
+      container: el,
       style: 'https://demotiles.maplibre.org/style.json',
       center: [lon, lat],
       zoom: 7,
@@ -33,31 +70,57 @@ export function FireMap({
     map.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'top-right')
     mapRef.current = map
 
-    map.on('load', () => {
-      new maplibregl.Marker({ color: '#0072B2' }).setLngLat([lon, lat]).addTo(map)
-      for (const f of fires.slice(0, 200)) {
-        new maplibregl.Marker({ color: '#D55E00', scale: 0.6 })
-          .setLngLat([f.longitude, f.latitude])
-          .setPopup(
-            new maplibregl.Popup({ offset: 12 }).setText(
-              `FRP ${f.frp ?? 'n/a'} · ${f.acq_date} ${f.acq_time} · ${f.satellite}`,
-            ),
-          )
-          .addTo(map)
-      }
-    })
+    const onLoad = () => {
+      placeMarkers(map)
+      // MapLibre often mounts into a just-shown container — force layout
+      requestAnimationFrame(() => {
+        map.resize()
+        map.setCenter([lon, lat])
+      })
+    }
+    map.on('load', onLoad)
+
+    // Extra resize after CSS layout settles
+    const t1 = window.setTimeout(() => map.resize(), 50)
+    const t2 = window.setTimeout(() => map.resize(), 250)
 
     return () => {
+      window.clearTimeout(t1)
+      window.clearTimeout(t2)
+      map.off('load', onLoad)
+      clearMarkers()
       map.remove()
       mapRef.current = null
     }
-  }, [open, textMode, lat, lon, fires])
+    // Only recreate when open/textMode flips — center/fires update below
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, textMode])
+
+  // Update center + markers while map is open
+  useEffect(() => {
+    const map = mapRef.current
+    if (!open || textMode || !map) return
+    map.jumpTo({ center: [lon, lat] })
+    if (map.loaded()) {
+      placeMarkers(map)
+      map.resize()
+    } else {
+      map.once('load', () => {
+        placeMarkers(map)
+        map.resize()
+      })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lat, lon, fires, open, textMode])
 
   const windLabel =
     windFromDeg == null ? 'Wind n/a' : `Wind from ${Math.round(windFromDeg)}° (met. convention)`
 
   return (
-    <section aria-labelledby="map-heading" className="rounded-2xl bg-[var(--card)] border border-[var(--border)] p-4 shadow-sm">
+    <section
+      aria-labelledby="map-heading"
+      className="rounded-2xl bg-[var(--card)] border border-[var(--border)] p-4 shadow-sm"
+    >
       <div className="flex items-center justify-between gap-3">
         <h2 id="map-heading" className="text-lg font-bold">
           Nearby satellite fire detections
@@ -74,12 +137,23 @@ export function FireMap({
       <p className="text-sm text-[var(--muted)] mt-1">
         {fires.length} FIRMS points in view · {windLabel}
         {windFromDeg != null && (
-          <span aria-hidden="true" className="ml-2 inline-block" style={{ transform: `rotate(${windFromDeg}deg)` }}>
+          <span
+            aria-hidden="true"
+            className="ml-2 inline-block"
+            style={{ transform: `rotate(${windFromDeg}deg)` }}
+          >
             ↑
           </span>
         )}
       </p>
-      {open && !textMode && <div ref={mapEl} className="mt-3 h-64 w-full rounded-xl overflow-hidden" role="img" aria-label="Map of fire detections" />}
+      {/* Keep container in DOM when open so MapLibre gets a real laid-out box */}
+      <div
+        ref={containerRef}
+        className={`mt-3 h-64 w-full rounded-xl overflow-hidden ${open && !textMode ? '' : 'hidden'}`}
+        role="img"
+        aria-label="Map of fire detections"
+        aria-hidden={!open || textMode}
+      />
       {open && textMode && (
         <ul className="mt-3 max-h-64 overflow-auto text-sm space-y-1">
           {fires.slice(0, 50).map((f, i) => (
