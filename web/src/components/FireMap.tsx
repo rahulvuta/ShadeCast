@@ -2,6 +2,24 @@ import { useEffect, useRef, useState } from 'react'
 import * as maplibregl from 'maplibre-gl'
 import type { FirePoint } from '../types'
 
+/** OSM raster basemap — demotiles.maplibre.org often never fires 'load' (blank box). */
+const OSM_STYLE: maplibregl.StyleSpecification = {
+  version: 8,
+  sources: {
+    osm: {
+      type: 'raster',
+      tiles: [
+        'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
+        'https://b.tile.openstreetmap.org/{z}/{x}/{y}.png',
+        'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png',
+      ],
+      tileSize: 256,
+      attribution: '© OpenStreetMap contributors',
+    },
+  },
+  layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
+}
+
 export function FireMap({
   lat,
   lon,
@@ -62,7 +80,7 @@ export function FireMap({
 
     const map = new maplibregl.Map({
       container: el,
-      style: 'https://demotiles.maplibre.org/style.json',
+      style: OSM_STYLE,
       center: [lon, lat],
       zoom: 7,
     })
@@ -72,7 +90,6 @@ export function FireMap({
 
     const onLoad = () => {
       placeMarkers(map)
-      // MapLibre often mounts into a just-shown container — force layout
       requestAnimationFrame(() => {
         map.resize()
         map.setCenter([lon, lat])
@@ -80,7 +97,6 @@ export function FireMap({
     }
     map.on('load', onLoad)
 
-    // Extra resize after CSS layout settles
     const t1 = window.setTimeout(() => map.resize(), 50)
     const t2 = window.setTimeout(() => map.resize(), 250)
 
@@ -92,7 +108,6 @@ export function FireMap({
       map.remove()
       mapRef.current = null
     }
-    // Only recreate when open/textMode flips — center/fires update below
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, textMode])
 
@@ -146,7 +161,6 @@ export function FireMap({
           </span>
         )}
       </p>
-      {/* Keep container in DOM when open so MapLibre gets a real laid-out box */}
       <div
         ref={containerRef}
         className={`mt-3 h-64 w-full rounded-xl overflow-hidden ${open && !textMode ? '' : 'hidden'}`}
