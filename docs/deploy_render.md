@@ -35,3 +35,9 @@ DEMO_MODE=1
 poetry run uvicorn api.main:app --reload --port 8000
 cd web && npm run dev
 ```
+
+## Render build notes
+
+API and ingest install from `requirements.txt` (not Poetry) to avoid slow/fragile
+`pip install poetry` builds. `DATABASE_URL` from Render is auto-normalized to
+`postgresql+psycopg://` in `api/config.py`.
