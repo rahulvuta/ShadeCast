@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
+from api.actions.select import select_actions
 from api.clients import air_quality as aq_client
 from api.clients import forecast as forecast_client
 from api.clients.firms import round_coord
@@ -16,6 +17,7 @@ from api.config import DEMO_LOCATIONS, get_settings
 from api.engine.air import assess_air
 from api.engine.compound import Verdict
 from api.engine.environmental_load import assess_environmental_load
+from api.engine.explain import explain_from_drivers
 from api.engine.heat import Workload, assess_heat, celsius_to_fahrenheit
 from api.engine.schedule import build_multiday_schedule, build_schedule, shift_planner
 from api.engine.sensitivity import SensitivityProfile
@@ -35,6 +37,7 @@ from api.models import (
     ForecastHour,
 )
 from api.schemas import (
+    ActionOut,
     AirDetail,
     AssessResponse,
     ClimatologyDelta,
@@ -50,6 +53,7 @@ from api.schemas import (
     SmokeDetail,
     UVDetail,
 )
+from api.services.diff import diff_assessments
 
 logger = logging.getLogger(__name__)
 
@@ -520,6 +524,35 @@ def build_assessment(
     )
     conf_out = _confidence_out(conf_result, verdict_escalated=verdict_escalated)
 
+    explain_text = explain_from_drivers(
+        load.drivers,
+        verdict=adj_current or "UNUSABLE",
+        ceiling_reason=load.ceiling_reason,
+        concordance=load.concordance.value,
+        interactions=load.interactions,
+    )
+    selected = select_actions(
+        verdict=adj_current,
+        heat_band=cur_heat.effective_band.value,
+        smoke_pressure=smoke.smoke_pressure,
+        us_aqi=air_now.us_aqi,
+        uv_band=uv_today.band.value,
+        wind_gusts_kmh=current_row.wind_gusts_kmh,
+        profile=sensitivity_profile,
+    )
+    prior_payload = prior_cached.model_dump() if prior_cached is not None else None
+    # Build a lightweight current dict for diff before full response
+    current_for_diff = {
+        "current": {
+            "verdict": adj_current,
+            "effective_heat_band": cur_heat.effective_band.value,
+        },
+        "smoke": {"smoke_pressure": smoke.smoke_pressure},
+        "air": {"concordance": air_now.concordance.value, "us_aqi": air_now.us_aqi},
+        "environmental_load": {"concordance": load.concordance.value},
+    }
+    diff_summary = diff_assessments(current_for_diff, prior_payload)
+
     resp = AssessResponse(
         lat=lat,
         lon=lon,
@@ -608,6 +641,20 @@ def build_assessment(
             exposure_minutes_cap=load.exposure_minutes_cap,
             profile=load.profile,
         ),
+        explain_text=explain_text,
+        ceiling_reason=load.ceiling_reason,
+        actions=[
+            ActionOut(
+                id=a.id,
+                title=a.title,
+                body=a.body,
+                source_url=a.source_url,
+                source_name=a.source_name,
+                trigger=a.trigger,
+            )
+            for a in selected
+        ],
+        diff_summary=diff_summary,
         climatology=ClimatologyDelta(
             today_temp_c=current_row.temperature_c,
             baseline_temp_c=baseline,

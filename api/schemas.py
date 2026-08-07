@@ -123,6 +123,15 @@ class ShiftWindowOut(BaseModel):
     label: str
 
 
+class ActionOut(BaseModel):
+    id: str
+    title: str
+    body: str
+    source_url: str
+    source_name: str
+    trigger: str
+
+
 class HourlyAssessment(BaseModel):
     hour: int
     valid_at: datetime | None = None
@@ -172,6 +181,10 @@ class AssessResponse(BaseModel):
     uv: UVDetail | None = None
     air: AirDetail | None = None
     environmental_load: EnvironmentalLoadOut | None = None
+    explain_text: str | None = None
+    ceiling_reason: str | None = None
+    actions: list[ActionOut] = Field(default_factory=list)
+    diff_summary: str | None = None
     climatology: ClimatologyDelta
     data_freshness: DataFreshness
     data_confidence: DataConfidence | None = None
