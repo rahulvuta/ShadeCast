@@ -1,0 +1,135 @@
+{
+  "backtests": [
+    {
+      "event_id": "nyc_canada_smoke_2023",
+      "label": "June 2023 Canadian smoke \u2014 NYC",
+      "verdict": "RESTRICT",
+      "expected": [
+        "STOP",
+        "RESTRICT"
+      ],
+      "passed": true,
+      "confidence": "HIGH",
+      "concordance": "MODEL_LEADS",
+      "notes": "AQI >400 regional haze; MODEL_LEADS concordance expected.",
+      "mode": "offline"
+    },
+    {
+      "event_id": "phoenix_july_heat_2023",
+      "label": "Phoenix July 2023 heat wave",
+      "verdict": "RESTRICT",
+      "expected": [
+        "RESTRICT",
+        "STOP"
+      ],
+      "passed": true,
+      "confidence": "HIGH",
+      "concordance": "AGREE",
+      "notes": "Extreme heat index; clear air.",
+      "mode": "offline"
+    },
+    {
+      "event_id": "seattle_control",
+      "label": "Seattle benign control",
+      "verdict": "GO",
+      "expected": [
+        "GO"
+      ],
+      "passed": true,
+      "confidence": "HIGH",
+      "concordance": "AGREE",
+      "notes": "Cool, clear control day.",
+      "mode": "offline"
+    },
+    {
+      "event_id": "dust_event_model_leads",
+      "label": "Dust / regional haze (MODEL_LEADS)",
+      "verdict": "RESTRICT",
+      "expected": [
+        "CAUTION",
+        "RESTRICT",
+        "STOP"
+      ],
+      "passed": true,
+      "confidence": "HIGH",
+      "concordance": "MODEL_LEADS",
+      "notes": "High AQI without FIRMS \u2014 dust/traffic, not corruption.",
+      "mode": "offline"
+    },
+    {
+      "event_id": "hot_clear_false_positive_check",
+      "label": "Hot clear day \u2014 not STOP from smoke alone",
+      "verdict": "CAUTION",
+      "expected": [
+        "CAUTION",
+        "RESTRICT",
+        "STOP"
+      ],
+      "passed": true,
+      "confidence": "HIGH",
+      "concordance": "AGREE",
+      "notes": "Heat drives risk; smoke must not invent STOP.",
+      "mode": "offline"
+    },
+    {
+      "event_id": "corrupted_feed",
+      "label": "Corrupted RH/PM/POWER sentinel",
+      "verdict": null,
+      "expected": [
+        "LOW",
+        "UNUSABLE"
+      ],
+      "passed": true,
+      "confidence": "UNUSABLE",
+      "concordance": null,
+      "notes": "Synthetic corruption: RH=250, PM=-5, POWER -999 \u2192 LOW/UNUSABLE.",
+      "mode": "offline"
+    }
+  ],
+  "concordance": {
+    "n": 60,
+    "spearman": 0.8288,
+    "distribution": {
+      "AGREE": 0.9333333333333333,
+      "FIRMS_LEADS": 0.03333333333333333,
+      "MODEL_LEADS": 0.03333333333333333
+    },
+    "agree": 56,
+    "firms_leads": 2,
+    "model_leads": 2
+  },
+  "sensitivity": [
+    {
+      "name": "aqi_threshold",
+      "baseline_verdict": "CAUTION",
+      "flips": 1,
+      "trials": 6,
+      "flip_rate": 0.167,
+      "details": [
+        "aqi=160 \u2192 RESTRICT (baseline CAUTION)"
+      ]
+    },
+    {
+      "name": "wind_gust_hard_stop",
+      "baseline_verdict": "CAUTION",
+      "flips": 3,
+      "trials": 6,
+      "flip_rate": 0.5,
+      "details": [
+        "gusts=41 \u2192 STOP",
+        "gusts=45 \u2192 STOP",
+        "gusts=50 \u2192 STOP"
+      ]
+    },
+    {
+      "name": "smoke_geometry_proxy",
+      "baseline_verdict": "pressure=0.0",
+      "flips": 0,
+      "trials": 5,
+      "flip_rate": 0.0,
+      "details": [
+        "constants: decay=25.0km cone=\u00b145.0\u00b0 cap=300.0km gust_stop=40.0km/h"
+      ]
+    }
+  ]
+}
