@@ -1,9 +1,14 @@
-"""Hour-by-hour work/rest schedule generator from compound verdicts."""
+"""Hour-by-hour work/rest schedule generator from environmental-load verdicts.
+
+Supports a single day or a multi-day (up to 5) horizon. The 5-day bound matches
+the Open-Meteo Air Quality API forecast length.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from datetime import date
+from typing import Sequence
 
 from api.engine.compound import Verdict
 from api.engine.heat import Workload
@@ -40,6 +45,8 @@ _NOTES: dict[Verdict, str] = {
     Verdict.STOP: "Stop outdoor work; move crew to cool indoor/shade area.",
 }
 
+MAX_HORIZON_DAYS = 5
+
 
 @dataclass(frozen=True)
 class HourPlan:
@@ -48,6 +55,7 @@ class HourPlan:
     work_minutes: int
     rest_minutes: int
     note: str
+    day: date | None = None
 
 
 @dataclass(frozen=True)
@@ -61,6 +69,31 @@ class ScheduleSummary:
 class ScheduleResult:
     hourly: list[HourPlan]
     summary: ScheduleSummary
+
+
+@dataclass(frozen=True)
+class DaySummary:
+    day: date
+    summary: ScheduleSummary
+    worst_verdict: Verdict
+    total_work_minutes: int
+
+
+@dataclass(frozen=True)
+class ShiftWindow:
+    day: date
+    start_hour: int
+    end_hour: int  # exclusive
+    required_hours: float
+    mean_rank: float  # lower is better (GO=0)
+    label: str
+
+
+@dataclass(frozen=True)
+class MultiDaySchedule:
+    days: list[DaySummary]
+    hourly: list[HourPlan]
+    best_windows: list[ShiftWindow]
 
 
 def _fmt_window(hours: Sequence[int]) -> str | None:
@@ -81,21 +114,36 @@ def _fmt_window(hours: Sequence[int]) -> str | None:
     return f"{a:02d}:00–{(b + 1) % 24:02d}:00" if b < 23 else f"{a:02d}:00–24:00"
 
 
+def _apply_exposure_cap(work: int, exposure_minutes_cap: int | None) -> int:
+    if exposure_minutes_cap is None:
+        return work
+    return min(work, max(0, exposure_minutes_cap))
+
+
 def build_schedule(
     hourly_verdicts: Sequence[tuple[int, Verdict]],
     workload: Workload = "moderate",
+    *,
+    exposure_minutes_cap: int | None = None,
+    day: date | None = None,
 ) -> ScheduleResult:
     """Build work/rest cycle from an ordered list of (hour, verdict)."""
     plans: list[HourPlan] = []
     for hour, verdict in hourly_verdicts:
         work, rest = _RATIOS[verdict][workload]
+        work = _apply_exposure_cap(work, exposure_minutes_cap)
+        rest = 60 - work if work < 60 else rest
+        note = _NOTES[verdict]
+        if exposure_minutes_cap is not None and work < _RATIOS[verdict][workload][0]:
+            note = f"{note} UV exposure capped at {exposure_minutes_cap} min/hr."
         plans.append(
             HourPlan(
                 hour=hour,
                 verdict=verdict,
                 work_minutes=work,
                 rest_minutes=rest,
-                note=_NOTES[verdict],
+                note=note,
+                day=day,
             )
         )
 
@@ -116,3 +164,108 @@ def build_schedule(
             total_safe_hours=round(safe, 2),
         ),
     )
+
+
+_RANK = {Verdict.GO: 0, Verdict.CAUTION: 1, Verdict.RESTRICT: 2, Verdict.STOP: 3}
+
+
+def build_multiday_schedule(
+    daily: Sequence[tuple[date, Sequence[tuple[int, Verdict]]]],
+    workload: Workload = "moderate",
+    *,
+    exposure_minutes_cap: int | None = None,
+) -> MultiDaySchedule:
+    """Build up to MAX_HORIZON_DAYS of hourly plans + per-day summaries."""
+    days_out: list[DaySummary] = []
+    all_hourly: list[HourPlan] = []
+    for day, hours in list(daily)[:MAX_HORIZON_DAYS]:
+        result = build_schedule(
+            hours, workload=workload, exposure_minutes_cap=exposure_minutes_cap, day=day
+        )
+        all_hourly.extend(result.hourly)
+        worst = max((p.verdict for p in result.hourly), key=lambda v: _RANK[v], default=Verdict.GO)
+        days_out.append(
+            DaySummary(
+                day=day,
+                summary=result.summary,
+                worst_verdict=worst,
+                total_work_minutes=sum(p.work_minutes for p in result.hourly),
+            )
+        )
+    return MultiDaySchedule(days=days_out, hourly=all_hourly, best_windows=[])
+
+
+def shift_planner(
+    hourly: Sequence[HourPlan],
+    required_hours: float,
+    *,
+    max_results: int = 5,
+) -> list[ShiftWindow]:
+    """Rank contiguous work windows that can fit `required_hours` of GO/CAUTION time.
+
+    Walks the multi-day hourly series and scores each candidate window by mean
+    verdict rank (lower is better). STOP hours break a window.
+    """
+    if required_hours <= 0:
+        return []
+    need = max(1, int(round(required_hours)))
+    # Build flat list with day+hour
+    usable = [p for p in hourly if p.day is not None]
+    if len(usable) < need:
+        return []
+
+    windows: list[ShiftWindow] = []
+    n = len(usable)
+    for i in range(n):
+        if usable[i].verdict == Verdict.STOP:
+            continue
+        acc_hours = 0.0
+        ranks: list[int] = []
+        j = i
+        while j < n and acc_hours < need:
+            p = usable[j]
+            if p.verdict == Verdict.STOP:
+                break
+            # Contiguity: same day and sequential hours, or next day hour 0 after 23
+            if j > i:
+                prev = usable[j - 1]
+                if p.day == prev.day:
+                    if p.hour != prev.hour + 1:
+                        break
+                else:
+                    if not (prev.hour == 23 and p.hour == 0):
+                        break
+            if p.verdict in (Verdict.GO, Verdict.CAUTION):
+                acc_hours += 1
+                ranks.append(_RANK[p.verdict])
+            elif p.verdict == Verdict.RESTRICT:
+                acc_hours += 0.25
+                ranks.append(_RANK[p.verdict])
+            j += 1
+        if acc_hours >= need and ranks:
+            start = usable[i]
+            end = usable[j - 1]
+            mean_rank = sum(ranks) / len(ranks)
+            assert start.day is not None and end.day is not None
+            windows.append(
+                ShiftWindow(
+                    day=start.day,
+                    start_hour=start.hour,
+                    end_hour=end.hour + 1,
+                    required_hours=required_hours,
+                    mean_rank=mean_rank,
+                    label=(
+                        f"{start.day.isoformat()} {start.hour:02d}:00–"
+                        f"{end.day.isoformat()} {end.hour + 1:02d}:00"
+                    ),
+                )
+            )
+
+    # Deduplicate by (day, start_hour); keep best mean_rank
+    best: dict[tuple[date, int], ShiftWindow] = {}
+    for w in windows:
+        key = (w.day, w.start_hour)
+        if key not in best or w.mean_rank < best[key].mean_rank:
+            best[key] = w
+    ranked = sorted(best.values(), key=lambda w: (w.mean_rank, w.day, w.start_hour))
+    return ranked[:max_results]

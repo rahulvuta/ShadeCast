@@ -13,14 +13,18 @@ from api.clients import air_quality as aq_client
 from api.clients import forecast as forecast_client
 from api.clients.firms import round_coord
 from api.config import DEMO_LOCATIONS, get_settings
-from api.engine.compound import Verdict, combine
+from api.engine.air import assess_air
+from api.engine.compound import Verdict
+from api.engine.environmental_load import assess_environmental_load
 from api.engine.heat import Workload, assess_heat, celsius_to_fahrenheit
-from api.engine.schedule import build_schedule
+from api.engine.schedule import build_multiday_schedule, build_schedule, shift_planner
+from api.engine.sensitivity import SensitivityProfile
 from api.engine.smoke import FireDetectionInput, assess_smoke
+from api.engine.uv import assess_uv
 from api.freshness import SOURCES, build_freshness
 from api.integrity.bundle import make_bundle
 from api.integrity.checks import run_all_checks
-from api.integrity.confidence import aggregate, escalate_verdict
+from api.integrity.confidence import aggregate
 from api.integrity.types import ConfidenceLevel
 from api.llm.integrity_narration import findings_summary, narrate_findings
 from api.models import (
@@ -31,14 +35,20 @@ from api.models import (
     ForecastHour,
 )
 from api.schemas import (
+    AirDetail,
     AssessResponse,
     ClimatologyDelta,
     CurrentConditions,
     DataConfidence,
+    DaySummaryOut,
+    DriverOut,
+    EnvironmentalLoadOut,
     HourlyAssessment,
     IntegrityFindingOut,
     ScheduleSummaryOut,
+    ShiftWindowOut,
     SmokeDetail,
+    UVDetail,
 )
 
 logger = logging.getLogger(__name__)
@@ -208,7 +218,6 @@ def _confidence_out(result, *, verdict_escalated: bool = False) -> DataConfidenc
         verdict_escalated=verdict_escalated,
     )
 
-
 def build_assessment(
     session: Session,
     lat: float,
@@ -216,6 +225,8 @@ def build_assessment(
     workload: Workload = "moderate",
     acclimatized: bool = False,
     *,
+    sensitivity_profile: SensitivityProfile = "general",
+    required_hours: float = 4.0,
     allow_network: bool = True,
 ) -> AssessResponse:
     settings = get_settings()
@@ -224,7 +235,6 @@ def build_assessment(
         if cached:
             cached.demo_mode = True
             return cached
-        # Fall through to DB-backed rebuild without network
 
     if allow_network and not settings.demo_mode:
         try:
@@ -246,10 +256,9 @@ def build_assessment(
 
     if allow_network and not settings.demo_mode:
         try:
-            forecast_rows = forecast_client.fetch_forecast(lat, lon, forecast_days=2)
+            forecast_rows = forecast_client.fetch_forecast(lat, lon, forecast_days=5)
             used_live = True
             forecast_fetched = datetime.now(timezone.utc)
-            # Upsert lightly into DB for future cache
             from ingest.job import upsert_forecast
 
             upsert_forecast(session, lat, lon, forecast_rows)
@@ -287,13 +296,11 @@ def build_assessment(
         ]
 
     if not forecast_rows:
-        # Last resort: serve full cached assessment if any
         cached, _ = _load_assessment_cache(session, lat, lon, workload, acclimatized)
         if cached:
             return cached
         raise RuntimeError("No forecast data available (live and cache empty)")
 
-    # Air quality (DB first; live fetch is handled by ensure_location_data / ingest)
     aq_rows, aq_fetched = _aq_rows_from_db(session, lat, lon)
     if allow_network and not settings.demo_mode and not aq_rows:
         try:
@@ -306,13 +313,23 @@ def build_assessment(
         except Exception as exc:  # noqa: BLE001
             logger.warning("Live air quality failed: %s", exc)
 
-    # Use today's hours only for schedule (first 24 of the series matching local date)
-    today = forecast_rows[0].valid_at.date()
-    today_rows = [r for r in forecast_rows if r.valid_at.date() == today]
-    if not today_rows:
-        today_rows = forecast_rows[:24]
+    aq_by_hour = {r.valid_at: r for r in aq_rows}
 
-    # Current = hour closest to now in local tz of forecast
+    def _aq_for(valid_at):
+        if valid_at in aq_by_hour:
+            return aq_by_hour[valid_at]
+        for k, v in aq_by_hour.items():
+            if k.replace(tzinfo=None) == valid_at.replace(tzinfo=None):
+                return v
+        return None
+
+    by_day: dict = {}
+    for r in forecast_rows:
+        by_day.setdefault(r.valid_at.date(), []).append(r)
+    day_keys = sorted(by_day.keys())[:5]
+    today = day_keys[0]
+    today_rows = by_day[today]
+
     now_utc = datetime.now(timezone.utc)
     current_row = min(
         today_rows,
@@ -328,7 +345,6 @@ def build_assessment(
         wind_speed_kmh=current_row.wind_speed_kmh,
     )
 
-    # Climatology baseline (needed for integrity + response)
     baseline = _climatology_baseline(session, lat, lon, current_row.valid_at)
     clim_fetched_row = session.scalars(
         select(ClimatologyPoint)
@@ -341,7 +357,6 @@ def build_assessment(
     ).first()
     clim_fetched = clim_fetched_row.fetched_at if clim_fetched_row else None
 
-    # --- Integrity layer (before engine verdicts are trusted) ----------------
     integrity_bundle = make_bundle(
         forecast_rows=today_rows,
         aq_rows=aq_rows,
@@ -362,62 +377,15 @@ def build_assessment(
 
     prior_cached, prior_at = _load_assessment_cache(session, lat, lon, workload, acclimatized)
 
-    hourly_out: list[HourlyAssessment] = []
-    verdicts_for_sched = []
-    for r in today_rows:
-        if r.temperature_c is None or r.relative_humidity is None:
-            continue
-        tf = celsius_to_fahrenheit(r.temperature_c)
-        heat = assess_heat(
-            tf,
-            r.relative_humidity,
-            workload=workload,
-            acclimatized=acclimatized,
-            full_sun=True,
-        )
-        # Smoke held constant across day from current wind (honest limitation)
-        hour_smoke = assess_smoke(
-            lat,
-            lon,
-            fire_inputs,
-            wind_from_deg=r.wind_direction_deg or wind_from,
-            wind_speed_kmh=r.wind_speed_kmh,
-        )
-        compound = combine(heat.effective_band, hour_smoke.smoke_pressure, hour_smoke.label)
-        raw_verdict = compound.verdict.value
-        adj = escalate_verdict(raw_verdict, conf_result.level)
-        if adj is None:
-            # UNUSABLE: still build schedule scaffolding with STOP as placeholder
-            # but current.verdict will be cleared below.
-            adj = "STOP"
+    uv_today = assess_uv(today_rows, skin_type=3)
+    cur_aq = _aq_for(current_row.valid_at)
+    air_now = assess_air(
+        smoke_pressure=smoke.smoke_pressure,
+        us_aqi=cur_aq.us_aqi if cur_aq else None,
+        pm2_5=cur_aq.pm2_5 if cur_aq else None,
+        dominant_pollutant=cur_aq.dominant_pollutant if cur_aq else None,
+    )
 
-        hour = r.valid_at.hour
-        verdicts_for_sched.append((hour, Verdict(adj)))
-        hourly_out.append(
-            HourlyAssessment(
-                hour=hour,
-                valid_at=r.valid_at,
-                temperature_c=r.temperature_c,
-                heat_index_f=heat.heat_index_f,
-                heat_band=heat.effective_band.value,
-                smoke_pressure=hour_smoke.smoke_pressure,
-                verdict=adj,
-                work_minutes=0,
-                rest_minutes=0,
-                note="",
-            )
-        )
-
-    schedule = build_schedule(verdicts_for_sched, workload=workload)
-    by_hour = {p.hour: p for p in schedule.hourly}
-    for h in hourly_out:
-        plan = by_hour.get(h.hour)
-        if plan:
-            h.work_minutes = plan.work_minutes
-            h.rest_minutes = plan.rest_minutes
-            h.note = plan.note
-
-    # Current conditions
     assert current_row.temperature_c is not None
     assert current_row.relative_humidity is not None
     cur_tf = celsius_to_fahrenheit(current_row.temperature_c)
@@ -428,14 +396,103 @@ def build_assessment(
         acclimatized=acclimatized,
         full_sun=True,
     )
-    cur_compound = combine(cur_heat.effective_band, smoke.smoke_pressure, smoke.label)
-    raw_current = cur_compound.verdict.value
-    adj_current = escalate_verdict(raw_current, conf_result.level)
-    verdict_escalated = (
-        conf_result.level == ConfidenceLevel.LOW
-        and adj_current is not None
-        and adj_current != raw_current
+    load = assess_environmental_load(
+        heat_band=cur_heat.effective_band,
+        smoke_pressure=smoke.smoke_pressure,
+        smoke_label=smoke.label,
+        air=air_now,
+        uv=uv_today,
+        wind_gusts_kmh=current_row.wind_gusts_kmh,
+        workload=workload,
+        confidence=conf_result.level,
+        profile=sensitivity_profile,
     )
+    verdict_escalated = "low_confidence_escalate" in load.interactions
+    adj_current: str | None = load.verdict.value
+    if conf_result.level == ConfidenceLevel.UNUSABLE:
+        adj_current = None
+
+    daily_verdicts: list = []
+    hourly_out: list[HourlyAssessment] = []
+    for day in day_keys:
+        rows = by_day[day]
+        day_uv = uv_today if day == today else assess_uv(rows, skin_type=3)
+        day_pairs: list[tuple[int, Verdict]] = []
+        for r in rows:
+            if r.temperature_c is None or r.relative_humidity is None:
+                continue
+            tf = celsius_to_fahrenheit(r.temperature_c)
+            heat = assess_heat(
+                tf,
+                r.relative_humidity,
+                workload=workload,
+                acclimatized=acclimatized,
+                full_sun=True,
+            )
+            hour_smoke = assess_smoke(
+                lat,
+                lon,
+                fire_inputs,
+                wind_from_deg=r.wind_direction_deg or wind_from,
+                wind_speed_kmh=r.wind_speed_kmh,
+            )
+            aq = _aq_for(r.valid_at)
+            air_h = assess_air(
+                smoke_pressure=hour_smoke.smoke_pressure,
+                us_aqi=aq.us_aqi if aq else None,
+                pm2_5=aq.pm2_5 if aq else None,
+            )
+            hour_load = assess_environmental_load(
+                heat_band=heat.effective_band,
+                smoke_pressure=hour_smoke.smoke_pressure,
+                smoke_label=hour_smoke.label,
+                air=air_h,
+                uv=day_uv,
+                wind_gusts_kmh=r.wind_gusts_kmh,
+                workload=workload,
+                confidence=conf_result.level,
+                profile=sensitivity_profile,
+            )
+            day_pairs.append((r.valid_at.hour, hour_load.verdict))
+            hourly_out.append(
+                HourlyAssessment(
+                    hour=r.valid_at.hour,
+                    valid_at=r.valid_at,
+                    day=day.isoformat(),
+                    temperature_c=r.temperature_c,
+                    heat_index_f=heat.heat_index_f,
+                    heat_band=heat.effective_band.value,
+                    smoke_pressure=hour_smoke.smoke_pressure,
+                    uv_index=r.uv_index,
+                    us_aqi=aq.us_aqi if aq else None,
+                    verdict=hour_load.verdict.value,
+                    work_minutes=0,
+                    rest_minutes=0,
+                    note="",
+                )
+            )
+        daily_verdicts.append((day, day_pairs))
+
+    multi = build_multiday_schedule(
+        daily_verdicts,
+        workload=workload,
+        exposure_minutes_cap=load.exposure_minutes_cap,
+    )
+    plan_key = {(p.day.isoformat() if p.day else None, p.hour): p for p in multi.hourly}
+    for h in hourly_out:
+        plan = plan_key.get((h.day, h.hour))
+        if plan:
+            h.work_minutes = plan.work_minutes
+            h.rest_minutes = plan.rest_minutes
+            h.note = plan.note
+
+    today_schedule = build_schedule(
+        daily_verdicts[0][1] if daily_verdicts else [],
+        workload=workload,
+        exposure_minutes_cap=load.exposure_minutes_cap,
+        day=today,
+    )
+    windows = shift_planner(multi.hourly, required_hours)
 
     delta = None
     if baseline is not None and current_row.temperature_c is not None:
@@ -461,7 +518,6 @@ def build_assessment(
             ("NASA POWER", clim_fetched),
         ]
     )
-
     conf_out = _confidence_out(conf_result, verdict_escalated=verdict_escalated)
 
     resp = AssessResponse(
@@ -470,6 +526,7 @@ def build_assessment(
         workload=workload,
         acclimatized=acclimatized,
         location_label=_label_for(lat, lon),
+        sensitivity_profile=sensitivity_profile,
         current=CurrentConditions(
             temperature_c=current_row.temperature_c,
             temperature_f=round(cur_tf, 1),
@@ -479,21 +536,77 @@ def build_assessment(
             effective_heat_band=cur_heat.effective_band.value,
             wind_speed_kmh=current_row.wind_speed_kmh,
             wind_direction_deg=current_row.wind_direction_deg,
-            verdict=adj_current,  # None when UNUSABLE
+            wind_gusts_kmh=current_row.wind_gusts_kmh,
+            uv_index=current_row.uv_index,
+            us_aqi=air_now.us_aqi,
+            pm2_5=air_now.pm2_5,
+            verdict=adj_current,
             disclaimer=cur_heat.disclaimer,
         ),
-        hourly=hourly_out,
+        hourly=[h for h in hourly_out if h.day == today.isoformat()],
         schedule=ScheduleSummaryOut(
-            hard_stop_window=schedule.summary.hard_stop_window,
-            best_work_window=schedule.summary.best_work_window,
-            total_safe_hours=schedule.summary.total_safe_hours,
+            hard_stop_window=today_schedule.summary.hard_stop_window,
+            best_work_window=today_schedule.summary.best_work_window,
+            total_safe_hours=today_schedule.summary.total_safe_hours,
         ),
+        days=[
+            DaySummaryOut(
+                day=d.day.isoformat(),
+                hard_stop_window=d.summary.hard_stop_window,
+                best_work_window=d.summary.best_work_window,
+                total_safe_hours=d.summary.total_safe_hours,
+                worst_verdict=d.worst_verdict.value,
+                total_work_minutes=d.total_work_minutes,
+            )
+            for d in multi.days
+        ],
+        shift_windows=[
+            ShiftWindowOut(
+                day=w.day.isoformat(),
+                start_hour=w.start_hour,
+                end_hour=w.end_hour,
+                required_hours=w.required_hours,
+                mean_rank=w.mean_rank,
+                label=w.label,
+            )
+            for w in windows
+        ],
         smoke=SmokeDetail(
             smoke_pressure=smoke.smoke_pressure,
             label=smoke.label,
             upwind_count=smoke.upwind_count,
             considered_count=smoke.considered_count,
             note=smoke.note,
+        ),
+        uv=UVDetail(
+            daily_max=uv_today.daily_max,
+            band=uv_today.band.value,
+            clear_sky_max=uv_today.clear_sky_max,
+            peak_hour=uv_today.peak_hour,
+            minutes_to_burn=uv_today.minutes_to_burn,
+            skin_type=uv_today.skin_type,
+            note=uv_today.note,
+        ),
+        air=AirDetail(
+            us_aqi=air_now.us_aqi,
+            pm2_5=air_now.pm2_5,
+            aqi_band=air_now.aqi_band.value if air_now.aqi_band else None,
+            concordance=air_now.concordance.value,
+            dominant_pollutant=air_now.dominant_pollutant,
+            note=air_now.note,
+        ),
+        environmental_load=EnvironmentalLoadOut(
+            load_score=load.load_score,
+            drivers=[
+                DriverOut(name=d.name, contribution=d.contribution, detail=d.detail)
+                for d in load.drivers
+            ],
+            concordance=load.concordance.value,
+            interactions=load.interactions,
+            ceiling_reason=load.ceiling_reason,
+            reason=load.reason,
+            exposure_minutes_cap=load.exposure_minutes_cap,
+            profile=load.profile,
         ),
         climatology=ClimatologyDelta(
             today_temp_c=current_row.temperature_c,
@@ -509,8 +622,6 @@ def build_assessment(
         last_good_assessment_at=prior_at if conf_result.level == ConfidenceLevel.UNUSABLE else None,
     )
 
-    # On UNUSABLE, prefer returning the last-good cached assessment annotated
-    # with the integrity result (so the UI can show both).
     if conf_result.level == ConfidenceLevel.UNUSABLE and prior_cached is not None:
         prior_cached.data_confidence = conf_out
         prior_cached.last_good_assessment_at = prior_at
@@ -518,7 +629,6 @@ def build_assessment(
         return prior_cached
 
     try:
-        # Do not overwrite last-good cache with an UNUSABLE payload
         if conf_result.level != ConfidenceLevel.UNUSABLE:
             _save_assessment_cache(session, lat, lon, workload, acclimatized, resp)
     except Exception as exc:  # noqa: BLE001
