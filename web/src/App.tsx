@@ -1,19 +1,27 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { fetchAssess, fetchBrief, fetchFires } from './api'
+import { ActionCards } from './components/ActionCards'
 import { BriefingCard } from './components/BriefingCard'
 import { ClimatologyLine } from './components/ClimatologyLine'
+import { ConcordanceBadge } from './components/ConcordanceBadge'
+import { ConfidenceBanner } from './components/ConfidenceBanner'
+import { DiffStrip, FiveDayStrip, ShiftPlanner } from './components/DayStrip'
 import { FireMap } from './components/FireMap'
 import { HourlyChart } from './components/HourlyChart'
 import { HowWeCalculate } from './components/HowWeCalculate'
+import { IncidentLog } from './components/IncidentLog'
 import { ScheduleStrip } from './components/ScheduleStrip'
 import { StaleBanner } from './components/StaleBanner'
+import { UVPanel } from './components/UVPanel'
 import { VerdictCard } from './components/VerdictCard'
 import {
   DEMO_LOCATIONS,
+  SENSITIVITY_PROFILES,
   type AssessResponse,
   type BriefResponse,
   type FirePoint,
   type Lang,
+  type SensitivityProfile,
   type Workload,
 } from './types'
 
@@ -52,6 +60,9 @@ export default function App() {
   const [lonInput, setLonInput] = useState(String(DEMO_LOCATIONS[1].lon))
   const [workload, setWorkload] = useState<Workload>('moderate')
   const [acclimatized, setAcclimatized] = useState(false)
+  const [profile, setProfile] = useState<SensitivityProfile>('general')
+  const [requiredHours, setRequiredHours] = useState(4)
+  const [selectedDay, setSelectedDay] = useState<string | null>(null)
   const [lang, setLang] = useState<Lang>('en')
   const [assess, setAssess] = useState<AssessResponse | null>(null)
   const [brief, setBrief] = useState<BriefResponse | null>(null)
@@ -77,8 +88,11 @@ export default function App() {
         lon: loc.lon,
         workload,
         acclimatized,
+        profile,
+        requiredHours,
       })
       setAssess(a)
+      setSelectedDay(a.days?.[0]?.day ?? null)
       const bbox = `${loc.lon - 1.5},${loc.lat - 1.5},${loc.lon + 1.5},${loc.lat + 1.5}`
       try {
         const f = await fetchFires(bbox)
@@ -92,7 +106,7 @@ export default function App() {
     } finally {
       setLoading(false)
     }
-  }, [loc.lat, loc.lon, workload, acclimatized])
+  }, [loc.lat, loc.lon, workload, acclimatized, profile, requiredHours])
 
   useEffect(() => {
     void load()
@@ -183,7 +197,7 @@ export default function App() {
         <p className="text-sm font-semibold tracking-wide uppercase text-[var(--muted)]">ShadeCast</p>
         <h1 className="text-2xl font-black">Is it safe to work outside today?</h1>
         <p className="text-sm text-[var(--muted)] mt-1">
-          Compound heat + wildfire-smoke scheduling for outdoor crews.
+          Environmental load scheduling — heat, smoke, UV, and air quality for outdoor crews.
         </p>
       </header>
 
@@ -321,6 +335,20 @@ export default function App() {
             </select>
           </label>
         </div>
+        <label className="block text-sm font-semibold">
+          Who is this for?
+          <select
+            className="touch-target mt-1 w-full rounded-xl border border-black bg-white px-3 text-base"
+            value={profile}
+            onChange={(e) => setProfile(e.target.value as SensitivityProfile)}
+          >
+            {SENSITIVITY_PROFILES.map((p) => (
+              <option key={p.key} value={p.key}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+        </label>
         <label className="flex items-center gap-3 text-sm font-semibold">
           <input
             type="checkbox"
@@ -360,14 +388,40 @@ export default function App() {
               freshness={assess.data_freshness}
               servedFromCache={assess.served_from_cache}
             />
+            <ConfidenceBanner confidence={assess.data_confidence} />
+            <DiffStrip summary={assess.diff_summary} />
             <VerdictCard
               verdict={assess.current.verdict}
               hardStop={assess.schedule.hard_stop_window}
               heatIndex={assess.current.heat_index_f}
               smokePressure={assess.smoke.smoke_pressure}
+              loadScore={assess.environmental_load?.load_score}
+              drivers={assess.environmental_load?.drivers}
+              explainText={assess.explain_text}
+              ceilingReason={assess.ceiling_reason ?? assess.environmental_load?.ceiling_reason}
+              confidence={assess.data_confidence?.level}
+              unusable={assess.data_confidence?.level === 'UNUSABLE' || assess.current.verdict == null}
+            />
+            <ConcordanceBadge
+              concordance={assess.air?.concordance ?? assess.environmental_load?.concordance}
+              usAqi={assess.air?.us_aqi ?? assess.current.us_aqi}
+            />
+            {assess.days && assess.days.length > 0 && (
+              <FiveDayStrip
+                days={assess.days}
+                selectedDay={selectedDay}
+                onSelect={setSelectedDay}
+              />
+            )}
+            <ShiftPlanner
+              windows={assess.shift_windows ?? []}
+              requiredHours={requiredHours}
+              onRequiredHours={setRequiredHours}
             />
             <ScheduleStrip hourly={assess.hourly} />
             {!textMode && <HourlyChart hourly={assess.hourly} />}
+            {assess.uv && <UVPanel uv={assess.uv} />}
+            {assess.actions && assess.actions.length > 0 && <ActionCards actions={assess.actions} />}
             <BriefingCard brief={brief} loading={briefLoading} />
             <FireMap
               lat={assess.lat}
@@ -377,6 +431,12 @@ export default function App() {
               textMode={textMode}
             />
             <ClimatologyLine message={assess.climatology.message} note={assess.climatology.note} />
+            <IncidentLog
+              lat={assess.lat}
+              lon={assess.lon}
+              label={loc.label}
+              verdict={assess.current.verdict}
+            />
             <HowWeCalculate />
             <p className="text-xs text-[var(--muted)]">{assess.current.disclaimer}</p>
             <p className="text-xs text-[var(--muted)]">{assess.smoke.note}</p>
@@ -403,6 +463,13 @@ export default function App() {
             href="https://github.com/rahulvuta/ShadeCast/blob/main/docs/limitations.md"
           >
             docs/limitations.md
+          </a>
+          {' · '}
+          <a
+            className="underline"
+            href="https://github.com/rahulvuta/ShadeCast/blob/main/docs/validation.md"
+          >
+            Validation
           </a>
           {' · '}
           <a className="underline" href="?text=1">
