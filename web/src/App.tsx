@@ -15,6 +15,7 @@ import { StaleBanner } from './components/StaleBanner'
 import { UVPanel } from './components/UVPanel'
 import { VerdictCard } from './components/VerdictCard'
 import {
+  CORRUPT_DEMO,
   DEMO_LOCATIONS,
   SENSITIVITY_PROFILES,
   type AssessResponse,
@@ -40,6 +41,10 @@ function useTextMode(): boolean {
   return useMemo(() => new URLSearchParams(window.location.search).get('text') === '1', [])
 }
 
+function useCorruptDemo(): boolean {
+  return useMemo(() => new URLSearchParams(window.location.search).get('corrupt') === '1', [])
+}
+
 function formatGeocodeLabel(h: GeocodeHit): string {
   const parts = [h.name, h.admin1, h.country].filter(Boolean)
   return parts.join(', ')
@@ -47,6 +52,7 @@ function formatGeocodeLabel(h: GeocodeHit): string {
 
 export default function App() {
   const textMode = useTextMode()
+  const corruptDemo = useCorruptDemo()
   const [loc, setLoc] = useState<ActiveLocation>({
     lat: DEMO_LOCATIONS[1].lat,
     lon: DEMO_LOCATIONS[1].lon,
@@ -90,6 +96,7 @@ export default function App() {
         acclimatized,
         profile,
         requiredHours,
+        corrupt: corruptDemo,
       })
       setAssess(a)
       setSelectedDay(a.days?.[0]?.day ?? null)
@@ -106,7 +113,7 @@ export default function App() {
     } finally {
       setLoading(false)
     }
-  }, [loc.lat, loc.lon, workload, acclimatized, profile, requiredHours])
+  }, [loc.lat, loc.lon, workload, acclimatized, profile, requiredHours, corruptDemo])
 
   useEffect(() => {
     void load()
@@ -208,7 +215,7 @@ export default function App() {
         <div>
           <p className="text-sm font-semibold mb-2">Quick demos</p>
           <div className="flex flex-wrap gap-2">
-            {DEMO_LOCATIONS.map((d) => {
+            {[...DEMO_LOCATIONS, ...(corruptDemo ? [CORRUPT_DEMO] : [])].map((d) => {
               const active = Math.abs(loc.lat - d.lat) < 0.01 && Math.abs(loc.lon - d.lon) < 0.01
               return (
                 <button
@@ -361,6 +368,11 @@ export default function App() {
       </nav>
 
       <main id="main" className="space-y-4">
+        {!navigator.onLine && (
+          <aside role="status" className="rounded-xl border-2 border-amber-700 bg-amber-50 p-4 text-sm text-amber-950">
+            You appear offline. Showing the last cached assessment if available.
+          </aside>
+        )}
         {loading && (
           <div
             role="status"
@@ -475,6 +487,19 @@ export default function App() {
           <a className="underline" href="?text=1">
             Text-only mode
           </a>
+        </p>
+        <p>
+          Share this location:{' '}
+          <a
+            className="underline"
+            href={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(window.location.href)}`}
+            target="_blank"
+            rel="noreferrer"
+          >
+            QR code link
+          </a>
+          {' · '}
+          Integrity demo: add <code>?corrupt=1</code> to the URL
         </p>
         <p>Not medical advice. Screening tool for crew scheduling only.</p>
       </footer>

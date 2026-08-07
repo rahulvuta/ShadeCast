@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     featherless_base_url: str = "https://api.featherless.ai/v1"
 
     demo_mode: bool = False
+    demo_corrupt: bool = False  # DEMO_CORRUPT=1 enables hidden corrupt demo
     stale_after_minutes: int = 60
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
@@ -60,3 +61,12 @@ DEMO_LOCATIONS: list[dict] = [
     {"key": "hot_smoky", "label": "Inland Empire, CA", "lat": 34.05, "lon": -117.25},
     {"key": "benign", "label": "Seattle, WA", "lat": 47.61, "lon": -122.33},
 ]
+
+# Hidden 4th demo — only used when DEMO_CORRUPT=1 or /api/assess?corrupt=1.
+# Coordinates are deliberately extreme so they never collide with real demos.
+CORRUPT_DEMO_LOCATION: dict = {
+    "key": "corrupt",
+    "label": "Integrity demo (corrupt feed)",
+    "lat": -89.9,
+    "lon": 179.9,
+}

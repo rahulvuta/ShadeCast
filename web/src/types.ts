@@ -192,6 +192,14 @@ export const DEMO_LOCATIONS = [
   { key: 'benign', label: 'Seattle, WA (benign control)', lat: 47.61, lon: -122.33 },
 ] as const
 
+/** Hidden 4th demo — shown only when ?corrupt=1 */
+export const CORRUPT_DEMO = {
+  key: 'corrupt',
+  label: 'Integrity demo (corrupt feed)',
+  lat: -89.9,
+  lon: 179.9,
+} as const
+
 export const SENSITIVITY_PROFILES: Array<{ key: SensitivityProfile; label: string }> = [
   { key: 'general', label: 'General outdoor worker' },
   { key: 'asthma_respiratory', label: 'Asthma / respiratory' },
