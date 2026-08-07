@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from api.engine.compound import Verdict, combine
-from api.engine.heat import HeatBand
+from api.engine.heat import HeatBand, assess_heat
 
 
 def test_superadditive_exactly_when_intended():
@@ -15,3 +15,9 @@ def test_superadditive_exactly_when_intended():
 
     miss_heat = combine(HeatBand.EXTREME_CAUTION, 20.0, "moderate")
     assert not miss_heat.superadditive_applied
+
+
+def test_go_on_cool_clear_heavy_workload():
+    heat = assess_heat(70, 50, workload="heavy", acclimatized=False, full_sun=True)
+    result = combine(heat.effective_band, 0.0, "low")
+    assert result.verdict == Verdict.GO

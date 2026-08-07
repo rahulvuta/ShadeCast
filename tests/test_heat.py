@@ -61,6 +61,7 @@ def test_steadman_below_80():
 
 
 def test_banding_thresholds():
+    assert band_for_hi(70) == HeatBand.SAFE
     assert band_for_hi(85) == HeatBand.CAUTION
     assert band_for_hi(95) == HeatBand.EXTREME_CAUTION
     assert band_for_hi(110) == HeatBand.DANGER
@@ -70,7 +71,7 @@ def test_banding_thresholds():
 def test_workload_and_acclimatization_shift():
     base = HeatBand.EXTREME_CAUTION
     assert effective_band(base, workload="heavy", acclimatized=False) == HeatBand.DANGER
-    assert effective_band(base, workload="light", acclimatized=True) == HeatBand.CAUTION
+    assert effective_band(base, workload="light", acclimatized=True) == HeatBand.SAFE
     assert effective_band(HeatBand.EXTREME_DANGER, workload="heavy", acclimatized=False) == (
         HeatBand.EXTREME_DANGER
     )
