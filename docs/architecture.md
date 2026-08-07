@@ -1,34 +1,59 @@
-# Architecture
+# ShadeCast architecture (v2)
 
-## Deployables
+ShadeCast answers: **plan the next five days around every environmental stressor here, know exactly why, and know when the system does not trust its own inputs.**
 
-| Service | Role |
-|---|---|
-| `shadecast-api` | FastAPI — assess / fires / brief / healthz |
-| `shadecast-web` | Vite static site |
-| `shadecast-ingest` | Cron every 20 minutes — FIRMS + Open-Meteo + POWER upserts |
-| `shadecast-db` | Postgres |
+```text
+┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
+│ NASA FIRMS   │  │ Open-Meteo   │  │ Open-Meteo   │  │ NASA POWER   │  │ Geocoding    │
+│ fires / FRP  │  │ Forecast     │  │ Air Quality  │  │ climatology  │  │ (places)     │
+└──────┬───────┘  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘  └──────────────┘
+       │                 │                 │                 │
+       └────────────┬────┴────────┬────────┴────────┬────────┘
+                    ▼             ▼                 ▼
+              ┌──────────────────────────────────────────┐
+              │           Postgres cache / ingest         │
+              └────────────────────┬─────────────────────┘
+                                   ▼
+              ┌──────────────────────────────────────────┐
+              │     Data integrity layer (api/integrity)  │
+              │  range · completeness · cross-source ·    │
+              │  physical · staleness → data_confidence   │
+              └────────────────────┬─────────────────────┘
+                                   ▼
+              ┌──────────────────────────────────────────┐
+              │   Environmental load engine (api/engine)  │
+              │  heat · smoke · UV · air · wind · profile │
+              │  → one verdict + drivers + concordance    │
+              └────────────────────┬─────────────────────┘
+                                   ▼
+              ┌──────────────────────────────────────────┐
+              │  Explain + sourced actions + diff         │
+              │  (deterministic; LLM may rephrase only)   │
+              └────────────────────┬─────────────────────┘
+                                   ▼
+              ┌──────────────────────────────────────────┐
+              │  React UI — verdict, 5-day, UV, actions   │
+              └──────────────────────────────────────────┘
+```
 
-## Request path for `/api/assess`
+## Key packages
 
-1. Load cached FIRMS detections near the coordinate from Postgres (web path never hits FIRMS live).
-2. Prefer live Open-Meteo forecast; on failure, use `forecast_hours` cache.
-3. Run pure engine: heat → smoke → compound → schedule.
-4. Compare current Open-Meteo temp to POWER climatology baseline.
-5. Attach `data_freshness` + `sources[]`.
-6. Upsert full JSON into `assessment_cache` for offline / DEMO_MODE.
+| Path | Role |
+| --- | --- |
+| `api/clients/` | FIRMS, POWER, Open-Meteo forecast + air quality |
+| `api/integrity/` | Pre-engine validity / confidence |
+| `api/engine/` | Heat, smoke, UV, air, environmental load, schedule, explain |
+| `api/actions/` | Curated sourced action library + selection |
+| `api/services/assess.py` | Assembles the `/api/assess` response |
+| `validation/` | Offline backtests, concordance, sensitivity |
+| `web/src/` | Mobile-first React UI |
 
-## LLM path for `/api/brief`
+## Invariants
 
-1. Build or accept engine JSON.
-2. Cache lookup by `(rounded coords, hour, language, verdict)`.
-3. Call Featherless (OpenAI-compatible) with temp 0.2, hard max tokens, 6s timeout, one retry.
-4. Validate JSON with Pydantic; on any failure → deterministic `llm/fallback.py`.
-5. Log prompt/response to `llm_calls`.
+1. **One verdict.** UV / AQI / heat never compete as parallel traffic lights.
+2. **Deterministic risk math.** The LLM never computes or ranks risk.
+3. **Integrity before trust.** Findings are never silently swallowed.
+4. **LOW confidence never under-calls.** Escalation is one level more conservative.
+5. **MODEL_LEADS ≠ corruption.** High CAMS AQI with quiet FIRMS is signal.
 
-## Key design constraints
-
-- Never invent API response shapes — parsers built against `docs/api_samples/`.
-- Risk math is deterministic Python only.
-- Every external call has a cached fallback.
-- Attribution is mandatory on every API response.
+See also: [limitations.md](limitations.md), [validation.md](validation.md), [runbook.md](runbook.md).

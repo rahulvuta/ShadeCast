@@ -2,11 +2,13 @@
 
 # ShadeCast
 
-**Crew-level work/rest scheduler for compound heat and wildfire-smoke risk — usable anywhere on Earth via satellite data.**
+**Environmental-load work/rest scheduler for outdoor crews — heat, wildfire smoke, UV, and air quality in one verdict, with transparent drivers and data-confidence gates.**
 
-A supervisor opens ShadeCast at 6am and gets one answer: is it safe to work outside today, when should we stop, and what should we tell the crew.
+A supervisor opens ShadeCast and gets one answer: is it safe to work outside, when should we stop over the next five days, why, and when the system does not trust its inputs.
 
 **Live:** https://shadecast-web.onrender.com/  
+**Validation:** [docs/validation.md](docs/validation.md) (offline backtests, concordance, sensitivity)  
+**Architecture:** [docs/architecture.md](docs/architecture.md)  
 **Demo video:** *(add link before submitting)*
 
 ## The Problem
@@ -19,61 +21,68 @@ Outdoor crews face two hazards that existing tools treat separately:
 - British Columbia has piloted a [combined wildfire-smoke and extreme-heat action plan](https://www.vchri.ca/stories/2026/04/20/helping-people-breathe-easier-changing-climate) because [co-exposure poses greater risk than either hazard alone](https://www.bccdc.ca/resource-gallery/Documents/Guidelines%20and%20Forms/Guidelines%20and%20Manuals/Health-Environment/BCCDC_WildFire_FactSheet_HotWeather.pdf).
 - The [University of Minnesota Extension farm safety guide](https://extension.umn.edu/climate-resilience-resources-vegetable-growers-minnesota/heat-and-air-quality-safety-plan) instructs growers to check the **OSHA-NIOSH Heat Safety Tool** and **separately** check an air-quality forecast — the exact two-tool workflow ShadeCast collapses into one.
 
-Public-health authorities already validate the compound-risk premise. ShadeCast's contribution is **per-crew scheduling** with **global satellite coverage**.
+Public-health authorities already validate the compound-risk premise. ShadeCast's contribution is **per-crew environmental-load scheduling** with **global satellite coverage**, a **data-integrity gate**, and a **5-day shift planner**.
+
+## Validation snapshot
+
+Offline harness results (see [docs/validation.md](docs/validation.md)):
+
+| Scenario | Result |
+| --- | --- |
+| June 2023 Canadian smoke (NYC, AQI>400) | RESTRICT · MODEL_LEADS |
+| Phoenix July 2023 heat wave | RESTRICT |
+| Seattle benign control | GO |
+| Corrupted feed (RH=250 / PM=-5 / POWER -999) | UNUSABLE |
+| FIRMS↔CAMS Spearman (synthetic n=60) | 0.83 |
 
 ## Why not just use AirNow or the OSHA app?
 
-1. **Heat and smoke are split.** The OSHA heat app does not account for wildfire smoke. AirNow does not output a work/rest schedule. A supervisor still has to mentally combine two readings at 6am.
+1. **Stressors are split.** The OSHA heat app does not account for wildfire smoke or UV. AirNow does not output a work/rest schedule. A supervisor still has to mentally combine multiple readings.
 2. **Ground sensors are not global.** AirNow depends on a dense EPA sensor network that barely exists outside North America. NASA FIRMS and NASA POWER are global; Open-Meteo forecasts anywhere with coordinates.
-3. **No workload-aware schedule.** Neither tool outputs hour-by-hour work/rest minutes parameterized by workload (light / moderate / heavy) and acclimatization state.
+3. **No workload-aware multi-day schedule.** Neither tool outputs hour-by-hour work/rest minutes parameterized by workload, acclimatization, sensitivity profile, and a 5-day shift planner — or admits when its inputs are unusable.
 
 ## What it does
 
 ![Crew verdict card with hard-stop window](docs/screenshots/verdict_card.png)  
-*One GO / CAUTION / RESTRICT / STOP verdict with a hard-stop window.*
+*One GO / CAUTION / RESTRICT / STOP verdict with driver attribution, confidence, and a hard-stop window.*
 
 ![Hour-by-hour work/rest schedule strip](docs/screenshots/hourly_strip.png)  
-*Hour-by-hour work and rest minutes for the rest of the day.*
+*Hour-by-hour work and rest minutes, plus a 5-day outlook and shift planner.*
 
 ![Map of nearby FIRMS fire detections with wind direction](docs/screenshots/map_fires.png)  
-*Satellite fire detections and wind direction — smoke pressure is computed from upwind fires, not AQI.*
+*Satellite fire detections and wind direction — smoke pressure is computed from upwind fires, not AQI. Concordance compares FIRMS to CAMS.*
 
 ![Spanish crew briefing ready to copy](docs/screenshots/briefing_spanish.png)  
-*Copyable crew briefing in English, Spanish, or Vietnamese.*
+*Copyable crew briefing in English, Spanish, or Vietnamese, plus sourced action cards.*
 
 ## How it works
 
 ```text
-┌────────────┐   cron */20    ┌──────────────┐
-│ NASA FIRMS │───────────────▶│              │
-│ Open-Meteo │───────────────▶│   Postgres   │◀── FastAPI /api/assess
-│ NASA POWER │───────────────▶│   (cache)    │◀── React (Vite) UI
-└────────────┘                └──────────────┘
-                                     │
-                              ┌──────▼──────┐
-                              │ Risk engine │  pure Python (no LLM math)
-                              │ heat/smoke/ │
-                              │ compound/   │
-                              │ schedule    │
-                              └──────┬──────┘
-                                     │ structured JSON
-                              ┌──────▼──────┐
-                              │ Featherless │  rephrases only
-                              │ or fallback │
-                              │ templates   │
-                              └─────────────┘
+FIRMS + Open-Meteo Forecast + Air Quality + POWER
+        │
+        ▼
+ Postgres cache ──▶ Integrity layer (confidence)
+        │
+        ▼
+ Environmental load engine (heat/smoke/UV/air/wind/profile)
+        │
+        ▼
+ Explain + sourced actions + 5-day schedule ──▶ React UI
+        │
+        └── Featherless LLM rephrases briefings only (never risk math)
 ```
 
 | Data source | Role |
 |---|---|
-| **Open-Meteo Forecast** | Forward-looking hourly temperature, humidity, and wind — drives the schedule |
+| **Open-Meteo Forecast** | Forward-looking hourly weather + UV — drives the schedule |
+| **Open-Meteo Air Quality** | CAMS PM2.5 / US AQI (slow refresh; cross-check vs FIRMS) |
 | **NASA POWER** | Climatological baseline ("is today hotter than usual here?") — **not a forecast** |
 | **NASA FIRMS** | Active fire detections for satellite-derived smoke pressure |
 | **Open-Meteo Geocoding** | Place search for arbitrary coordinates |
 
 **Critical:** POWER is a reanalysis archive. Misusing it as a forecast is a common mistake. ShadeCast uses Open-Meteo for forward hours and POWER only for climatology comparison.
 
-The LLM **never** computes or ranks risk. It only rephrases deterministic engine JSON. See `api/engine/` and `api/llm/fallback.py`.
+The LLM **never** computes or ranks risk. It only rephrases deterministic engine JSON or selects IDs from a sourced action library. See `api/engine/`, `api/integrity/`, `api/actions/`, and `api/llm/fallback.py`.
 
 ## Accessibility
 
