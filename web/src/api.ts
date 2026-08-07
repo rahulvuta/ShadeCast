@@ -18,6 +18,7 @@ export function fetchAssess(opts: {
   acclimatized: boolean
   profile?: SensitivityProfile
   requiredHours?: number
+  corrupt?: boolean
 }): Promise<AssessResponse> {
   const q = new URLSearchParams({
     lat: String(opts.lat),
@@ -27,6 +28,7 @@ export function fetchAssess(opts: {
     profile: opts.profile ?? 'general',
     required_hours: String(opts.requiredHours ?? 4),
   })
+  if (opts.corrupt) q.set('corrupt', 'true')
   return getJson(`/api/assess?${q}`)
 }
 

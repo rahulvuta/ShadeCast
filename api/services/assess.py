@@ -13,7 +13,7 @@ from api.actions.select import select_actions
 from api.clients import air_quality as aq_client
 from api.clients import forecast as forecast_client
 from api.clients.firms import round_coord
-from api.config import DEMO_LOCATIONS, get_settings
+from api.config import CORRUPT_DEMO_LOCATION, DEMO_LOCATIONS, get_settings
 from api.engine.air import assess_air
 from api.engine.compound import Verdict
 from api.engine.environmental_load import assess_environmental_load
@@ -25,7 +25,7 @@ from api.engine.smoke import FireDetectionInput, assess_smoke
 from api.engine.uv import assess_uv
 from api.freshness import SOURCES, build_freshness
 from api.integrity.bundle import make_bundle
-from api.integrity.checks import run_all_checks
+from api.integrity.checks import HourlyInputs, IntegrityBundle, run_all_checks
 from api.integrity.confidence import aggregate
 from api.integrity.types import ConfidenceLevel
 from api.llm.integrity_narration import findings_summary, narrate_findings
@@ -54,6 +54,44 @@ from api.schemas import (
     UVDetail,
 )
 from api.services.diff import diff_assessments
+
+
+def _wants_corrupt(lat: float, lon: float, force_corrupt: bool) -> bool:
+    settings = get_settings()
+    if force_corrupt or settings.demo_corrupt:
+        return True
+    return (
+        abs(lat - CORRUPT_DEMO_LOCATION["lat"]) < 0.05
+        and abs(lon - CORRUPT_DEMO_LOCATION["lon"]) < 0.05
+    )
+
+
+def _corrupted_findings() -> list:
+    """Synthetic integrity findings matching the Phase 5 corrupted-feed fixture."""
+    hours = [
+        HourlyInputs(
+            temperature_c=32.0,
+            relative_humidity=250.0,
+            wind_speed_kmh=10.0,
+            wind_gusts_kmh=5.0,
+            uv_index=7.0,
+            uv_index_clear_sky=5.0,
+            heat_index_f=90.0,
+            temp_f=95.0,
+            pm2_5=-5.0,
+            us_aqi=50.0,
+        )
+    ] * 24
+    bundle = IntegrityBundle(
+        hours=hours,
+        climatology_temp_c=-999.0,
+        firms_fetched_at=None,
+        forecast_fetched_at=None,
+        air_quality_fetched_at=None,
+        climatology_fetched_at=None,
+        horizon_hours=24,
+    )
+    return run_all_checks(bundle)
 
 logger = logging.getLogger(__name__)
 
@@ -231,6 +269,7 @@ def build_assessment(
     *,
     sensitivity_profile: SensitivityProfile = "general",
     required_hours: float = 4.0,
+    force_corrupt: bool = False,
     allow_network: bool = True,
 ) -> AssessResponse:
     settings = get_settings()
@@ -373,6 +412,10 @@ def build_assessment(
         now=now_utc,
     )
     findings = run_all_checks(integrity_bundle)
+    if _wants_corrupt(lat, lon, force_corrupt):
+        # Demo instrumentation: replace with the known corrupted-feed fixture so
+        # the UNUSABLE integrity path is demoable without waiting for a real outage.
+        findings = _corrupted_findings()
     conf_result = aggregate(findings)
     try:
         conf_result.narration = narrate_findings(conf_result)

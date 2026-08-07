@@ -26,6 +26,7 @@ def assess(
         pattern="^(general|asthma_respiratory|cardiovascular|pregnant|youth_athlete|over_65)$",
     ),
     required_hours: float = Query(4.0, ge=1.0, le=12.0),
+    corrupt: bool = Query(False, description="Inject a corrupted feed for integrity demos"),
     db: Session = Depends(get_db),
 ) -> AssessResponse:
     try:
@@ -37,6 +38,7 @@ def assess(
             acclimatized=acclimatized,
             sensitivity_profile=profile,  # type: ignore[arg-type]
             required_hours=required_hours,
+            force_corrupt=corrupt,
             allow_network=True,
         )
     except Exception as exc:  # noqa: BLE001
@@ -50,6 +52,7 @@ def assess(
                 acclimatized=acclimatized,
                 sensitivity_profile=profile,  # type: ignore[arg-type]
                 required_hours=required_hours,
+                force_corrupt=corrupt,
                 allow_network=False,
             )
         except Exception as exc2:  # noqa: BLE001
