@@ -77,6 +77,45 @@ class ForecastHour(Base):
     relative_humidity: Mapped[float | None] = mapped_column(Float, nullable=True)
     wind_speed_kmh: Mapped[float | None] = mapped_column(Float, nullable=True)
     wind_direction_deg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    wind_gusts_kmh: Mapped[float | None] = mapped_column(Float, nullable=True)
+    precipitation_probability: Mapped[float | None] = mapped_column(Float, nullable=True)
+    cloud_cover: Mapped[float | None] = mapped_column(Float, nullable=True)
+    apparent_temperature_c: Mapped[float | None] = mapped_column(Float, nullable=True)
+    uv_index: Mapped[float | None] = mapped_column(Float, nullable=True)
+    uv_index_clear_sky: Mapped[float | None] = mapped_column(Float, nullable=True)
+    timezone: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class AirQualityHour(Base):
+    """Open-Meteo Air Quality hourly (CAMS) — PM2.5, US AQI, UV cross-check."""
+
+    __tablename__ = "air_quality_hours"
+    __table_args__ = (
+        UniqueConstraint("lat_round", "lon_round", "valid_at", name="uq_air_quality_hour"),
+        Index("ix_air_quality_loc_time", "lat_round", "lon_round", "valid_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    latitude: Mapped[float] = mapped_column(Float, nullable=False)
+    longitude: Mapped[float] = mapped_column(Float, nullable=False)
+    lat_round: Mapped[float] = mapped_column(Float, nullable=False)
+    lon_round: Mapped[float] = mapped_column(Float, nullable=False)
+    valid_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    pm2_5: Mapped[float | None] = mapped_column(Float, nullable=True)
+    pm10: Mapped[float | None] = mapped_column(Float, nullable=True)
+    us_aqi: Mapped[float | None] = mapped_column(Float, nullable=True)
+    european_aqi: Mapped[float | None] = mapped_column(Float, nullable=True)
+    dominant_pollutant: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    uv_index: Mapped[float | None] = mapped_column(Float, nullable=True)
+    uv_index_clear_sky: Mapped[float | None] = mapped_column(Float, nullable=True)
+    dust: Mapped[float | None] = mapped_column(Float, nullable=True)
+    aerosol_optical_depth: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ozone: Mapped[float | None] = mapped_column(Float, nullable=True)
+    nitrogen_dioxide: Mapped[float | None] = mapped_column(Float, nullable=True)
+    carbon_monoxide: Mapped[float | None] = mapped_column(Float, nullable=True)
     timezone: Mapped[str | None] = mapped_column(String(64), nullable=True)
     fetched_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -133,6 +172,7 @@ class IngestRun(Base):
     fires_upserted: Mapped[int] = mapped_column(Integer, default=0)
     forecast_upserted: Mapped[int] = mapped_column(Integer, default=0)
     climatology_upserted: Mapped[int] = mapped_column(Integer, default=0)
+    air_quality_upserted: Mapped[int] = mapped_column(Integer, default=0)
     ok: Mapped[bool] = mapped_column(Boolean, default=True)
     message: Mapped[str | None] = mapped_column(Text, nullable=True)
     firms_quota_remaining: Mapped[int | None] = mapped_column(Integer, nullable=True)
