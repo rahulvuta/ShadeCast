@@ -61,17 +61,78 @@ class CurrentConditions(BaseModel):
     effective_heat_band: str
     wind_speed_kmh: float | None
     wind_direction_deg: float | None
+    wind_gusts_kmh: float | None = None
+    uv_index: float | None = None
+    us_aqi: float | None = None
+    pm2_5: float | None = None
     verdict: str | None  # None when data_confidence is UNUSABLE
     disclaimer: str
+
+
+class DriverOut(BaseModel):
+    name: str
+    contribution: float
+    detail: str
+
+
+class UVDetail(BaseModel):
+    daily_max: float
+    band: str
+    clear_sky_max: float | None = None
+    peak_hour: int | None = None
+    minutes_to_burn: float | None = None
+    skin_type: int = 3
+    note: str = ""
+
+
+class AirDetail(BaseModel):
+    us_aqi: float | None
+    pm2_5: float | None
+    aqi_band: str | None
+    concordance: str
+    dominant_pollutant: str | None = None
+    note: str = ""
+
+
+class EnvironmentalLoadOut(BaseModel):
+    load_score: float
+    drivers: list[DriverOut]
+    concordance: str
+    interactions: list[str]
+    ceiling_reason: str
+    reason: str
+    exposure_minutes_cap: int | None = None
+    profile: str = "general"
+
+
+class DaySummaryOut(BaseModel):
+    day: str  # ISO date
+    hard_stop_window: str | None
+    best_work_window: str | None
+    total_safe_hours: float
+    worst_verdict: str
+    total_work_minutes: int
+
+
+class ShiftWindowOut(BaseModel):
+    day: str
+    start_hour: int
+    end_hour: int
+    required_hours: float
+    mean_rank: float
+    label: str
 
 
 class HourlyAssessment(BaseModel):
     hour: int
     valid_at: datetime | None = None
+    day: str | None = None
     temperature_c: float | None = None
     heat_index_f: float | None = None
     heat_band: str
     smoke_pressure: float
+    uv_index: float | None = None
+    us_aqi: float | None = None
     verdict: str
     work_minutes: int
     rest_minutes: int
@@ -101,10 +162,16 @@ class AssessResponse(BaseModel):
     workload: str
     acclimatized: bool
     location_label: str | None = None
+    sensitivity_profile: str = "general"
     current: CurrentConditions
     hourly: list[HourlyAssessment]
     schedule: ScheduleSummaryOut
+    days: list[DaySummaryOut] = Field(default_factory=list)
+    shift_windows: list[ShiftWindowOut] = Field(default_factory=list)
     smoke: SmokeDetail
+    uv: UVDetail | None = None
+    air: AirDetail | None = None
+    environmental_load: EnvironmentalLoadOut | None = None
     climatology: ClimatologyDelta
     data_freshness: DataFreshness
     data_confidence: DataConfidence | None = None

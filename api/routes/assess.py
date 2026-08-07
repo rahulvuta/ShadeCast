@@ -21,6 +21,11 @@ def assess(
     lon: float = Query(..., ge=-180, le=180),
     workload: str = Query("moderate", pattern="^(light|moderate|heavy)$"),
     acclimatized: bool = False,
+    profile: str = Query(
+        "general",
+        pattern="^(general|asthma_respiratory|cardiovascular|pregnant|youth_athlete|over_65)$",
+    ),
+    required_hours: float = Query(4.0, ge=1.0, le=12.0),
     db: Session = Depends(get_db),
 ) -> AssessResponse:
     try:
@@ -30,6 +35,8 @@ def assess(
             lon,
             workload=workload,  # type: ignore[arg-type]
             acclimatized=acclimatized,
+            sensitivity_profile=profile,  # type: ignore[arg-type]
+            required_hours=required_hours,
             allow_network=True,
         )
     except Exception as exc:  # noqa: BLE001
@@ -41,6 +48,8 @@ def assess(
                 lon,
                 workload=workload,  # type: ignore[arg-type]
                 acclimatized=acclimatized,
+                sensitivity_profile=profile,  # type: ignore[arg-type]
+                required_hours=required_hours,
                 allow_network=False,
             )
         except Exception as exc2:  # noqa: BLE001
