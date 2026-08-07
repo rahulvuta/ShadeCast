@@ -1,0 +1,121 @@
+# Curated, sourced action library for ShadeCast recommendations.
+# Every entry MUST have a real source_url. The LLM may only select IDs from this
+# list; hallucinated IDs are rejected and replaced with deterministic top-N.
+
+actions:
+  - id: heat_water_rest_shade
+    trigger: heat
+    audience: [general, youth_athlete, pregnant, over_65, cardiovascular]
+    priority: 10
+    title: Water, rest, shade on a fixed cycle
+    body: Drink cool water every 15–20 minutes, take rest breaks, and recover in shade as heat rises.
+    source_url: https://www.osha.gov/heat-exposure/water-rest-shade
+    source_name: OSHA Water. Rest. Shade.
+
+  - id: heat_slow_pace
+    trigger: heat
+    audience: [general, youth_athlete, over_65]
+    priority: 20
+    title: Slow the work pace
+    body: Reduce manual handling speed and schedule heavier tasks for cooler morning hours.
+    source_url: https://www.osha.gov/heat-exposure/
+    source_name: OSHA Heat Exposure
+
+  - id: heat_emergency_cool
+    trigger: heat_emergency
+    audience: [general, youth_athlete, pregnant, over_65, cardiovascular, asthma_respiratory]
+    priority: 5
+    title: Cool immediately and call for help
+    body: If someone shows heat-stroke signs, call 911, move them to shade/cool area, and cool with water or ice while waiting.
+    source_url: https://www.osha.gov/sites/default/files/publications/OSHA3743.pdf
+    source_name: OSHA Protecting Workers from the Effects of Heat
+
+  - id: heat_watch_symptoms
+    trigger: heat
+    audience: [general, over_65, pregnant, cardiovascular]
+    priority: 30
+    title: Watch for heat-illness symptoms
+    body: Stop work and cool down at the first signs of dizziness, nausea, confusion, or cessation of sweating.
+    source_url: https://www.cdc.gov/niosh/topics/heatstress/
+    source_name: CDC/NIOSH Heat Stress
+
+  - id: smoke_reduce_exertion
+    trigger: smoke
+    audience: [general, asthma_respiratory, cardiovascular, over_65, youth_athlete]
+    priority: 15
+    title: Cut heavy outdoor exertion in smoke
+    body: Reduce strenuous outdoor work when smoke pressure or AQI is elevated; move essential tasks indoors if possible.
+    source_url: https://www.cdc.gov/wildfires/risk-factors/index.html
+    source_name: CDC Wildfire Smoke
+
+  - id: smoke_n95_voluntary
+    trigger: smoke
+    audience: [general, asthma_respiratory, over_65]
+    priority: 25
+    title: Offer N95 respirators when AQI is high
+    body: When wildfire smoke drives unhealthy AQI, provide NIOSH-approved particulate respirators for voluntary use and train on fit.
+    source_url: https://www.epa.gov/air-research/wildland-fire-research-health-effects-research
+    source_name: EPA Wildland Fire Health Effects
+
+  - id: aqi_sensitive_limit
+    trigger: smoke
+    audience: [asthma_respiratory, cardiovascular, over_65, pregnant]
+    priority: 12
+    title: Limit outdoor time for sensitive groups
+    body: At AQI 101–150 (Unhealthy for Sensitive Groups), people with lung or heart disease, older adults, and children should reduce prolonged outdoor exertion.
+    source_url: https://www.airnow.gov/aqi/aqi-basics/
+    source_name: EPA AirNow AQI Basics
+
+  - id: uv_spf30
+    trigger: high_uv
+    audience: [general, youth_athlete, pregnant]
+    priority: 18
+    title: Apply SPF 30+ sunscreen
+    body: Use broad-spectrum SPF 30+ 15 minutes before going out; reapply every 2 hours and after heavy sweating.
+    source_url: https://www.who.int/news-room/questions-and-answers/item/radiation-the-ultraviolet-(uv)-index
+    source_name: WHO UV Index
+
+  - id: uv_shade_midday
+    trigger: high_uv
+    audience: [general, youth_athlete]
+    priority: 22
+    title: Seek shade 10am–4pm
+    body: Limit unprotected skin exposure during peak UV hours; use shade, long sleeves, and a wide-brim hat.
+    source_url: https://www.who.int/news-room/questions-and-answers/item/radiation-the-ultraviolet-(uv)-index
+    source_name: WHO UV Index
+
+  - id: wind_secure_elevated
+    trigger: high_wind
+    audience: [general]
+    priority: 8
+    title: Pause elevated or high-exposure work in strong gusts
+    body: When gusts exceed about 40 km/h, stop elevated work and secure loose materials until winds ease.
+    source_url: https://www.osha.gov/fall-protection
+    source_name: OSHA Fall Protection
+
+  - id: youth_acclimatize
+    trigger: youth
+    audience: [youth_athlete]
+    priority: 16
+    title: Follow youth heat-acclimatization steps
+    body: Progress outdoor training intensity over 7–14 days; never skip rest/hydration rules for young athletes.
+    source_url: https://www.nata.org/sites/default/files/heat-acclimatization-guidelines.pdf
+    source_name: NATA Heat Acclimatization Guidelines
+
+  - id: over65_extra_breaks
+    trigger: sensitive
+    audience: [over_65]
+    priority: 14
+    title: Extra cooling breaks for older adults
+    body: Adults 65+ should take more frequent cooling breaks and avoid peak afternoon heat whenever possible.
+    source_url: https://www.cdc.gov/extreme-heat/risk-factors/extreme-heat-and-older-adults.html
+    source_name: CDC Extreme Heat and Older Adults
+
+  - id: pregnant_heat_caution
+    trigger: sensitive
+    audience: [pregnant]
+    priority: 14
+    title: Extra heat caution in pregnancy
+    body: Pregnant workers should avoid prolonged heat exposure, hydrate early, and move to a cool area at the first symptom of overheating.
+    source_url: https://www.acog.org/womens-health/faqs/extreme-heat
+    source_name: ACOG Extreme Heat
