@@ -1,4 +1,4 @@
-import type { AssessResponse, BriefResponse, FirePoint, Lang, Workload } from './types'
+import type { AssessResponse, BriefResponse, FirePoint, Lang, SensitivityProfile, Workload } from './types'
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? ''
 
@@ -16,12 +16,16 @@ export function fetchAssess(opts: {
   lon: number
   workload: Workload
   acclimatized: boolean
+  profile?: SensitivityProfile
+  requiredHours?: number
 }): Promise<AssessResponse> {
   const q = new URLSearchParams({
     lat: String(opts.lat),
     lon: String(opts.lon),
     workload: opts.workload,
     acclimatized: String(opts.acclimatized),
+    profile: opts.profile ?? 'general',
+    required_hours: String(opts.requiredHours ?? 4),
   })
   return getJson(`/api/assess?${q}`)
 }
