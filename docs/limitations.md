@@ -41,3 +41,19 @@ When live feeds are slow or down, the API serves the last good Postgres row and 
 Open-Meteo's Air Quality API is free for **non-commercial** use (10,000 calls/day, no uptime guarantee). ShadeCast caches hourly responses in Postgres and pulls via the cron ingest job so call volume stays far under the free-tier limit. Do not treat this feed as a paid SLA.
 
 The underlying CAMS models update roughly every **24 hours** at ~45 km (global) / ~11 km (Europe). That slow refresh is why NASA FIRMS remains essential for near-real-time wildfire smoke — a new ignition can appear in FIRMS hours before CAMS reflects it. `us_aqi` and `european_aqi` are different scales and must never be mixed; ShadeCast defaults to `us_aqi`.
+
+## 10. UV minutes-to-burn is educational, not clinical
+
+Minutes-to-burn uses representative Fitzpatrick Minimal Erythemal Dose (MED) values and the WHO UV Index irradiance conversion. Default skin type is **III** and is shown in the UI. Real burn risk varies with altitude, reflection, photosensitizing medication, and application of sunscreen. This is **not** a phototherapy dosing tool.
+
+## 11. Sensitivity profiles are threshold shifts, not diagnoses
+
+Profiles (`asthma_respiratory`, `cardiovascular`, `pregnant`, `youth_athlete`, `over_65`) shift heat and/or AQI bands using published public-health guidance (EPA AirNow sensitive groups, ACOG extreme heat, NATA youth heat-acclimatization, AHA/CDC older-adult heat guidance). They do **not** diagnose individuals or replace medical advice.
+
+## 12. Five-day horizon is bounded by air quality
+
+The multi-day schedule and shift planner are capped at **5 days** because the Open-Meteo Air Quality (CAMS) forecast is a 5-day product. Heat-only Open-Meteo forecast can extend further, but ShadeCast keeps the shared horizon honest.
+
+## 13. Integrity layer reduces — does not eliminate — input risk
+
+The data integrity layer catches range errors, cross-source disagreement, physical inconsistencies, and staleness before the engine trusts a bundle. It **reduces** the chance of confidently reporting garbage; it does **not** eliminate model error, sensor gaps, or FIRMS latency. LOW confidence escalates the verdict one level more conservative; UNUSABLE refuses a verdict and falls back to last-good cache.
