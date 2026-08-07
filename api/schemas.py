@@ -25,6 +25,25 @@ class DataFreshness(BaseModel):
     any_stale: bool
 
 
+class IntegrityFindingOut(BaseModel):
+    check_id: str
+    severity: str
+    message: str
+    field: str
+    observed: Any = None
+    expected_range: str
+
+
+class DataConfidence(BaseModel):
+    level: Literal["HIGH", "MODERATE", "LOW", "UNUSABLE"]
+    score: int = Field(ge=0, le=100)
+    findings: list[IntegrityFindingOut] = Field(default_factory=list)
+    sources_degraded: list[str] = Field(default_factory=list)
+    narration: str | None = None
+    caveat: str | None = None  # banner text for MODERATE/LOW
+    verdict_escalated: bool = False
+
+
 class SmokeDetail(BaseModel):
     smoke_pressure: float
     label: str
@@ -42,7 +61,7 @@ class CurrentConditions(BaseModel):
     effective_heat_band: str
     wind_speed_kmh: float | None
     wind_direction_deg: float | None
-    verdict: str
+    verdict: str | None  # None when data_confidence is UNUSABLE
     disclaimer: str
 
 
@@ -88,9 +107,11 @@ class AssessResponse(BaseModel):
     smoke: SmokeDetail
     climatology: ClimatologyDelta
     data_freshness: DataFreshness
+    data_confidence: DataConfidence | None = None
     sources: list[SourceAttribution]
     served_from_cache: bool = False
     demo_mode: bool = False
+    last_good_assessment_at: datetime | None = None
 
 
 class FirePoint(BaseModel):

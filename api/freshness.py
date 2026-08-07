@@ -23,6 +23,11 @@ SOURCES: list[SourceAttribution] = [
         url="https://open-meteo.com/",
         role="Forward-looking hourly forecast (drives schedule)",
     ),
+    SourceAttribution(
+        name="Open-Meteo Air Quality",
+        url="https://open-meteo.com/en/docs/air-quality-api",
+        role="CAMS PM2.5 / US AQI (air-quality term; slow refresh)",
+    ),
 ]
 
 

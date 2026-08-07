@@ -2,29 +2,41 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from datetime import datetime, timezone
-from typing import Literal
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
+from api.clients import air_quality as aq_client
 from api.clients import forecast as forecast_client
 from api.clients.firms import round_coord
 from api.config import DEMO_LOCATIONS, get_settings
-from api.engine.compound import combine
+from api.engine.compound import Verdict, combine
 from api.engine.heat import Workload, assess_heat, celsius_to_fahrenheit
 from api.engine.schedule import build_schedule
 from api.engine.smoke import FireDetectionInput, assess_smoke
 from api.freshness import SOURCES, build_freshness
-from api.models import AssessmentCache, ClimatologyPoint, FireDetection, ForecastHour
+from api.integrity.bundle import make_bundle
+from api.integrity.checks import run_all_checks
+from api.integrity.confidence import aggregate, escalate_verdict
+from api.integrity.types import ConfidenceLevel
+from api.llm.integrity_narration import findings_summary, narrate_findings
+from api.models import (
+    AirQualityHour,
+    AssessmentCache,
+    ClimatologyPoint,
+    FireDetection,
+    ForecastHour,
+)
 from api.schemas import (
     AssessResponse,
     ClimatologyDelta,
     CurrentConditions,
+    DataConfidence,
     HourlyAssessment,
+    IntegrityFindingOut,
     ScheduleSummaryOut,
     SmokeDetail,
 )
@@ -110,7 +122,7 @@ def _save_assessment_cache(
 
 def _load_assessment_cache(
     session: Session, lat: float, lon: float, workload: str, acclimatized: bool
-) -> AssessResponse | None:
+) -> tuple[AssessResponse | None, datetime | None]:
     row = session.scalars(
         select(AssessmentCache).where(
             AssessmentCache.lat_round == round_coord(lat),
@@ -120,10 +132,81 @@ def _load_assessment_cache(
         )
     ).first()
     if not row:
-        return None
+        return None, None
     data = AssessResponse.model_validate_json(row.payload_json)
     data.served_from_cache = True
-    return data
+    return data, row.fetched_at
+
+
+def _aq_rows_from_db(
+    session: Session, lat: float, lon: float
+) -> tuple[list[aq_client.AirQualityRow], datetime | None]:
+    lat_r, lon_r = round_coord(lat), round_coord(lon)
+    db_rows = session.scalars(
+        select(AirQualityHour)
+        .where(
+            AirQualityHour.lat_round == lat_r,
+            AirQualityHour.lon_round == lon_r,
+        )
+        .order_by(AirQualityHour.valid_at)
+    ).all()
+    fetched = max((r.fetched_at for r in db_rows), default=None)
+    rows = [
+        aq_client.AirQualityRow(
+            valid_at=r.valid_at,
+            pm2_5=r.pm2_5,
+            pm10=r.pm10,
+            us_aqi=r.us_aqi,
+            european_aqi=r.european_aqi,
+            dominant_pollutant=r.dominant_pollutant,
+            uv_index=r.uv_index,
+            uv_index_clear_sky=r.uv_index_clear_sky,
+            dust=r.dust,
+            aerosol_optical_depth=r.aerosol_optical_depth,
+            ozone=r.ozone,
+            nitrogen_dioxide=r.nitrogen_dioxide,
+            carbon_monoxide=r.carbon_monoxide,
+            timezone=r.timezone or "UTC",
+        )
+        for r in db_rows
+    ]
+    return rows, fetched
+
+
+def _confidence_out(result, *, verdict_escalated: bool = False) -> DataConfidence:
+    level = result.level.value
+    caveat = None
+    if level == "MODERATE":
+        caveat = findings_summary(result.findings) or "Some input checks raised warnings."
+    elif level == "LOW":
+        caveat = (
+            "Data confidence is LOW — verdict escalated one level more conservative. "
+            + (findings_summary(result.findings) or "")
+        ).strip()
+    elif level == "UNUSABLE":
+        caveat = (
+            "Data confidence is UNUSABLE — no verdict. "
+            + (findings_summary(result.findings) or "Critical input failures.")
+        ).strip()
+    return DataConfidence(
+        level=level,
+        score=result.score,
+        findings=[
+            IntegrityFindingOut(
+                check_id=f.check_id,
+                severity=f.severity.value,
+                message=f.message,
+                field=f.field,
+                observed=f.observed,
+                expected_range=f.expected_range,
+            )
+            for f in result.findings
+        ],
+        sources_degraded=result.sources_degraded,
+        narration=result.narration,
+        caveat=caveat,
+        verdict_escalated=verdict_escalated,
+    )
 
 
 def build_assessment(
@@ -137,7 +220,7 @@ def build_assessment(
 ) -> AssessResponse:
     settings = get_settings()
     if settings.demo_mode:
-        cached = _load_assessment_cache(session, lat, lon, workload, acclimatized)
+        cached, _cached_at = _load_assessment_cache(session, lat, lon, workload, acclimatized)
         if cached:
             cached.demo_mode = True
             return cached
@@ -192,6 +275,12 @@ def build_assessment(
                 relative_humidity=r.relative_humidity,
                 wind_speed_kmh=r.wind_speed_kmh,
                 wind_direction_deg=r.wind_direction_deg,
+                wind_gusts_kmh=r.wind_gusts_kmh,
+                precipitation_probability=r.precipitation_probability,
+                cloud_cover=r.cloud_cover,
+                apparent_temperature_c=r.apparent_temperature_c,
+                uv_index=r.uv_index,
+                uv_index_clear_sky=r.uv_index_clear_sky,
                 timezone=r.timezone or "UTC",
             )
             for r in db_rows
@@ -199,10 +288,23 @@ def build_assessment(
 
     if not forecast_rows:
         # Last resort: serve full cached assessment if any
-        cached = _load_assessment_cache(session, lat, lon, workload, acclimatized)
+        cached, _ = _load_assessment_cache(session, lat, lon, workload, acclimatized)
         if cached:
             return cached
         raise RuntimeError("No forecast data available (live and cache empty)")
+
+    # Air quality (DB first; live fetch is handled by ensure_location_data / ingest)
+    aq_rows, aq_fetched = _aq_rows_from_db(session, lat, lon)
+    if allow_network and not settings.demo_mode and not aq_rows:
+        try:
+            aq_rows = aq_client.fetch_air_quality(lat, lon)
+            aq_fetched = datetime.now(timezone.utc)
+            from ingest.job import upsert_air_quality
+
+            upsert_air_quality(session, lat, lon, aq_rows)
+            session.commit()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Live air quality failed: %s", exc)
 
     # Use today's hours only for schedule (first 24 of the series matching local date)
     today = forecast_rows[0].valid_at.date()
@@ -226,6 +328,40 @@ def build_assessment(
         wind_speed_kmh=current_row.wind_speed_kmh,
     )
 
+    # Climatology baseline (needed for integrity + response)
+    baseline = _climatology_baseline(session, lat, lon, current_row.valid_at)
+    clim_fetched_row = session.scalars(
+        select(ClimatologyPoint)
+        .where(
+            ClimatologyPoint.lat_round == round_coord(lat),
+            ClimatologyPoint.lon_round == round_coord(lon),
+        )
+        .order_by(ClimatologyPoint.fetched_at.desc())
+        .limit(1)
+    ).first()
+    clim_fetched = clim_fetched_row.fetched_at if clim_fetched_row else None
+
+    # --- Integrity layer (before engine verdicts are trusted) ----------------
+    integrity_bundle = make_bundle(
+        forecast_rows=today_rows,
+        aq_rows=aq_rows,
+        climatology_temp_c=baseline,
+        firms_fetched_at=fire_fetched,
+        forecast_fetched_at=forecast_fetched,
+        air_quality_fetched_at=aq_fetched,
+        climatology_fetched_at=clim_fetched,
+        horizon_hours=24,
+        now=now_utc,
+    )
+    findings = run_all_checks(integrity_bundle)
+    conf_result = aggregate(findings)
+    try:
+        conf_result.narration = narrate_findings(conf_result)
+    except Exception as exc:  # noqa: BLE001
+        logger.info("Integrity narration skipped: %s", exc)
+
+    prior_cached, prior_at = _load_assessment_cache(session, lat, lon, workload, acclimatized)
+
     hourly_out: list[HourlyAssessment] = []
     verdicts_for_sched = []
     for r in today_rows:
@@ -248,9 +384,15 @@ def build_assessment(
             wind_speed_kmh=r.wind_speed_kmh,
         )
         compound = combine(heat.effective_band, hour_smoke.smoke_pressure, hour_smoke.label)
+        raw_verdict = compound.verdict.value
+        adj = escalate_verdict(raw_verdict, conf_result.level)
+        if adj is None:
+            # UNUSABLE: still build schedule scaffolding with STOP as placeholder
+            # but current.verdict will be cleared below.
+            adj = "STOP"
+
         hour = r.valid_at.hour
-        verdicts_for_sched.append((hour, compound.verdict))
-        # Placeholder work/rest — filled after schedule build
+        verdicts_for_sched.append((hour, Verdict(adj)))
         hourly_out.append(
             HourlyAssessment(
                 hour=hour,
@@ -259,7 +401,7 @@ def build_assessment(
                 heat_index_f=heat.heat_index_f,
                 heat_band=heat.effective_band.value,
                 smoke_pressure=hour_smoke.smoke_pressure,
-                verdict=compound.verdict.value,
+                verdict=adj,
                 work_minutes=0,
                 rest_minutes=0,
                 note="",
@@ -287,8 +429,14 @@ def build_assessment(
         full_sun=True,
     )
     cur_compound = combine(cur_heat.effective_band, smoke.smoke_pressure, smoke.label)
+    raw_current = cur_compound.verdict.value
+    adj_current = escalate_verdict(raw_current, conf_result.level)
+    verdict_escalated = (
+        conf_result.level == ConfidenceLevel.LOW
+        and adj_current is not None
+        and adj_current != raw_current
+    )
 
-    baseline = _climatology_baseline(session, lat, lon, current_row.valid_at)
     delta = None
     if baseline is not None and current_row.temperature_c is not None:
         delta = round(current_row.temperature_c - baseline, 1)
@@ -305,24 +453,16 @@ def build_assessment(
             f"for this date/hour at this location."
         )
 
-    clim_fetched_row = session.scalars(
-        select(ClimatologyPoint)
-        .where(
-            ClimatologyPoint.lat_round == round_coord(lat),
-            ClimatologyPoint.lon_round == round_coord(lon),
-        )
-        .order_by(ClimatologyPoint.fetched_at.desc())
-        .limit(1)
-    ).first()
-    clim_fetched = clim_fetched_row.fetched_at if clim_fetched_row else None
-
     freshness = build_freshness(
         [
             ("NASA FIRMS", fire_fetched),
             ("Open-Meteo", forecast_fetched),
+            ("Open-Meteo Air Quality", aq_fetched),
             ("NASA POWER", clim_fetched),
         ]
     )
+
+    conf_out = _confidence_out(conf_result, verdict_escalated=verdict_escalated)
 
     resp = AssessResponse(
         lat=lat,
@@ -339,7 +479,7 @@ def build_assessment(
             effective_heat_band=cur_heat.effective_band.value,
             wind_speed_kmh=current_row.wind_speed_kmh,
             wind_direction_deg=current_row.wind_direction_deg,
-            verdict=cur_compound.verdict.value,
+            verdict=adj_current,  # None when UNUSABLE
             disclaimer=cur_heat.disclaimer,
         ),
         hourly=hourly_out,
@@ -362,13 +502,25 @@ def build_assessment(
             message=clim_msg,
         ),
         data_freshness=freshness,
+        data_confidence=conf_out,
         sources=SOURCES,
         served_from_cache=not used_live,
         demo_mode=settings.demo_mode,
+        last_good_assessment_at=prior_at if conf_result.level == ConfidenceLevel.UNUSABLE else None,
     )
 
+    # On UNUSABLE, prefer returning the last-good cached assessment annotated
+    # with the integrity result (so the UI can show both).
+    if conf_result.level == ConfidenceLevel.UNUSABLE and prior_cached is not None:
+        prior_cached.data_confidence = conf_out
+        prior_cached.last_good_assessment_at = prior_at
+        prior_cached.served_from_cache = True
+        return prior_cached
+
     try:
-        _save_assessment_cache(session, lat, lon, workload, acclimatized, resp)
+        # Do not overwrite last-good cache with an UNUSABLE payload
+        if conf_result.level != ConfidenceLevel.UNUSABLE:
+            _save_assessment_cache(session, lat, lon, workload, acclimatized, resp)
     except Exception as exc:  # noqa: BLE001
         logger.warning("Failed to cache assessment: %s", exc)
 
