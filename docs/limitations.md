@@ -35,3 +35,9 @@ Combined heat-and-smoke warning systems have been piloted by public health autho
 ## 8. Demo / cache behavior
 
 When live feeds are slow or down, the API serves the last good Postgres row and marks `data_freshness.is_stale`. `DEMO_MODE=1` serves only from `assessment_cache` so a severed network still yields a full demo.
+
+## 9. Open-Meteo Air Quality (CAMS) licence and cadence
+
+Open-Meteo's Air Quality API is free for **non-commercial** use (10,000 calls/day, no uptime guarantee). ShadeCast caches hourly responses in Postgres and pulls via the cron ingest job so call volume stays far under the free-tier limit. Do not treat this feed as a paid SLA.
+
+The underlying CAMS models update roughly every **24 hours** at ~45 km (global) / ~11 km (Europe). That slow refresh is why NASA FIRMS remains essential for near-real-time wildfire smoke — a new ignition can appear in FIRMS hours before CAMS reflects it. `us_aqi` and `european_aqi` are different scales and must never be mixed; ShadeCast defaults to `us_aqi`.

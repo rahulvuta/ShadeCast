@@ -11,12 +11,14 @@ from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from api.clients import air_quality as air_quality_client
 from api.clients import firms as firms_client
 from api.clients import forecast as forecast_client
 from api.clients import power as power_client
 from api.config import DEMO_LOCATIONS, get_settings
 from api.db import SessionLocal, engine
 from api.models import (
+    AirQualityHour,
     Base,
     ClimatologyPoint,
     FireDetection,
@@ -102,6 +104,12 @@ def upsert_forecast(session, lat: float, lon: float, rows: list[forecast_client.
             "relative_humidity": r.relative_humidity,
             "wind_speed_kmh": r.wind_speed_kmh,
             "wind_direction_deg": r.wind_direction_deg,
+            "wind_gusts_kmh": r.wind_gusts_kmh,
+            "precipitation_probability": r.precipitation_probability,
+            "cloud_cover": r.cloud_cover,
+            "apparent_temperature_c": r.apparent_temperature_c,
+            "uv_index": r.uv_index,
+            "uv_index_clear_sky": r.uv_index_clear_sky,
             "timezone": r.timezone,
             "fetched_at": now,
         }
@@ -115,12 +123,79 @@ def upsert_forecast(session, lat: float, lon: float, rows: list[forecast_client.
             "relative_humidity": stmt.excluded.relative_humidity,
             "wind_speed_kmh": stmt.excluded.wind_speed_kmh,
             "wind_direction_deg": stmt.excluded.wind_direction_deg,
+            "wind_gusts_kmh": stmt.excluded.wind_gusts_kmh,
+            "precipitation_probability": stmt.excluded.precipitation_probability,
+            "cloud_cover": stmt.excluded.cloud_cover,
+            "apparent_temperature_c": stmt.excluded.apparent_temperature_c,
+            "uv_index": stmt.excluded.uv_index,
+            "uv_index_clear_sky": stmt.excluded.uv_index_clear_sky,
             "timezone": stmt.excluded.timezone,
             "fetched_at": stmt.excluded.fetched_at,
         },
     )
     session.execute(stmt)
     return len(payloads)
+
+
+def upsert_air_quality(
+    session, lat: float, lon: float, rows: list[air_quality_client.AirQualityRow]
+) -> int:
+    if not rows:
+        return 0
+    now = datetime.now(timezone.utc)
+    lat_r = firms_client.round_coord(lat)
+    lon_r = firms_client.round_coord(lon)
+    payloads = [
+        {
+            "latitude": lat,
+            "longitude": lon,
+            "lat_round": lat_r,
+            "lon_round": lon_r,
+            "valid_at": r.valid_at,
+            "pm2_5": r.pm2_5,
+            "pm10": r.pm10,
+            "us_aqi": r.us_aqi,
+            "european_aqi": r.european_aqi,
+            "dominant_pollutant": r.dominant_pollutant,
+            "uv_index": r.uv_index,
+            "uv_index_clear_sky": r.uv_index_clear_sky,
+            "dust": r.dust,
+            "aerosol_optical_depth": r.aerosol_optical_depth,
+            "ozone": r.ozone,
+            "nitrogen_dioxide": r.nitrogen_dioxide,
+            "carbon_monoxide": r.carbon_monoxide,
+            "timezone": r.timezone,
+            "fetched_at": now,
+        }
+        for r in rows
+    ]
+    # Batch to stay under Postgres bind-param limits (~120 hours * ~18 cols is fine,
+    # but keep the same chunking habit as FIRMS for safety).
+    n = 0
+    for batch in _chunked(payloads, 200):
+        stmt = pg_insert(AirQualityHour).values(batch)
+        stmt = stmt.on_conflict_do_update(
+            constraint="uq_air_quality_hour",
+            set_={
+                "pm2_5": stmt.excluded.pm2_5,
+                "pm10": stmt.excluded.pm10,
+                "us_aqi": stmt.excluded.us_aqi,
+                "european_aqi": stmt.excluded.european_aqi,
+                "dominant_pollutant": stmt.excluded.dominant_pollutant,
+                "uv_index": stmt.excluded.uv_index,
+                "uv_index_clear_sky": stmt.excluded.uv_index_clear_sky,
+                "dust": stmt.excluded.dust,
+                "aerosol_optical_depth": stmt.excluded.aerosol_optical_depth,
+                "ozone": stmt.excluded.ozone,
+                "nitrogen_dioxide": stmt.excluded.nitrogen_dioxide,
+                "carbon_monoxide": stmt.excluded.carbon_monoxide,
+                "timezone": stmt.excluded.timezone,
+                "fetched_at": stmt.excluded.fetched_at,
+            },
+        )
+        session.execute(stmt)
+        n += len(batch)
+    return n
 
 
 def upsert_climatology(session, lat: float, lon: float, rows: list[power_client.PowerHour]) -> int:
@@ -191,7 +266,7 @@ def run() -> int:
     session.add(run_row)
     session.flush()
 
-    fires_n = forecast_n = clim_n = 0
+    fires_n = forecast_n = clim_n = aq_n = 0
     try:
         # FIRMS: one wide western-US pull covering demo sites, plus SE Asia skip
         # Cover CA + AZ + WA with three overlapping boxes
@@ -222,9 +297,17 @@ def run() -> int:
                 forecast = forecast_client.fetch_forecast(lat, lon, forecast_days=2)
                 n = upsert_forecast(session, lat, lon, forecast)
                 forecast_n += n
-                logger.info("Open-Meteo %s upserted=%d", loc["key"], n)
+                logger.info("Open-Meteo forecast %s upserted=%d", loc["key"], n)
             except Exception as exc:  # noqa: BLE001
-                logger.warning("Open-Meteo failed for %s: %s", loc["key"], exc)
+                logger.warning("Open-Meteo forecast failed for %s: %s", loc["key"], exc)
+
+            try:
+                aq_rows = air_quality_client.fetch_air_quality(lat, lon)
+                n = upsert_air_quality(session, lat, lon, aq_rows)
+                aq_n += n
+                logger.info("Open-Meteo air quality %s upserted=%d", loc["key"], n)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Open-Meteo air quality failed for %s: %s", loc["key"], exc)
 
             try:
                 power_rows = power_client.fetch_power_hourly(lat, lon, start, end)
@@ -238,10 +321,12 @@ def run() -> int:
         run_row.fires_upserted = fires_n
         run_row.forecast_upserted = forecast_n
         run_row.climatology_upserted = clim_n
+        run_row.air_quality_upserted = aq_n
         run_row.firms_quota_remaining = quota
         run_row.finished_at = datetime.now(timezone.utc)
         run_row.message = (
-            f"fires={fires_n} forecast={forecast_n} climatology={clim_n} quota={quota}"
+            f"fires={fires_n} forecast={forecast_n} air_quality={aq_n} "
+            f"climatology={clim_n} quota={quota}"
         )
         session.commit()
         logger.info("Ingest complete: %s", run_row.message)
@@ -249,11 +334,14 @@ def run() -> int:
         # Sanity: row counts
         fire_count = session.query(FireDetection).count()
         fc_count = session.query(ForecastHour).count()
+        aq_count = session.query(AirQualityHour).count()
         cl_count = session.query(ClimatologyPoint).count()
         logger.info(
-            "Table counts: fire_detections=%d forecast_hours=%d climatology_points=%d",
+            "Table counts: fire_detections=%d forecast_hours=%d "
+            "air_quality_hours=%d climatology_points=%d",
             fire_count,
             fc_count,
+            aq_count,
             cl_count,
         )
         return 0
