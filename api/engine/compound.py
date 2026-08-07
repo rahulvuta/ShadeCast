@@ -38,6 +38,12 @@ def _escalate(v: Verdict, steps: int = 1) -> Verdict:
 # Explicit matrix: heat effective_band × smoke label → base verdict
 # Smoke labels: low / moderate / high / very_high
 _MATRIX: dict[HeatBand, dict[str, Verdict]] = {
+    HeatBand.SAFE: {
+        "low": Verdict.GO,
+        "moderate": Verdict.GO,
+        "high": Verdict.CAUTION,
+        "very_high": Verdict.RESTRICT,
+    },
     HeatBand.CAUTION: {
         "low": Verdict.GO,
         "moderate": Verdict.CAUTION,

@@ -20,6 +20,7 @@ Workload = Literal["light", "moderate", "heavy"]
 
 
 class HeatBand(str, Enum):
+    SAFE = "SAFE"
     CAUTION = "CAUTION"
     EXTREME_CAUTION = "EXTREME_CAUTION"
     DANGER = "DANGER"
@@ -40,6 +41,7 @@ FULL_SUN_PENALTY_F = 8.0
 # Workload / acclimatization shifts the effective band index (higher = worse).
 # Unacclimatized (default) and heavy work escalate risk.
 _BAND_ORDER = [
+    HeatBand.SAFE,
     HeatBand.CAUTION,
     HeatBand.EXTREME_CAUTION,
     HeatBand.DANGER,
@@ -100,8 +102,9 @@ def heat_index_f(temp_f: float, rh: float) -> float:
 
 
 def band_for_hi(hi_f: float) -> HeatBand:
+    """Map heat index to NWS band. Below 80°F the NWS chart has no category — SAFE."""
     if hi_f < 80.0:
-        return HeatBand.CAUTION  # below caution threshold — still label CAUTION floor for outdoor work
+        return HeatBand.SAFE
     for threshold, band in BAND_THRESHOLDS:
         if hi_f >= threshold:
             return band
