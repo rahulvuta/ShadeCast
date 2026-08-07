@@ -385,6 +385,9 @@ export default function App() {
           <div role="alert" className="rounded-2xl border-2 border-[var(--stop)] bg-white p-4">
             <p className="font-bold">Could not load assessment</p>
             <p className="text-sm mt-1">{error}</p>
+            <p className="text-sm mt-2 text-[var(--muted)]">
+              Weather data may still be loading for this location. Try again in a moment.
+            </p>
             <button
               type="button"
               className="touch-target mt-3 rounded-xl bg-black px-4 py-2 text-white"

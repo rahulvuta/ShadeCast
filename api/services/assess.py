@@ -225,6 +225,79 @@ def _aq_rows_from_db(
     return rows, fetched
 
 
+def _fetch_forecast_with_retry(
+    lat: float, lon: float, *, forecast_days: int = 5, attempts: int = 2
+) -> list[forecast_client.ForecastRow]:
+    """Fetch Open-Meteo forecast; retry once on failure. Never touches the DB."""
+    last_exc: Exception | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return forecast_client.fetch_forecast(lat, lon, forecast_days=forecast_days)
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            logger.warning(
+                "Open-Meteo forecast attempt %d/%d failed for (%.3f, %.3f): %s",
+                attempt,
+                attempts,
+                lat,
+                lon,
+                exc,
+            )
+    assert last_exc is not None
+    raise last_exc
+
+
+def _upsert_forecast_safe(
+    session: Session, lat: float, lon: float, rows: list[forecast_client.ForecastRow]
+) -> None:
+    """Best-effort DB write. Never discard live rows if this fails."""
+    try:
+        from ingest.job import upsert_forecast
+
+        upsert_forecast(session, lat, lon, rows)
+        session.commit()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "Forecast upsert failed for (%.3f, %.3f) — keeping live rows: %s",
+            lat,
+            lon,
+            exc,
+        )
+        session.rollback()
+
+
+def _upsert_air_quality_safe(
+    session: Session, lat: float, lon: float, rows: list[aq_client.AirQualityRow]
+) -> None:
+    try:
+        from ingest.job import upsert_air_quality
+
+        upsert_air_quality(session, lat, lon, rows)
+        session.commit()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "Air quality upsert failed for (%.3f, %.3f) — keeping live rows: %s",
+            lat,
+            lon,
+            exc,
+        )
+        session.rollback()
+
+
+def _nearest_usable_hour(
+    rows: list[forecast_client.ForecastRow], now_utc: datetime
+) -> forecast_client.ForecastRow:
+    """Pick the hour closest to now that has both temperature and humidity."""
+    usable = [
+        r for r in rows if r.temperature_c is not None and r.relative_humidity is not None
+    ]
+    if not usable:
+        raise RuntimeError(
+            "Forecast returned no usable temperature/humidity hours for this location."
+        )
+    return min(usable, key=lambda r: abs(r.valid_at.astimezone(timezone.utc) - now_utc))
+
+
 def _confidence_out(result, *, verdict_escalated: bool = False) -> DataConfidence:
     level = result.level.value
     caveat = None
@@ -299,26 +372,32 @@ def build_assessment(
 
     if allow_network and not settings.demo_mode:
         try:
-            forecast_rows = forecast_client.fetch_forecast(lat, lon, forecast_days=5)
+            forecast_rows = _fetch_forecast_with_retry(lat, lon, forecast_days=5)
             used_live = True
             forecast_fetched = datetime.now(timezone.utc)
-            from ingest.job import upsert_forecast
-
-            upsert_forecast(session, lat, lon, forecast_rows)
-            session.commit()
+            _upsert_forecast_safe(session, lat, lon, forecast_rows)
         except Exception as exc:  # noqa: BLE001
-            logger.warning("Live Open-Meteo failed, using DB cache: %s", exc)
+            logger.warning("Live Open-Meteo forecast unavailable, trying DB cache: %s", exc)
+            try:
+                session.rollback()
+            except Exception:  # noqa: BLE001
+                pass
 
     if not forecast_rows:
         lat_r, lon_r = round_coord(lat), round_coord(lon)
-        db_rows = session.scalars(
-            select(ForecastHour)
-            .where(
-                ForecastHour.lat_round == lat_r,
-                ForecastHour.lon_round == lon_r,
-            )
-            .order_by(ForecastHour.valid_at)
-        ).all()
+        try:
+            db_rows = session.scalars(
+                select(ForecastHour)
+                .where(
+                    ForecastHour.lat_round == lat_r,
+                    ForecastHour.lon_round == lon_r,
+                )
+                .order_by(ForecastHour.valid_at)
+            ).all()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("DB forecast read failed: %s", exc)
+            session.rollback()
+            db_rows = []
         forecast_fetched = max((r.fetched_at for r in db_rows), default=None)
         forecast_rows = [
             forecast_client.ForecastRow(
@@ -342,19 +421,24 @@ def build_assessment(
         cached, _ = _load_assessment_cache(session, lat, lon, workload, acclimatized)
         if cached:
             return cached
-        raise RuntimeError("No forecast data available (live and cache empty)")
+        raise RuntimeError(
+            "No forecast data available (live and cache empty). "
+            "Retry in a moment — Open-Meteo may be slow after a cold start."
+        )
 
     aq_rows, aq_fetched = _aq_rows_from_db(session, lat, lon)
     if allow_network and not settings.demo_mode and not aq_rows:
         try:
             aq_rows = aq_client.fetch_air_quality(lat, lon)
             aq_fetched = datetime.now(timezone.utc)
-            from ingest.job import upsert_air_quality
-
-            upsert_air_quality(session, lat, lon, aq_rows)
-            session.commit()
+            _upsert_air_quality_safe(session, lat, lon, aq_rows)
         except Exception as exc:  # noqa: BLE001
             logger.warning("Live air quality failed: %s", exc)
+            try:
+                session.rollback()
+            except Exception:  # noqa: BLE001
+                pass
+            aq_rows, aq_fetched = _aq_rows_from_db(session, lat, lon)
 
     aq_by_hour = {r.valid_at: r for r in aq_rows}
 
@@ -370,14 +454,19 @@ def build_assessment(
     for r in forecast_rows:
         by_day.setdefault(r.valid_at.date(), []).append(r)
     day_keys = sorted(by_day.keys())[:5]
+    if not day_keys:
+        raise RuntimeError(
+            "Forecast returned no usable temperature/humidity hours for this location."
+        )
     today = day_keys[0]
     today_rows = by_day[today]
 
     now_utc = datetime.now(timezone.utc)
-    current_row = min(
-        today_rows,
-        key=lambda r: abs(r.valid_at.astimezone(timezone.utc) - now_utc),
-    )
+    try:
+        current_row = _nearest_usable_hour(today_rows, now_utc)
+    except RuntimeError:
+        # Today's local date may be all-null; search the full horizon.
+        current_row = _nearest_usable_hour(forecast_rows, now_utc)
 
     wind_from = current_row.wind_direction_deg or 0.0
     smoke = assess_smoke(
@@ -433,12 +522,11 @@ def build_assessment(
         dominant_pollutant=cur_aq.dominant_pollutant if cur_aq else None,
     )
 
-    assert current_row.temperature_c is not None
-    assert current_row.relative_humidity is not None
-    cur_tf = celsius_to_fahrenheit(current_row.temperature_c)
+    # Guaranteed by _nearest_usable_hour
+    cur_tf = celsius_to_fahrenheit(current_row.temperature_c)  # type: ignore[arg-type]
     cur_heat = assess_heat(
         cur_tf,
-        current_row.relative_humidity,
+        current_row.relative_humidity,  # type: ignore[arg-type]
         workload=workload,
         acclimatized=acclimatized,
         full_sun=True,

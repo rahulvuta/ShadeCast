@@ -1,6 +1,8 @@
-"""On-demand FIRMS + POWER fetch/upsert for arbitrary assess coordinates.
+"""On-demand FIRMS + POWER + forecast + air-quality for arbitrary coordinates.
 
 Web clients never call FIRMS; only this server path does, with DB caching.
+Forecast and air quality warm the cache so a later assess request can fall
+back to Postgres if a live Open-Meteo call fails.
 """
 
 from __future__ import annotations
@@ -11,11 +13,19 @@ from datetime import date, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from api.clients import air_quality as aq_client
 from api.clients import firms as firms_client
+from api.clients import forecast as forecast_client
 from api.clients import power as power_client
 from api.config import get_settings
-from api.models import ClimatologyPoint, FireDetection
-from ingest.job import bbox_around, upsert_climatology, upsert_fires
+from api.models import AirQualityHour, ClimatologyPoint, FireDetection, ForecastHour
+from ingest.job import (
+    bbox_around,
+    upsert_air_quality,
+    upsert_climatology,
+    upsert_fires,
+    upsert_forecast,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -27,13 +37,18 @@ def ensure_location_data(
     *,
     fire_deg: float = 1.5,
 ) -> None:
-    """Fill FIRMS + POWER caches around a point when missing. Fail soft."""
+    """Fill FIRMS + POWER + forecast + AQ caches around a point when missing.
+
+    Fail soft — never raise to the assess caller.
+    """
     settings = get_settings()
     if settings.demo_mode:
         return
 
     _ensure_fires(session, lat, lon, fire_deg=fire_deg)
     _ensure_climatology(session, lat, lon)
+    _ensure_forecast(session, lat, lon)
+    _ensure_air_quality(session, lat, lon)
 
 
 def _ensure_fires(session: Session, lat: float, lon: float, *, fire_deg: float) -> None:
@@ -94,4 +109,66 @@ def _ensure_climatology(session: Session, lat: float, lon: float) -> None:
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("On-demand POWER failed for (%.3f, %.3f): %s", lat, lon, exc)
+        session.rollback()
+
+
+def _ensure_forecast(session: Session, lat: float, lon: float) -> None:
+    lat_r = firms_client.round_coord(lat)
+    lon_r = firms_client.round_coord(lon)
+    existing = session.scalar(
+        select(func.count())
+        .select_from(ForecastHour)
+        .where(
+            ForecastHour.lat_round == lat_r,
+            ForecastHour.lon_round == lon_r,
+        )
+    )
+    if existing and existing >= 12:
+        return
+
+    try:
+        rows = forecast_client.fetch_forecast(lat, lon, forecast_days=5)
+        n = upsert_forecast(session, lat, lon, rows)
+        session.commit()
+        logger.info(
+            "On-demand forecast for (%.3f, %.3f): hours=%d upserted=%d",
+            lat,
+            lon,
+            len(rows),
+            n,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("On-demand forecast failed for (%.3f, %.3f): %s", lat, lon, exc)
+        session.rollback()
+
+
+def _ensure_air_quality(session: Session, lat: float, lon: float) -> None:
+    lat_r = firms_client.round_coord(lat)
+    lon_r = firms_client.round_coord(lon)
+    existing = session.scalar(
+        select(func.count())
+        .select_from(AirQualityHour)
+        .where(
+            AirQualityHour.lat_round == lat_r,
+            AirQualityHour.lon_round == lon_r,
+        )
+    )
+    if existing and existing >= 12:
+        return
+
+    try:
+        rows = aq_client.fetch_air_quality(lat, lon)
+        n = upsert_air_quality(session, lat, lon, rows)
+        session.commit()
+        logger.info(
+            "On-demand air quality for (%.3f, %.3f): hours=%d upserted=%d",
+            lat,
+            lon,
+            len(rows),
+            n,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "On-demand air quality failed for (%.3f, %.3f): %s", lat, lon, exc
+        )
         session.rollback()

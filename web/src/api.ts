@@ -2,11 +2,30 @@ import type { AssessResponse, BriefResponse, FirePoint, Lang, SensitivityProfile
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? ''
 
+function formatApiError(statusText: string, body: string): string {
+  const trimmed = body.trim()
+  if (!trimmed) return statusText || 'Request failed'
+  try {
+    const parsed = JSON.parse(trimmed) as { detail?: unknown }
+    if (typeof parsed.detail === 'string' && parsed.detail) {
+      return parsed.detail
+    }
+    if (Array.isArray(parsed.detail)) {
+      return parsed.detail
+        .map((d) => (typeof d === 'object' && d && 'msg' in d ? String((d as { msg: string }).msg) : String(d)))
+        .join('; ')
+    }
+  } catch {
+    // not JSON — fall through
+  }
+  return trimmed.length > 400 ? `${trimmed.slice(0, 400)}…` : trimmed
+}
+
 async function getJson<T>(path: string): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`)
   if (!res.ok) {
     const text = await res.text()
-    throw new Error(text || res.statusText)
+    throw new Error(formatApiError(res.statusText, text))
   }
   return res.json() as Promise<T>
 }
@@ -48,6 +67,9 @@ export async function fetchBrief(opts: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(opts),
   })
-  if (!res.ok) throw new Error(await res.text())
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(formatApiError(res.statusText, text))
+  }
   return res.json() as Promise<BriefResponse>
 }

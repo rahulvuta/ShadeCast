@@ -56,7 +56,12 @@ def assess(
                 allow_network=False,
             )
         except Exception as exc2:  # noqa: BLE001
-            raise HTTPException(status_code=503, detail=str(exc2)) from exc
+            # Prefer the original live-path message; append offline failure if different.
+            detail = str(exc)
+            offline = str(exc2)
+            if offline and offline != detail:
+                detail = f"{detail} (offline retry: {offline})"
+            raise HTTPException(status_code=503, detail=detail) from exc
 
 
 @router.get("/fires", response_model=FiresResponse)

@@ -67,6 +67,16 @@ python -m ingest.job
 python -m ingest.seed
 ```
 
+## Alembic / forecast upsert column errors
+
+If Render logs show forecast or air-quality upsert failures about missing columns (e.g. `uv_index`, `wind_gusts_kmh`, `air_quality_hours`), the Phase 1 migration was not applied. From the API service shell:
+
+```bash
+alembic upgrade head
+```
+
+Assess still serves **live** Open-Meteo rows even when upsert fails (after the empty-location fix), but caching and offline fallback need the schema.
+
 ## Featherless LLM (optional)
 
 Briefings work without `FEATHERLESS_API_KEY` — the API falls back to `api/llm/fallback.py` templates in English, Spanish, and Vietnamese. If the key is set and briefings fail, check Render logs for JSON parse errors; the client retries once then falls back.
