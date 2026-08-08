@@ -17,11 +17,15 @@
   --restrict: var(--oi-vermillion);
   --stop: var(--oi-blue);
 
-  --bg: #f7f4ef;
-  --ink: #111111;
-  --muted: #444444;
+  /* Ops dashboard surfaces (cool slate, not cream paper) */
+  --bg: #eef1f4;
+  --ink: #12151a;
+  --fg: #12151a;
+  --muted: #5a6570;
   --card: #ffffff;
-  --border: #d6d0c4;
+  --panel: #f7f9fb;
+  --border: #c5ccd4;
+  --topbar: #ffffff;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -79,4 +83,59 @@ body.text-mode {
 .verdict-stop {
   background: var(--stop);
   color: #fff;
+}
+
+/* Dashboard primitives */
+.dash-panel {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.dash-section-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.dash-divider {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 0;
+}
+
+.sidebar-module {
+  padding: 0.85rem 0.9rem;
+}
+
+.sidebar-module + .sidebar-module {
+  border-top: 1px solid var(--border);
+}
+
+@keyframes verdict-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.verdict-enter {
+  animation: verdict-in 0.35s ease-out;
+}
+
+.hour-pill {
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.hour-pill[aria-current="true"] {
+  transform: translateY(-2px);
+  box-shadow: 0 2px 0 0 var(--ink);
 }

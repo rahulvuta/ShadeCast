@@ -57,32 +57,42 @@ export function IncidentLog({
   }
 
   return (
-    <section aria-labelledby="incident-heading" className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
-      <h2 id="incident-heading" className="text-sm font-bold uppercase tracking-wide text-[var(--muted)]">
+    <section aria-labelledby="incident-heading">
+      <h2 id="incident-heading" className="dash-section-label">
         Local incident log
       </h2>
-      <p className="mt-1 text-xs text-[var(--muted)]">Stored only on this device. No accounts.</p>
-      <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-        <label className="flex-1 text-sm">
+      <p className="mt-1 text-[0.65rem] text-[var(--muted)]">Stored on this device only.</p>
+      <div className="mt-2 space-y-1.5">
+        <label className="block text-xs font-semibold">
           Note
           <input
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg)] px-3 py-2 touch-target"
+            className="mt-1 w-full rounded border border-[var(--border)] bg-white px-2.5 py-2 text-sm touch-target"
             placeholder="Optional note"
           />
         </label>
-        <button type="button" onClick={addEntry} className="touch-target rounded-lg bg-[var(--fg)] px-4 py-2 text-sm font-semibold text-[var(--bg)]">
-          Log now
-        </button>
-        <button type="button" onClick={clearAll} className="touch-target rounded-lg border border-[var(--border)] px-4 py-2 text-sm">
-          Clear
-        </button>
+        <div className="flex gap-1.5">
+          <button
+            type="button"
+            onClick={addEntry}
+            className="touch-target flex-1 rounded bg-[var(--ink)] px-3 py-1.5 text-xs font-semibold text-white"
+          >
+            Log now
+          </button>
+          <button
+            type="button"
+            onClick={clearAll}
+            className="touch-target rounded border border-[var(--border)] px-3 py-1.5 text-xs"
+          >
+            Clear
+          </button>
+        </div>
       </div>
       {entries.length > 0 && (
-        <ul className="mt-3 max-h-48 space-y-2 overflow-y-auto text-sm">
+        <ul className="mt-2 max-h-40 space-y-1.5 overflow-y-auto text-xs">
           {entries.map((e) => (
-            <li key={e.id} className="rounded border border-[var(--border)] px-3 py-2">
+            <li key={e.id} className="rounded border border-[var(--border)] bg-[var(--panel)] px-2.5 py-1.5">
               <p className="font-semibold">
                 {new Date(e.at).toLocaleString()} · {e.verdict ?? 'n/a'}
               </p>

@@ -5,19 +5,17 @@ import { BriefingCard } from './components/BriefingCard'
 import { ClimatologyLine } from './components/ClimatologyLine'
 import { ConcordanceBadge } from './components/ConcordanceBadge'
 import { ConfidenceBanner } from './components/ConfidenceBanner'
-import { DiffStrip, FiveDayStrip, ShiftPlanner } from './components/DayStrip'
+import { DiffStrip, ShiftPlanner } from './components/DayStrip'
 import { FireMap } from './components/FireMap'
-import { HourlyChart } from './components/HourlyChart'
 import { HowWeCalculate } from './components/HowWeCalculate'
 import { IncidentLog } from './components/IncidentLog'
-import { ScheduleStrip } from './components/ScheduleStrip'
+import { SidebarControls } from './components/SidebarControls'
 import { StaleBanner } from './components/StaleBanner'
+import { TimelinePanel } from './components/TimelinePanel'
 import { UVPanel } from './components/UVPanel'
 import { VerdictCard } from './components/VerdictCard'
 import {
-  CORRUPT_DEMO,
   DEMO_LOCATIONS,
-  SENSITIVITY_PROFILES,
   type AssessResponse,
   type BriefResponse,
   type FirePoint,
@@ -43,11 +41,6 @@ function useTextMode(): boolean {
 
 function useCorruptDemo(): boolean {
   return useMemo(() => new URLSearchParams(window.location.search).get('corrupt') === '1', [])
-}
-
-function formatGeocodeLabel(h: GeocodeHit): string {
-  const parts = [h.name, h.admin1, h.country].filter(Boolean)
-  return parts.join(', ')
 }
 
 export default function App() {
@@ -192,320 +185,255 @@ export default function App() {
     })
   }
 
+  const controlsProps = {
+    loc,
+    corruptDemo,
+    searchQuery,
+    searchHits,
+    searchBusy,
+    searchError,
+    latInput,
+    lonInput,
+    workload,
+    lang,
+    profile,
+    acclimatized,
+    onSearchQuery: setSearchQuery,
+    onLatInput: setLatInput,
+    onLonInput: setLonInput,
+    onWorkload: setWorkload,
+    onLang: setLang,
+    onProfile: setProfile,
+    onAcclimatized: setAcclimatized,
+    onApplyLocation: applyLocation,
+    onRunSearch: runSearch,
+    onGoLatLon: goLatLon,
+  }
+
   return (
-    <div className="mx-auto max-w-xl px-4 py-4 pb-16">
+    <div className="min-h-screen">
       <a
         href="#main"
-        className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:bg-white focus:p-2"
+        className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:bg-white focus:p-2 focus:border focus:border-[var(--border)]"
       >
         Skip to content
       </a>
-      <header className="mb-4">
-        <p className="text-sm font-semibold tracking-wide uppercase text-[var(--muted)]">ShadeCast</p>
-        <h1 className="text-2xl font-black">Is it safe to work outside today?</h1>
-        <p className="text-sm text-[var(--muted)] mt-1">
-          Environmental load scheduling — heat, smoke, UV, and air quality for outdoor crews.
-        </p>
+
+      <header className="sticky top-0 z-40 border-b border-[var(--border)] bg-[var(--topbar)]/95 backdrop-blur-sm">
+        <div className="mx-auto flex max-w-[1600px] flex-wrap items-baseline gap-x-4 gap-y-1 px-4 py-3 sm:px-5">
+          <p className="text-sm font-black tracking-[0.12em] uppercase text-[var(--ink)]">
+            ShadeCast
+          </p>
+          <h1 className="text-base sm:text-lg font-semibold tracking-tight text-[var(--ink)]">
+            Is it safe to work outside today?
+          </h1>
+          <p className="hidden md:block text-xs text-[var(--muted)] ml-auto">
+            Environmental load — heat, smoke, UV, air quality
+          </p>
+        </div>
       </header>
 
-      <nav
-        aria-label="Location and settings"
-        className="mb-4 space-y-3 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4"
-      >
-        <div>
-          <p className="text-sm font-semibold mb-2">Quick demos</p>
-          <div className="flex flex-wrap gap-2">
-            {[...DEMO_LOCATIONS, ...(corruptDemo ? [CORRUPT_DEMO] : [])].map((d) => {
-              const active = Math.abs(loc.lat - d.lat) < 0.01 && Math.abs(loc.lon - d.lon) < 0.01
-              return (
-                <button
-                  key={d.key}
-                  type="button"
-                  className={`touch-target rounded-xl border px-3 py-2 text-sm font-semibold ${
-                    active ? 'bg-black text-white border-black' : 'border-black bg-white'
-                  }`}
-                  onClick={() =>
-                    applyLocation({ lat: d.lat, lon: d.lon, label: d.label })
-                  }
-                >
-                  {d.label.split(' (')[0]}
-                </button>
-              )
-            })}
+      <div className="mx-auto max-w-[1600px] px-4 py-4 sm:px-5 pb-12">
+        {/* Mobile: controls accordion near top */}
+        <details className="dash-panel mb-4 lg:hidden">
+          <summary className="touch-target cursor-pointer list-none px-3.5 py-3 flex items-center justify-between gap-2">
+            <span className="dash-section-label">Controls & settings</span>
+            <span className="text-xs text-[var(--muted)]">{loc.label}</span>
+          </summary>
+          <div className="border-t border-[var(--border)] px-3.5 py-3">
+            <SidebarControls {...controlsProps} />
           </div>
-        </div>
+        </details>
 
-        <form onSubmit={(e) => void runSearch(e)} className="space-y-2">
-          <label className="block text-sm font-semibold" htmlFor="place-search">
-            Search any place
-          </label>
-          <div className="flex gap-2">
-            <input
-              id="place-search"
-              className="touch-target min-w-0 flex-1 rounded-xl border border-black bg-white px-3 text-base"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="City or town"
-              autoComplete="off"
-            />
-            <button
-              type="submit"
-              className="touch-target shrink-0 rounded-xl bg-black px-4 text-sm font-semibold text-white disabled:opacity-50"
-              disabled={searchBusy}
-            >
-              {searchBusy ? '…' : 'Search'}
-            </button>
-          </div>
-          {searchError && <p className="text-sm text-[var(--oi-vermillion)]">{searchError}</p>}
-          {searchHits.length > 0 && (
-            <ul className="rounded-xl border border-[var(--border)] divide-y divide-[var(--border)]">
-              {searchHits.map((h) => (
-                <li key={h.id}>
-                  <button
-                    type="button"
-                    className="touch-target w-full px-3 py-2 text-left text-sm hover:bg-[var(--bg)]"
-                    onClick={() =>
-                      applyLocation({
-                        lat: h.latitude,
-                        lon: h.longitude,
-                        label: formatGeocodeLabel(h),
-                      })
-                    }
-                  >
-                    {formatGeocodeLabel(h)}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </form>
-
-        <form onSubmit={goLatLon} className="space-y-2">
-          <p className="text-sm font-semibold">Or enter coordinates</p>
-          <div className="grid grid-cols-2 gap-2">
-            <label className="block text-xs font-semibold">
-              Latitude
-              <input
-                type="number"
-                step="any"
-                className="touch-target mt-1 w-full rounded-xl border border-black bg-white px-3 text-base"
-                value={latInput}
-                onChange={(e) => setLatInput(e.target.value)}
-              />
-            </label>
-            <label className="block text-xs font-semibold">
-              Longitude
-              <input
-                type="number"
-                step="any"
-                className="touch-target mt-1 w-full rounded-xl border border-black bg-white px-3 text-base"
-                value={lonInput}
-                onChange={(e) => setLonInput(e.target.value)}
-              />
-            </label>
-          </div>
-          <button
-            type="submit"
-            className="touch-target w-full rounded-xl border border-black px-4 py-2 text-sm font-semibold"
-          >
-            Go to coordinates
-          </button>
-        </form>
-
-        <p className="text-xs text-[var(--muted)]">
-          Active: <strong>{loc.label}</strong> ({loc.lat.toFixed(3)}, {loc.lon.toFixed(3)})
-        </p>
-
-        <div className="grid grid-cols-2 gap-3">
-          <label className="block text-sm font-semibold">
-            Workload
-            <select
-              className="touch-target mt-1 w-full rounded-xl border border-black bg-white px-3 text-base"
-              value={workload}
-              onChange={(e) => setWorkload(e.target.value as Workload)}
-            >
-              <option value="light">Light</option>
-              <option value="moderate">Moderate</option>
-              <option value="heavy">Heavy</option>
-            </select>
-          </label>
-          <label className="block text-sm font-semibold">
-            Briefing language
-            <select
-              className="touch-target mt-1 w-full rounded-xl border border-black bg-white px-3 text-base"
-              value={lang}
-              onChange={(e) => setLang(e.target.value as Lang)}
-            >
-              <option value="en">English</option>
-              <option value="es">Spanish</option>
-              <option value="vi">Vietnamese</option>
-            </select>
-          </label>
-        </div>
-        <label className="block text-sm font-semibold">
-          Who is this for?
-          <select
-            className="touch-target mt-1 w-full rounded-xl border border-black bg-white px-3 text-base"
-            value={profile}
-            onChange={(e) => setProfile(e.target.value as SensitivityProfile)}
-          >
-            {SENSITIVITY_PROFILES.map((p) => (
-              <option key={p.key} value={p.key}>
-                {p.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex items-center gap-3 text-sm font-semibold">
-          <input
-            type="checkbox"
-            className="h-5 w-5"
-            checked={acclimatized}
-            onChange={(e) => setAcclimatized(e.target.checked)}
-          />
-          Crew acclimatized (1–2+ weeks on the job)
-        </label>
-      </nav>
-
-      <main id="main" className="space-y-4">
-        {!navigator.onLine && (
-          <aside role="status" className="rounded-xl border-2 border-amber-700 bg-amber-50 p-4 text-sm text-amber-950">
-            You appear offline. Showing the last cached assessment if available.
-          </aside>
-        )}
-        {loading && (
-          <div
-            role="status"
-            className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6 font-semibold"
-          >
-            Loading assessment…
-          </div>
-        )}
-        {error && (
-          <div role="alert" className="rounded-2xl border-2 border-[var(--stop)] bg-white p-4">
-            <p className="font-bold">Could not load assessment</p>
-            <p className="text-sm mt-1">{error}</p>
-            <p className="text-sm mt-2 text-[var(--muted)]">
-              Weather data may still be loading for this location. Try again in a moment.
-            </p>
-            <button
-              type="button"
-              className="touch-target mt-3 rounded-xl bg-black px-4 py-2 text-white"
-              onClick={() => void load()}
-            >
-              Retry
-            </button>
-          </div>
-        )}
-        {assess && !loading && (
-          <>
-            <StaleBanner
-              freshness={assess.data_freshness}
-              servedFromCache={assess.served_from_cache}
-            />
-            <ConfidenceBanner confidence={assess.data_confidence} />
-            <DiffStrip summary={assess.diff_summary} />
-            <VerdictCard
-              verdict={assess.current.verdict}
-              hardStop={assess.schedule.hard_stop_window}
-              heatIndex={assess.current.heat_index_f}
-              smokePressure={assess.smoke.smoke_pressure}
-              loadScore={assess.environmental_load?.load_score}
-              drivers={assess.environmental_load?.drivers}
-              explainText={assess.explain_text}
-              ceilingReason={assess.ceiling_reason ?? assess.environmental_load?.ceiling_reason}
-              confidence={assess.data_confidence?.level}
-              unusable={assess.data_confidence?.level === 'UNUSABLE' || assess.current.verdict == null}
-            />
-            <ConcordanceBadge
-              concordance={assess.air?.concordance ?? assess.environmental_load?.concordance}
-              usAqi={assess.air?.us_aqi ?? assess.current.us_aqi}
-            />
-            {assess.days && assess.days.length > 0 && (
-              <FiveDayStrip
-                days={assess.days}
-                selectedDay={selectedDay}
-                onSelect={setSelectedDay}
-              />
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,4fr)_minmax(280px,1fr)] lg:items-start">
+          <main id="main" className="min-w-0 space-y-3">
+            {!navigator.onLine && (
+              <aside
+                role="status"
+                className="rounded border-2 border-amber-700 bg-amber-50 px-3.5 py-2.5 text-sm text-amber-950"
+              >
+                You appear offline. Showing the last cached assessment if available.
+              </aside>
             )}
-            <ShiftPlanner
-              windows={assess.shift_windows ?? []}
-              requiredHours={requiredHours}
-              onRequiredHours={setRequiredHours}
-            />
-            <ScheduleStrip hourly={assess.hourly} />
-            {!textMode && <HourlyChart hourly={assess.hourly} />}
-            {assess.uv && <UVPanel uv={assess.uv} />}
-            {assess.actions && assess.actions.length > 0 && <ActionCards actions={assess.actions} />}
-            <BriefingCard brief={brief} loading={briefLoading} />
-            <FireMap
-              lat={assess.lat}
-              lon={assess.lon}
-              windFromDeg={assess.current.wind_direction_deg}
-              fires={fires}
-              textMode={textMode}
-            />
-            <ClimatologyLine message={assess.climatology.message} note={assess.climatology.note} />
-            <IncidentLog
-              lat={assess.lat}
-              lon={assess.lon}
-              label={loc.label}
-              verdict={assess.current.verdict}
-            />
-            <HowWeCalculate />
-            <p className="text-xs text-[var(--muted)]">{assess.current.disclaimer}</p>
-            <p className="text-xs text-[var(--muted)]">{assess.smoke.note}</p>
-          </>
-        )}
-      </main>
+            {loading && (
+              <div role="status" className="dash-panel p-5 font-semibold text-sm">
+                Loading assessment…
+              </div>
+            )}
+            {error && (
+              <div role="alert" className="dash-panel border-2 border-[var(--stop)] p-4">
+                <p className="font-bold">Could not load assessment</p>
+                <p className="text-sm mt-1">{error}</p>
+                <p className="text-sm mt-2 text-[var(--muted)]">
+                  Weather data may still be loading for this location. Try again in a moment.
+                </p>
+                <button
+                  type="button"
+                  className="touch-target mt-3 rounded bg-[var(--ink)] px-4 py-2 text-sm text-white"
+                  onClick={() => void load()}
+                >
+                  Retry
+                </button>
+              </div>
+            )}
 
-      <footer className="mt-8 border-t border-[var(--border)] pt-4 text-xs text-[var(--muted)] space-y-2">
-        <p>
-          Data sources:{' '}
-          {(assess?.sources ?? []).map((s, i) => (
-            <span key={s.name}>
-              {i > 0 ? ' · ' : ''}
-              <a className="underline" href={s.url} target="_blank" rel="noreferrer">
-                {s.name}
-              </a>
-            </span>
-          ))}
-        </p>
-        <p>
-          Limitations:{' '}
-          <a
-            className="underline"
-            href="https://github.com/rahulvuta/ShadeCast/blob/main/docs/limitations.md"
+            {assess && !loading && (
+              <>
+                <StaleBanner
+                  freshness={assess.data_freshness}
+                  servedFromCache={assess.served_from_cache}
+                />
+                <ConfidenceBanner confidence={assess.data_confidence} />
+                <DiffStrip summary={assess.diff_summary} />
+
+                <VerdictCard
+                  verdict={assess.current.verdict}
+                  hardStop={assess.schedule.hard_stop_window}
+                  heatIndex={assess.current.heat_index_f}
+                  smokePressure={assess.smoke.smoke_pressure}
+                  loadScore={assess.environmental_load?.load_score}
+                  drivers={assess.environmental_load?.drivers}
+                  explainText={assess.explain_text}
+                  ceilingReason={
+                    assess.ceiling_reason ?? assess.environmental_load?.ceiling_reason
+                  }
+                  confidence={assess.data_confidence?.level}
+                  unusable={
+                    assess.data_confidence?.level === 'UNUSABLE' ||
+                    assess.current.verdict == null
+                  }
+                />
+
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[1fr_1fr_1.2fr]">
+                  <ConcordanceBadge
+                    concordance={
+                      assess.air?.concordance ?? assess.environmental_load?.concordance
+                    }
+                    usAqi={assess.air?.us_aqi ?? assess.current.us_aqi}
+                  />
+                  {assess.uv && <UVPanel uv={assess.uv} />}
+                  {assess.actions && assess.actions.length > 0 && (
+                    <div className="sm:col-span-2 xl:col-span-1">
+                      <ActionCards actions={assess.actions} />
+                    </div>
+                  )}
+                </div>
+
+                <TimelinePanel
+                  hourly={assess.hourly}
+                  days={assess.days}
+                  selectedDay={selectedDay}
+                  onSelectDay={setSelectedDay}
+                  textMode={textMode}
+                />
+
+                <div className="grid gap-3 lg:grid-cols-2 lg:items-stretch">
+                  <FireMap
+                    lat={assess.lat}
+                    lon={assess.lon}
+                    windFromDeg={assess.current.wind_direction_deg}
+                    fires={fires}
+                    textMode={textMode}
+                    defaultOpen
+                  />
+                  <ClimatologyLine
+                    message={assess.climatology.message}
+                    note={assess.climatology.note}
+                  />
+                </div>
+
+                <p className="text-[0.7rem] text-[var(--muted)]">{assess.current.disclaimer}</p>
+                <p className="text-[0.7rem] text-[var(--muted)]">{assess.smoke.note}</p>
+              </>
+            )}
+          </main>
+
+          <aside
+            aria-label="Controls and tools"
+            className="dash-panel lg:sticky lg:top-[3.75rem] lg:max-h-[calc(100vh-4.5rem)] lg:overflow-y-auto"
           >
-            docs/limitations.md
-          </a>
-          {' · '}
-          <a
-            className="underline"
-            href="https://github.com/rahulvuta/ShadeCast/blob/main/docs/validation.md"
-          >
-            Validation
-          </a>
-          {' · '}
-          <a className="underline" href="?text=1">
-            Text-only mode
-          </a>
-        </p>
-        <p>
-          Share this location:{' '}
-          <a
-            className="underline"
-            href={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(window.location.href)}`}
-            target="_blank"
-            rel="noreferrer"
-          >
-            QR code link
-          </a>
-          {' · '}
-          Integrity demo: add <code>?corrupt=1</code> to the URL
-        </p>
-        <p>Not medical advice. Screening tool for crew scheduling only.</p>
-      </footer>
+            <div className="hidden lg:block sidebar-module">
+              <p className="dash-section-label mb-3">Controls & settings</p>
+              <SidebarControls {...controlsProps} />
+            </div>
+
+            {assess && !loading && (
+              <>
+                <div className="sidebar-module">
+                  <ShiftPlanner
+                    windows={assess.shift_windows ?? []}
+                    requiredHours={requiredHours}
+                    onRequiredHours={setRequiredHours}
+                  />
+                </div>
+                <div className="sidebar-module">
+                  <BriefingCard brief={brief} loading={briefLoading} />
+                </div>
+                <div className="sidebar-module">
+                  <IncidentLog
+                    lat={assess.lat}
+                    lon={assess.lon}
+                    label={loc.label}
+                    verdict={assess.current.verdict}
+                  />
+                </div>
+              </>
+            )}
+
+            <div className="sidebar-module">
+              <HowWeCalculate />
+            </div>
+          </aside>
+        </div>
+
+        <footer className="mt-8 border-t border-[var(--border)] pt-4 text-xs text-[var(--muted)] space-y-2">
+          <p>
+            Data sources:{' '}
+            {(assess?.sources ?? []).map((s, i) => (
+              <span key={s.name}>
+                {i > 0 ? ' · ' : ''}
+                <a className="underline" href={s.url} target="_blank" rel="noreferrer">
+                  {s.name}
+                </a>
+              </span>
+            ))}
+          </p>
+          <p>
+            Limitations:{' '}
+            <a
+              className="underline"
+              href="https://github.com/rahulvuta/ShadeCast/blob/main/docs/limitations.md"
+            >
+              docs/limitations.md
+            </a>
+            {' · '}
+            <a
+              className="underline"
+              href="https://github.com/rahulvuta/ShadeCast/blob/main/docs/validation.md"
+            >
+              Validation
+            </a>
+            {' · '}
+            <a className="underline" href="?text=1">
+              Text-only mode
+            </a>
+          </p>
+          <p>
+            Share this location:{' '}
+            <a
+              className="underline"
+              href={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(window.location.href)}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              QR code link
+            </a>
+            {' · '}
+            Integrity demo: add <code>?corrupt=1</code> to the URL
+          </p>
+          <p>Not medical advice. Screening tool for crew scheduling only.</p>
+        </footer>
+      </div>
     </div>
   )
 }

@@ -26,14 +26,16 @@ export function FireMap({
   windFromDeg,
   fires,
   textMode,
+  defaultOpen = true,
 }: {
   lat: number
   lon: number
   windFromDeg: number | null
   fires: FirePoint[]
   textMode: boolean
+  defaultOpen?: boolean
 }) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(defaultOpen)
   const containerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const markersRef = useRef<maplibregl.Marker[]>([])
@@ -64,7 +66,6 @@ export function FireMap({
     }
   }
 
-  // Create / destroy map when expanded
   useEffect(() => {
     if (!open || textMode) {
       if (mapRef.current) {
@@ -111,7 +112,6 @@ export function FireMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, textMode])
 
-  // Update center + markers while map is open
   useEffect(() => {
     const map = mapRef.current
     if (!open || textMode || !map) return
@@ -132,29 +132,29 @@ export function FireMap({
     windFromDeg == null ? 'Wind n/a' : `Wind from ${Math.round(windFromDeg)}° (met. convention)`
 
   return (
-    <section
-      aria-labelledby="map-heading"
-      className="rounded-2xl bg-[var(--card)] border border-[var(--border)] p-4 shadow-sm"
-    >
-      <div className="flex items-center justify-between gap-3">
-        <h2 id="map-heading" className="text-lg font-bold">
-          Nearby satellite fire detections
-        </h2>
+    <section aria-labelledby="map-heading" className="dash-panel flex h-full flex-col p-3.5 sm:p-4">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <p className="dash-section-label">Environmental context</p>
+          <h2 id="map-heading" className="text-sm font-bold mt-0.5">
+            FIRMS fire & wind
+          </h2>
+        </div>
         <button
           type="button"
-          className="touch-target rounded-xl border border-black px-4 py-2 text-sm font-semibold"
+          className="touch-target shrink-0 rounded border border-[var(--border)] px-3 py-1.5 text-xs font-semibold hover:border-[var(--ink)]"
           aria-expanded={open}
           onClick={() => setOpen((v) => !v)}
         >
-          {open ? 'Collapse map' : 'Expand map'}
+          {open ? 'Collapse' : 'Expand'}
         </button>
       </div>
-      <p className="text-sm text-[var(--muted)] mt-1">
-        {fires.length} FIRMS points in view · {windLabel}
+      <p className="text-xs text-[var(--muted)] mt-1">
+        {fires.length} detections · {windLabel}
         {windFromDeg != null && (
           <span
             aria-hidden="true"
-            className="ml-2 inline-block"
+            className="ml-1.5 inline-block"
             style={{ transform: `rotate(${windFromDeg}deg)` }}
           >
             ↑
@@ -163,13 +163,15 @@ export function FireMap({
       </p>
       <div
         ref={containerRef}
-        className={`mt-3 h-64 w-full rounded-xl overflow-hidden ${open && !textMode ? '' : 'hidden'}`}
+        className={`mt-2 min-h-[16rem] flex-1 w-full overflow-hidden rounded border border-[var(--border)] ${
+          open && !textMode ? '' : 'hidden'
+        }`}
         role="img"
         aria-label="Map of fire detections"
         aria-hidden={!open || textMode}
       />
       {open && textMode && (
-        <ul className="mt-3 max-h-64 overflow-auto text-sm space-y-1">
+        <ul className="mt-2 max-h-64 overflow-auto text-xs space-y-1">
           {fires.slice(0, 50).map((f, i) => (
             <li key={`${f.latitude}-${f.longitude}-${i}`}>
               {f.latitude.toFixed(3)}, {f.longitude.toFixed(3)} · FRP {f.frp ?? 'n/a'} · {f.acq_date}

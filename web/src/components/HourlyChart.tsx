@@ -15,7 +15,13 @@ const SEVERITY: Record<Verdict, number> = {
   STOP: 4,
 }
 
-export function HourlyChart({ hourly }: { hourly: AssessResponse['hourly'] }) {
+export function HourlyChart({
+  hourly,
+  embedded = false,
+}: {
+  hourly: AssessResponse['hourly']
+  embedded?: boolean
+}) {
   const data = hourly.map((h) => ({
     hour: `${String(h.hour).padStart(2, '0')}`,
     severity: SEVERITY[h.verdict],
@@ -23,15 +29,17 @@ export function HourlyChart({ hourly }: { hourly: AssessResponse['hourly'] }) {
     hi: h.heat_index_f ?? null,
   }))
 
-  return (
-    <section aria-labelledby="chart-heading" className="rounded-2xl bg-[var(--card)] border border-[var(--border)] p-4 shadow-sm">
-      <h2 id="chart-heading" className="text-lg font-bold">
-        Risk severity by hour
-      </h2>
-      <p className="text-xs text-[var(--muted)] mb-2">1=GO · 2=CAUTION · 3=RESTRICT · 4=STOP</p>
-      <div className="h-40 w-full" role="img" aria-label="Bar chart of hourly risk severity">
+  const body = (
+    <>
+      <div className="flex flex-wrap items-baseline justify-between gap-2 mb-2">
+        <h2 id="chart-heading" className={embedded ? 'dash-section-label !normal-case tracking-wide' : 'text-lg font-bold'}>
+          {embedded ? '24-hour risk severity' : 'Risk severity by hour'}
+        </h2>
+        <p className="text-[0.65rem] text-[var(--muted)]">1=GO · 2=CAUTION · 3=RESTRICT · 4=STOP</p>
+      </div>
+      <div className="h-44 w-full" role="img" aria-label="Bar chart of hourly risk severity">
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={data} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+          <BarChart data={data} margin={{ top: 4, right: 4, left: -24, bottom: 0 }}>
             <XAxis dataKey="hour" tick={{ fontSize: 10 }} interval={2} />
             <YAxis domain={[0, 4]} ticks={[1, 2, 3, 4]} tick={{ fontSize: 10 }} />
             <Tooltip
@@ -40,10 +48,18 @@ export function HourlyChart({ hourly }: { hourly: AssessResponse['hourly'] }) {
                 'Verdict',
               ]}
             />
-            <Bar dataKey="severity" fill="#0072B2" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="severity" fill="#0072B2" radius={[2, 2, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>
+    </>
+  )
+
+  if (embedded) return <div>{body}</div>
+
+  return (
+    <section aria-labelledby="chart-heading" className="dash-panel p-4">
+      {body}
     </section>
   )
 }

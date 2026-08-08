@@ -6,7 +6,7 @@ export function StaleBanner({ freshness, servedFromCache }: { freshness: AssessR
   return (
     <div
       role="status"
-      className="rounded-xl border-2 border-[var(--oi-orange)] bg-[var(--oi-yellow)] px-4 py-3 text-sm font-semibold text-black"
+      className="rounded border-2 border-[var(--oi-orange)] bg-[var(--oi-yellow)] px-3.5 py-2.5 text-sm font-semibold text-black"
     >
       {servedFromCache ? 'Serving last-good cached data. ' : ''}
       {staleSources.length > 0

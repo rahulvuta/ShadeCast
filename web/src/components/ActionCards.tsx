@@ -3,16 +3,16 @@ import type { ActionItem } from '../types'
 export function ActionCards({ actions }: { actions: ActionItem[] }) {
   if (!actions.length) return null
   return (
-    <section aria-labelledby="actions-heading" className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
-      <h2 id="actions-heading" className="text-sm font-bold uppercase tracking-wide text-[var(--muted)]">
+    <section aria-labelledby="actions-heading" className="dash-panel p-3.5">
+      <h2 id="actions-heading" className="dash-section-label">
         Recommended actions
       </h2>
-      <ul className="mt-3 space-y-3">
+      <ul className="mt-2 space-y-2">
         {actions.map((a) => (
-          <li key={a.id} className="rounded-lg border border-[var(--border)] p-3">
-            <p className="font-semibold">{a.title}</p>
-            <p className="mt-1 text-sm leading-relaxed">{a.body}</p>
-            <p className="mt-2 text-xs text-[var(--muted)]">
+          <li key={a.id} className="rounded border border-[var(--border)] bg-[var(--panel)] px-3 py-2">
+            <p className="text-sm font-semibold">{a.title}</p>
+            <p className="mt-0.5 text-xs leading-relaxed text-[var(--muted)]">{a.body}</p>
+            <p className="mt-1 text-[0.65rem] text-[var(--muted)]">
               Source:{' '}
               <a href={a.source_url} target="_blank" rel="noreferrer" className="underline">
                 {a.source_name}
