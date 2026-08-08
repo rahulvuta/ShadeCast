@@ -11,6 +11,11 @@ LOW      — verdict shown, escalated one level more conservative, with a
 UNUSABLE — no verdict. Show what's broken, when data was last good, and
            the cached prior assessment with its timestamp.
 
+CRITICAL findings mean physically impossible / corrupted inputs (sentinel
+fills, out-of-Earth-range temperatures, extreme consistency gaps). Minor
+formula quirks (e.g. Rothfusz HI slightly below air temp at low RH) are
+tolerated by the checks layer and never reach CRITICAL.
+
 Never silently swallow a finding. Never let low confidence produce a
 less-cautious verdict.
 """

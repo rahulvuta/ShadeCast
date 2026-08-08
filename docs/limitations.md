@@ -57,3 +57,18 @@ The multi-day schedule and shift planner are capped at **5 days** because the Op
 ## 13. Integrity layer reduces — does not eliminate — input risk
 
 The data integrity layer catches range errors, cross-source disagreement, physical inconsistencies, and staleness before the engine trusts a bundle. It **reduces** the chance of confidently reporting garbage; it does **not** eliminate model error, sensor gaps, or FIRMS latency. LOW confidence escalates the verdict one level more conservative; UNUSABLE refuses a verdict and falls back to last-good cache.
+
+Cross-derived checks use **magnitude-graduated** severity so minor, physically normal variance does not black out the assessment:
+
+| Check | No finding | WARNING | ERROR | CRITICAL (refuse) |
+|---|---|---|---|---|
+| HI below air temp (T>80°F) | ≤10°F | 10–20°F | 20–35°F | >35°F |
+| HI vs apparent temp | ≤10°F | 10–20°F | 20–35°F | >35°F |
+| Dew point above air temp | ≤1°C | 1–4°C | 4–10°C | >10°C |
+| UV above clear-sky | ≤1 | 1–3 | 3–6 | >6 |
+| Temp vs POWER climatology | within ±15°C | 15–40°C beyond | — | >40°C beyond |
+| Absolute temp range | −90…60°C | — | — | outside |
+
+**Rothfusz low-RH note:** the NWS heat-index regression legitimately yields HI below air temperature in dry heat (gaps up to ~8–9°F at RH≈0%). That is a formula quirk, not corrupted data — those cases stay clean (no finding) so desert / arid locations remain usable.
+
+CRITICAL is reserved for physically impossible inputs (POWER −999 sentinels, out-of-Earth-range temperatures, extreme consistency gaps). Small formula quirks and model rounding never refuse a verdict.

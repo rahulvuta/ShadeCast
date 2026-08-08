@@ -4,12 +4,21 @@ Pure functions, no I/O. Each check returns zero or more IntegrityFinding
 objects. The engine must not consume a bundle until run_all_checks has
 produced a ConfidenceResult via confidence.aggregate.
 
-Documented constants (no stored variance; fixed margins are intentional):
-- CLIMATOLOGY_MARGIN_C = 15.0 — temperature vs POWER climatology mean.
-  POWER stores only mean LST, not variance; ±15°C covers seasonal extremes
-  and sensor noise while still catching corruption (e.g. 250°C).
+Cross-derived / cross-source checks use **magnitude-graduated** severity:
+negligible deltas produce no finding; moderate anomalies are WARNING;
+large gaps are ERROR (escalate verdict); only physically implausible
+magnitudes are CRITICAL (refuse verdict). CRITICAL is reserved for
+impossible data — not for formula quirks or model rounding.
+
+Documented constants:
+- CLIMATOLOGY_MARGIN_C / CLIMATOLOGY_CRITICAL_C — temp vs POWER mean.
+  POWER stores means only; ±15°C is seasonal noise, >40°C is corruption.
 - UV_CROSS_SOURCE_MAX_DELTA = 3.0 — forecast UV vs air-quality UV.
-- HI_VS_APPARENT_MAX_DELTA_F = 10.0 — Rothfusz HI vs Open-Meteo apparent.
+- HI_VS_APPARENT_*_F — Rothfusz HI vs Open-Meteo apparent (tiered).
+- HI_BELOW_TEMP_*_F — HI below air temp when T>80°F (tiered). Rothfusz
+  legitimately yields HI < T at low RH (dry heat); gaps ≤10°F are normal.
+- DEW_POINT_*_C / UV_CLEAR_SKY_* — tiered physical-consistency slack.
+- TEMP_PHYSICAL_*_C — absolute Earth-surface temperature bounds.
 - Staleness tolerances differ by source refresh cadence (see STALE_*).
 """
 
@@ -25,8 +34,34 @@ from api.integrity.types import IntegrityFinding, Severity
 # --- Documented thresholds -------------------------------------------------
 
 CLIMATOLOGY_MARGIN_C = 15.0
+CLIMATOLOGY_CRITICAL_C = 40.0  # beyond this vs POWER mean → CRITICAL
 UV_CROSS_SOURCE_MAX_DELTA = 3.0
-HI_VS_APPARENT_MAX_DELTA_F = 10.0
+
+# Rothfusz HI vs Open-Meteo apparent temperature (°F), tiered.
+HI_VS_APPARENT_WARN_F = 10.0
+HI_VS_APPARENT_ERROR_F = 20.0
+HI_VS_APPARENT_CRITICAL_F = 35.0
+# Back-compat alias used by older call sites / tests.
+HI_VS_APPARENT_MAX_DELTA_F = HI_VS_APPARENT_WARN_F
+
+# HI below air temp when T > 80°F (°F). Rothfusz low-RH gaps top out ~8–9°F.
+HI_BELOW_TEMP_WARN_F = 10.0
+HI_BELOW_TEMP_ERROR_F = 20.0
+HI_BELOW_TEMP_CRITICAL_F = 35.0
+
+# Dew point above air temp (°C) — Magnus approx / rounding noise.
+DEW_POINT_WARN_C = 1.0
+DEW_POINT_ERROR_C = 4.0
+DEW_POINT_CRITICAL_C = 10.0
+
+# UV index above clear-sky ceiling (index points).
+UV_CLEAR_SKY_WARN = 1.0
+UV_CLEAR_SKY_ERROR = 3.0
+UV_CLEAR_SKY_CRITICAL = 6.0
+
+# Absolute Earth-surface temperature bounds (°C).
+TEMP_PHYSICAL_MIN_C = -90.0
+TEMP_PHYSICAL_MAX_C = 60.0
 
 # Per-source age tolerances. CAMS air-quality updates ~daily, so 30h.
 STALE_FIRMS = timedelta(hours=6)
@@ -39,6 +74,26 @@ MIN_HOURS_FRACTION = 0.75
 DEFAULT_HORIZON_HOURS = 24
 
 POWER_FILL = -999.0
+
+
+def _severity_for_excess(
+    excess: float,
+    *,
+    warn: float,
+    error: float,
+    critical: float,
+) -> Severity | None:
+    """Map a positive excess-over-tolerance into a severity tier.
+
+    Returns None when excess is within the warn floor (no finding).
+    """
+    if excess <= warn:
+        return None
+    if excess <= error:
+        return Severity.WARNING
+    if excess <= critical:
+        return Severity.ERROR
+    return Severity.CRITICAL
 
 
 @dataclass(frozen=True)
@@ -217,33 +272,92 @@ def check_temp_vs_climatology(
     hours: Sequence[HourlyInputs],
     climatology_temp_c: float | None,
     margin_c: float = CLIMATOLOGY_MARGIN_C,
+    critical_c: float = CLIMATOLOGY_CRITICAL_C,
 ) -> list[IntegrityFinding]:
     """Flag temperatures far from POWER climatology mean.
 
-    Margin is a fixed documented constant (see module docstring), not a
-    statistical sigma — POWER rows store means only.
+    ±margin_c is seasonal / sensor noise (WARNING). Beyond critical_c is
+    treated as corruption (CRITICAL) — e.g. a 250°C reading.
     """
     if climatology_temp_c is None:
         return []
     out: list[IntegrityFinding] = []
-    lo = climatology_temp_c - margin_c
-    hi = climatology_temp_c + margin_c
     for h in hours:
         t = h.temperature_c
         if t is None:
             continue
-        if t < lo or t > hi:
+        excess = abs(t - climatology_temp_c) - margin_c
+        if excess <= 0:
+            continue
+        # Distance beyond the warn margin, mapped against (critical - margin).
+        beyond_warn = abs(t - climatology_temp_c)
+        if beyond_warn > critical_c:
+            severity = Severity.CRITICAL
+            check_id = "temp_climatology_critical"
+        else:
+            severity = Severity.WARNING
+            check_id = "temp_climatology"
+        out.append(
+            _finding(
+                check_id,
+                severity,
+                (
+                    f"Temperature {t}°C is outside POWER climatology "
+                    f"mean {climatology_temp_c}°C ± {margin_c}°C"
+                    + (" — physically implausible." if severity == Severity.CRITICAL else ".")
+                ),
+                "temperature_c",
+                {"temp_c": t, "climatology_c": climatology_temp_c, "delta_c": round(t - climatology_temp_c, 2)},
+                f"{climatology_temp_c - margin_c:.1f}–{climatology_temp_c + margin_c:.1f}°C "
+                f"(critical beyond ±{critical_c}°C)",
+            )
+        )
+    return out
+
+
+def check_temperature_physical_range(
+    hours: Sequence[HourlyInputs],
+    climatology_temp_c: float | None = None,
+    *,
+    min_c: float = TEMP_PHYSICAL_MIN_C,
+    max_c: float = TEMP_PHYSICAL_MAX_C,
+) -> list[IntegrityFinding]:
+    """Absolute Earth-surface temperature bounds (independent of climatology)."""
+    out: list[IntegrityFinding] = []
+    if climatology_temp_c is not None and (
+        climatology_temp_c < min_c or climatology_temp_c > max_c
+    ):
+        # Skip POWER sentinel — handled by check_power_sentinel.
+        if climatology_temp_c != POWER_FILL:
             out.append(
                 _finding(
-                    "temp_climatology",
-                    Severity.WARNING,
+                    "temp_physical_range",
+                    Severity.CRITICAL,
                     (
-                        f"Temperature {t}°C is outside POWER climatology "
-                        f"mean {climatology_temp_c}°C ± {margin_c}°C."
+                        f"Climatology temperature {climatology_temp_c}°C is outside "
+                        f"physical Earth-surface bounds {min_c}–{max_c}°C."
+                    ),
+                    "climatology_temp_c",
+                    climatology_temp_c,
+                    f"{min_c}–{max_c}°C",
+                )
+            )
+    for h in hours:
+        t = h.temperature_c
+        if t is None or t == POWER_FILL:
+            continue
+        if t < min_c or t > max_c:
+            out.append(
+                _finding(
+                    "temp_physical_range",
+                    Severity.CRITICAL,
+                    (
+                        f"Temperature {t}°C is outside physical Earth-surface "
+                        f"bounds {min_c}–{max_c}°C."
                     ),
                     "temperature_c",
-                    {"temp_c": t, "climatology_c": climatology_temp_c},
-                    f"{lo:.1f}–{hi:.1f}°C",
+                    t,
+                    f"{min_c}–{max_c}°C",
                 )
             )
     return out
@@ -425,57 +539,101 @@ def check_uv_cross_source(
 
 def check_hi_vs_apparent(
     hours: Sequence[HourlyInputs],
-    max_delta_f: float = HI_VS_APPARENT_MAX_DELTA_F,
+    warn_f: float = HI_VS_APPARENT_WARN_F,
+    error_f: float = HI_VS_APPARENT_ERROR_F,
+    critical_f: float = HI_VS_APPARENT_CRITICAL_F,
+    max_delta_f: float | None = None,
 ) -> list[IntegrityFinding]:
+    """Rothfusz HI vs Open-Meteo apparent — magnitude-graduated.
+
+    ``max_delta_f`` is accepted as a back-compat alias for the warn floor.
+    """
+    if max_delta_f is not None:
+        warn_f = max_delta_f
     out: list[IntegrityFinding] = []
     for h in hours:
         if h.heat_index_f is None or h.apparent_temperature_c is None:
             continue
         apparent_f = h.apparent_temperature_c * 9.0 / 5.0 + 32.0
         delta = abs(h.heat_index_f - apparent_f)
-        if delta > max_delta_f:
-            out.append(
-                _finding(
-                    "hi_vs_apparent",
-                    Severity.WARNING,
-                    (
-                        f"Rothfusz HI {h.heat_index_f:.1f}°F diverges from "
-                        f"apparent {apparent_f:.1f}°F by {delta:.1f}°F."
-                    ),
-                    "heat_index_f",
-                    {
-                        "heat_index_f": h.heat_index_f,
-                        "apparent_f": round(apparent_f, 1),
-                        "delta_f": round(delta, 1),
-                    },
-                    f"abs(delta) <= {max_delta_f}°F",
-                )
+        severity = _severity_for_excess(
+            delta, warn=warn_f, error=error_f, critical=critical_f
+        )
+        if severity is None:
+            continue
+        suffix = {
+            Severity.WARNING: "hi_vs_apparent",
+            Severity.ERROR: "hi_vs_apparent_large",
+            Severity.CRITICAL: "hi_vs_apparent_critical",
+        }[severity]
+        out.append(
+            _finding(
+                suffix,
+                severity,
+                (
+                    f"Rothfusz HI {h.heat_index_f:.1f}°F diverges from "
+                    f"apparent {apparent_f:.1f}°F by {delta:.1f}°F."
+                ),
+                "heat_index_f",
+                {
+                    "heat_index_f": h.heat_index_f,
+                    "apparent_f": round(apparent_f, 1),
+                    "delta_f": round(delta, 1),
+                },
+                f"abs(delta) <= {warn_f}°F (error {error_f}, critical {critical_f})",
             )
+        )
     return out
 
 
 # --- Physical consistency --------------------------------------------------
 
 
-def check_hi_gte_air_temp(hours: Sequence[HourlyInputs]) -> list[IntegrityFinding]:
+def check_hi_gte_air_temp(
+    hours: Sequence[HourlyInputs],
+    *,
+    warn_f: float = HI_BELOW_TEMP_WARN_F,
+    error_f: float = HI_BELOW_TEMP_ERROR_F,
+    critical_f: float = HI_BELOW_TEMP_CRITICAL_F,
+) -> list[IntegrityFinding]:
+    """HI below air temp when T > 80°F — magnitude-graduated.
+
+    The NWS Rothfusz regression legitimately yields HI < T at low RH (dry
+    heat). Gaps up to ~10°F are normal and produce no finding. Only
+    physically impossible magnitudes refuse a verdict.
+    """
     out: list[IntegrityFinding] = []
     for h in hours:
         if h.heat_index_f is None or h.temp_f is None:
             continue
-        if h.temp_f > 80.0 and h.heat_index_f + 0.05 < h.temp_f:
-            out.append(
-                _finding(
-                    "hi_below_air_temp",
-                    Severity.CRITICAL,
-                    (
-                        f"Heat index {h.heat_index_f:.1f}°F < air temp "
-                        f"{h.temp_f:.1f}°F when T > 80°F — math inconsistency."
-                    ),
-                    "heat_index_f",
-                    {"hi_f": h.heat_index_f, "temp_f": h.temp_f},
-                    "HI >= T when T > 80°F",
-                )
+        if h.temp_f <= 80.0:
+            continue
+        delta = h.temp_f - h.heat_index_f
+        if delta <= 0:
+            continue
+        severity = _severity_for_excess(
+            delta, warn=warn_f, error=error_f, critical=critical_f
+        )
+        if severity is None:
+            continue
+        check_id = {
+            Severity.WARNING: "hi_below_air_temp_moderate",
+            Severity.ERROR: "hi_below_air_temp_large",
+            Severity.CRITICAL: "hi_below_air_temp_critical",
+        }[severity]
+        out.append(
+            _finding(
+                check_id,
+                severity,
+                (
+                    f"Heat index {h.heat_index_f:.1f}°F is {delta:.1f}°F below air temp "
+                    f"{h.temp_f:.1f}°F when T > 80°F."
+                ),
+                "heat_index_f",
+                {"hi_f": h.heat_index_f, "temp_f": h.temp_f, "delta_f": round(delta, 2)},
+                f"HI >= T − {warn_f}°F (error {error_f}, critical {critical_f})",
             )
+        )
     return out
 
 
@@ -488,7 +646,14 @@ def _dew_point_c(temp_c: float, rh: float) -> float | None:
     return (b * gamma) / (a - gamma)
 
 
-def check_dew_point(hours: Sequence[HourlyInputs]) -> list[IntegrityFinding]:
+def check_dew_point(
+    hours: Sequence[HourlyInputs],
+    *,
+    warn_c: float = DEW_POINT_WARN_C,
+    error_c: float = DEW_POINT_ERROR_C,
+    critical_c: float = DEW_POINT_CRITICAL_C,
+) -> list[IntegrityFinding]:
+    """Dew point above air temp — magnitude-graduated (Magnus slack)."""
     out: list[IntegrityFinding] = []
     for h in hours:
         if h.temperature_c is None or h.relative_humidity is None:
@@ -496,39 +661,73 @@ def check_dew_point(hours: Sequence[HourlyInputs]) -> list[IntegrityFinding]:
         dp = _dew_point_c(h.temperature_c, h.relative_humidity)
         if dp is None:
             continue
-        if dp > h.temperature_c + 0.05:
-            out.append(
-                _finding(
-                    "dew_point_above_temp",
-                    Severity.ERROR,
-                    f"Dew point {dp:.1f}°C exceeds air temp {h.temperature_c}°C.",
-                    "dew_point",
-                    {"dew_point_c": round(dp, 2), "temp_c": h.temperature_c, "rh": h.relative_humidity},
-                    "dew_point <= air temperature",
-                )
+        delta = dp - h.temperature_c
+        if delta <= 0:
+            continue
+        severity = _severity_for_excess(
+            delta, warn=warn_c, error=error_c, critical=critical_c
+        )
+        if severity is None:
+            continue
+        check_id = {
+            Severity.WARNING: "dew_point_above_temp",
+            Severity.ERROR: "dew_point_above_temp_large",
+            Severity.CRITICAL: "dew_point_above_temp_critical",
+        }[severity]
+        out.append(
+            _finding(
+                check_id,
+                severity,
+                f"Dew point {dp:.1f}°C exceeds air temp {h.temperature_c}°C by {delta:.1f}°C.",
+                "dew_point",
+                {
+                    "dew_point_c": round(dp, 2),
+                    "temp_c": h.temperature_c,
+                    "rh": h.relative_humidity,
+                    "delta_c": round(delta, 2),
+                },
+                f"dew_point <= air temp + {warn_c}°C (error {error_c}, critical {critical_c})",
             )
+        )
     return out
 
 
-def check_uv_vs_clear_sky(hours: Sequence[HourlyInputs]) -> list[IntegrityFinding]:
+def check_uv_vs_clear_sky(
+    hours: Sequence[HourlyInputs],
+    *,
+    warn: float = UV_CLEAR_SKY_WARN,
+    error: float = UV_CLEAR_SKY_ERROR,
+    critical: float = UV_CLEAR_SKY_CRITICAL,
+) -> list[IntegrityFinding]:
+    """UV above clear-sky ceiling — magnitude-graduated."""
     out: list[IntegrityFinding] = []
     for h in hours:
         if h.uv_index is None or h.uv_index_clear_sky is None:
             continue
-        if h.uv_index > h.uv_index_clear_sky + 0.05:
-            out.append(
-                _finding(
-                    "uv_above_clear_sky",
-                    Severity.ERROR,
-                    (
-                        f"uv_index {h.uv_index} > clear-sky ceiling "
-                        f"{h.uv_index_clear_sky}."
-                    ),
-                    "uv_index",
-                    {"uv": h.uv_index, "clear_sky": h.uv_index_clear_sky},
-                    "uv_index <= uv_index_clear_sky",
-                )
+        delta = h.uv_index - h.uv_index_clear_sky
+        if delta <= 0:
+            continue
+        severity = _severity_for_excess(delta, warn=warn, error=error, critical=critical)
+        if severity is None:
+            continue
+        check_id = {
+            Severity.WARNING: "uv_above_clear_sky",
+            Severity.ERROR: "uv_above_clear_sky_large",
+            Severity.CRITICAL: "uv_above_clear_sky_critical",
+        }[severity]
+        out.append(
+            _finding(
+                check_id,
+                severity,
+                (
+                    f"uv_index {h.uv_index} exceeds clear-sky ceiling "
+                    f"{h.uv_index_clear_sky} by {delta:.1f}."
+                ),
+                "uv_index",
+                {"uv": h.uv_index, "clear_sky": h.uv_index_clear_sky, "delta": round(delta, 2)},
+                f"uv_index <= clear_sky + {warn} (error {error}, critical {critical})",
             )
+        )
     return out
 
 
@@ -599,6 +798,7 @@ def run_all_checks(bundle: IntegrityBundle) -> list[IntegrityFinding]:
     findings.extend(check_uv(hours))
     findings.extend(check_us_aqi(hours))
     findings.extend(check_temp_vs_climatology(hours, bundle.climatology_temp_c))
+    findings.extend(check_temperature_physical_range(hours, bundle.climatology_temp_c))
     findings.extend(check_power_sentinel(hours, bundle.climatology_temp_c))
     findings.extend(check_required_nulls(hours))
     findings.extend(check_missing_hours(hours))
