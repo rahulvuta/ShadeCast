@@ -12,6 +12,7 @@ import { FireMap } from './components/FireMap'
 import { HowWeCalculate } from './components/HowWeCalculate'
 import { IntegrityTheater } from './components/IntegrityTheater'
 import { SidebarControls } from './components/SidebarControls'
+import { ShiftSheetExport } from './components/ShiftSheetExport'
 import { StaleBanner } from './components/StaleBanner'
 import { TimelinePanel } from './components/TimelinePanel'
 import { TimeScrubber } from './components/TimeScrubber'
@@ -648,6 +649,13 @@ export default function App() {
                   corrupt={corruptDemo && !activeEventId}
                   event={activeEventId}
                   hourOffset={hourOffset}
+                />
+
+                <ShiftSheetExport
+                  assess={assess}
+                  locationLabel={loc.label}
+                  workload={workload}
+                  profile={profile}
                 />
 
                 {/* Row 5 — Actions / briefing / climatology */}
