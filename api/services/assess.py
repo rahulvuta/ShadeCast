@@ -828,6 +828,7 @@ def build_assessment(
                 required_hours=w.required_hours,
                 mean_rank=w.mean_rank,
                 label=w.label,
+                daypart=w.daypart,
             )
             for w in windows
         ],

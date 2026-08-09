@@ -101,6 +101,7 @@ export interface AssessResponse {
     required_hours: number
     mean_rank: number
     label: string
+    daypart?: string
   }>
   smoke: {
     smoke_pressure: number

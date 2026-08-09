@@ -121,6 +121,7 @@ class ShiftWindowOut(BaseModel):
     required_hours: float
     mean_rank: float
     label: str
+    daypart: str = "morning"
 
 
 class ActionOut(BaseModel):

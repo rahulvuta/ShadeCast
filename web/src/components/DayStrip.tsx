@@ -24,6 +24,26 @@ function formatWindow(w: ShiftWindow): { dayLabel: string; timeRange: string } {
   return { dayLabel, timeRange }
 }
 
+function daypartFromHour(hour: number): string {
+  const h = hour % 24
+  if (h < 6) return 'overnight'
+  if (h < 12) return 'morning'
+  if (h < 18) return 'afternoon'
+  return 'evening'
+}
+
+const DAYPART_LABEL: Record<string, string> = {
+  overnight: 'Overnight',
+  morning: 'Morning',
+  afternoon: 'Afternoon',
+  evening: 'Evening',
+}
+
+function daypartLabel(w: ShiftWindow): string {
+  const id = w.daypart || daypartFromHour(w.start_hour)
+  return DAYPART_LABEL[id] ?? id
+}
+
 function windowQuality(meanRank: number): { label: string; tone: 'go' | 'caution' | 'restrict' | 'marginal' } {
   if (meanRank < 0.25) return { label: 'All GO', tone: 'go' }
   if (meanRank < 0.75) return { label: 'Mostly GO', tone: 'go' }
@@ -130,7 +150,7 @@ export function ShiftPlanner({
             Shift planner
           </h2>
           <p className="mt-1 text-xs leading-snug text-[var(--muted)]">
-            Best contiguous blocks with enough GO or caution hours.
+            Best block per time of day when conditions allow.
           </p>
         </div>
         <div className="flex items-center gap-1 rounded border border-[var(--border)] bg-white p-0.5">
@@ -186,6 +206,9 @@ export function ShiftPlanner({
                     <p className="text-xs font-semibold text-[var(--muted)]">{dayLabel}</p>
                     <p className="mt-0.5 text-sm font-bold tracking-tight text-[var(--ink)]">{timeRange}</p>
                     <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <span className="rounded border border-[var(--border)] bg-white px-2 py-0.5 text-[0.65rem] font-semibold text-[var(--muted)]">
+                        {daypartLabel(w)}
+                      </span>
                       <span className="rounded border border-[var(--border)] bg-white px-2 py-0.5 text-[0.65rem] font-semibold text-[var(--muted)]">
                         {w.required_hours}h block
                       </span>

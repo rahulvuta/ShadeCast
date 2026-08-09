@@ -87,6 +87,7 @@ class ShiftWindow:
     required_hours: float
     mean_rank: float  # lower is better (GO=0)
     label: str
+    daypart: str = "morning"  # overnight | morning | afternoon | evening
 
 
 @dataclass(frozen=True)
@@ -94,6 +95,18 @@ class MultiDaySchedule:
     days: list[DaySummary]
     hourly: list[HourPlan]
     best_windows: list[ShiftWindow]
+
+
+def _daypart_for_hour(hour: int) -> str:
+    """Bucket a local start hour into a daypart for shift variety."""
+    h = hour % 24
+    if h < 6:
+        return "overnight"
+    if h < 12:
+        return "morning"
+    if h < 18:
+        return "afternoon"
+    return "evening"
 
 
 def _fmt_window(hours: Sequence[int]) -> str | None:
@@ -211,8 +224,10 @@ def shift_planner(
 ) -> list[ShiftWindow]:
     """Rank contiguous work windows that can fit `required_hours` of GO/CAUTION time.
 
-    Walks the multi-day hourly series and scores each candidate window by mean
-    verdict rank (lower is better). STOP hours break a window.
+    Walks the multi-day hourly series and scores each candidate by mean verdict
+    rank (lower is better). Returns the best window per daypart (overnight /
+    morning / afternoon / evening) so recommendations are not five near-identical
+    dawn starts. Empty dayparts are skipped. STOP hours break a window.
     """
     if required_hours <= 0:
         return []
@@ -255,6 +270,7 @@ def shift_planner(
             end = usable[j - 1]
             mean_rank = sum(ranks) / len(ranks)
             assert start.day is not None and end.day is not None
+            daypart = _daypart_for_hour(start.hour)
             windows.append(
                 ShiftWindow(
                     day=start.day,
@@ -266,14 +282,27 @@ def shift_planner(
                         f"{start.day.isoformat()} {start.hour:02d}:00–"
                         f"{end.day.isoformat()} {end.hour + 1:02d}:00"
                     ),
+                    daypart=daypart,
                 )
             )
 
     # Deduplicate by (day, start_hour); keep best mean_rank
-    best: dict[tuple[date, int], ShiftWindow] = {}
+    by_start: dict[tuple[date, int], ShiftWindow] = {}
     for w in windows:
         key = (w.day, w.start_hour)
-        if key not in best or w.mean_rank < best[key].mean_rank:
-            best[key] = w
-    ranked = sorted(best.values(), key=lambda w: (w.mean_rank, w.day, w.start_hour))
+        if key not in by_start or w.mean_rank < by_start[key].mean_rank:
+            by_start[key] = w
+
+    # One best window per daypart across the horizon
+    by_daypart: dict[str, ShiftWindow] = {}
+    for w in by_start.values():
+        prev = by_daypart.get(w.daypart)
+        if prev is None or (w.mean_rank, w.day, w.start_hour) < (
+            prev.mean_rank,
+            prev.day,
+            prev.start_hour,
+        ):
+            by_daypart[w.daypart] = w
+
+    ranked = sorted(by_daypart.values(), key=lambda w: (w.mean_rank, w.day, w.start_hour))
     return ranked[:max_results]
