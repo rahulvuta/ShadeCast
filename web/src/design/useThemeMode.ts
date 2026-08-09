@@ -3,6 +3,10 @@ import { THEME_STORAGE_KEY, type ThemeMode } from './tokens'
 
 function readStoredTheme(): ThemeMode {
   try {
+    if (typeof window !== 'undefined') {
+      const q = new URLSearchParams(window.location.search).get('theme')
+      if (q === 'sunlight' || q === 'ops') return q
+    }
     const raw = localStorage.getItem(THEME_STORAGE_KEY)
     if (raw === 'sunlight' || raw === 'ops') return raw
   } catch {

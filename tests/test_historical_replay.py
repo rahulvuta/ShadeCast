@@ -131,6 +131,14 @@ def test_real_concordance_spearman_from_bundles():
     print(f"real_bundle_spearman n={len(xs)} rho={rho:.4f}")
 
 
+def test_dust_event_not_unusable():
+    db = MagicMock()
+    r = build_assessment(db, 0, 0, event_id="dust_event")
+    assert r.is_historical
+    assert r.current.verdict is not None
+    assert r.data_confidence is None or r.data_confidence.level != "UNUSABLE"
+
+
 def test_same_engine_path_uses_assess_environmental_load(monkeypatch):
     """Historical assess must call assess_environmental_load (not a fork)."""
     import api.services.assess as assess_mod

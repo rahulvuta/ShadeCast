@@ -81,4 +81,10 @@ The web service worker caches the app shell and **per-URL** `/api/assess` respon
 
 ## 15. Time Machine historical replay
 
-`/api/assess?event=` replays committed Open-Meteo archive weather + CAMS air-quality bundles through the **same** engine as live assess. FIRMS NRT does not retain 2023 detections; those bundles use an empty archive fixture (labeled in `validation/fixtures/`). Concordance of smoke_pressure vs CAMS is a consistency study, not ground-station PM2.5 validation — see `docs/validation.md`.
+`/api/assess?event=` replays committed Open-Meteo archive weather + CAMS air-quality bundles through the **same** engine as live assess (`is_historical=true`). 
+
+**Provenance:** weather from `archive-api.open-meteo.com`; air quality from Open-Meteo AQ with `start_date`/`end_date`. FIRMS NRT does not retain 2023 detections; those bundles use an **empty archive fixture** (labeled in `validation/fixtures/`) — not a claim that no fires existed.
+
+**Concordance** of `smoke_pressure` vs CAMS AQI on real bundle hours is a **consistency study** (satellite/model vs model), **not** ground-truth validation against measured PM2.5. See `docs/validation.md`. Ground-station validation remains future work.
+
+**Honest fail:** NYC June 2023 Time Machine returns CAUTION on CAMS archive (~161 AQI peak in our bundle) while ground monitors exceeded 400 — documented as fail against the real-world STOP/RESTRICT claim rather than synthetic STOP.

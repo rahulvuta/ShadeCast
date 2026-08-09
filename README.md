@@ -44,16 +44,24 @@ Full write-up: [docs/validation.md](docs/validation.md) (unit · historical repl
 ## What it does
 
 ![Crew verdict card with hard-stop window](docs/screenshots/verdict_card.png)  
-*One GO / CAUTION / RESTRICT / STOP verdict with driver attribution, confidence, and a hard-stop window.*
+*One GO / CAUTION / RESTRICT / STOP verdict with huge load score, confidence, and hard-stop window (ops theme).*
 
-![Hour-by-hour work/rest schedule strip](docs/screenshots/hourly_strip.png)  
-*Hour-by-hour work and rest minutes, plus a 5-day outlook and shift planner.*
+![Sunlight / outdoor glare theme](docs/screenshots/sunlight_theme.png)  
+*Sunlight mode — max-contrast field theme for phone-in-sun use.*
 
-![Map of nearby FIRMS fire detections with wind direction](docs/screenshots/map_fires.png)  
-*Satellite fire detections and wind direction — smoke pressure is computed from upwind fires, not AQI. Concordance compares FIRMS to CAMS.*
+![Map of nearby FIRMS fire detections with upwind cone](docs/screenshots/map_fires.png)  
+*Algorithm map: 300 km search radius, ±45° upwind cone, FRP-weighted detections (not AQI).*
+
+![Timeline / risk clock region](docs/screenshots/hourly_strip.png)  
+*5-day strip, work/rest schedule, and 24-hour risk clock (bars toggle available).*
+
+![Integrity theater on corrupt feed](docs/screenshots/integrity_theater.png)  
+*`?corrupt=1` — staged integrity checklist, confidence gauge, and refusal path.*
 
 ![Spanish crew briefing ready to copy](docs/screenshots/briefing_spanish.png)  
 *Copyable crew briefing in English, Spanish, or Vietnamese, plus sourced action cards.*
+
+Live verification (healthz, ingest freshness, Lighthouse): [docs/verification_phase7.md](docs/verification_phase7.md).
 
 ## How it works
 
@@ -86,10 +94,9 @@ The LLM **never** computes or ranks risk. It only rephrases deterministic engine
 
 ## Accessibility
 
-Mobile Lighthouse accessibility: **96** (main view) and **96** (`?text=1` text-only mode).
+Mobile Lighthouse accessibility (V3 local preview, 2026-08-09): **100** (ops), **100** (sunlight), **100** (`?text=1`). See [docs/verification_phase7.md](docs/verification_phase7.md).
 
-![Lighthouse accessibility scores — main view](docs/screenshots/lighthouse_main.png)
-
+![Lighthouse accessibility scores — ops theme](docs/screenshots/lighthouse_main.png)  
 ![Lighthouse accessibility scores — text-only mode](docs/screenshots/lighthouse_text.png)
 
 | Measure | WCAG criterion |
