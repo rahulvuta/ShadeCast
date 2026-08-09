@@ -22,11 +22,12 @@ import { VerdictCard } from './components/VerdictCard'
 import { verdictPalette, type VerdictKey } from './design/tokens'
 import { useThemeMode } from './design/useThemeMode'
 import {
+  INTEGRITY_TAB_ID,
   isUnusable,
   newTabId,
   sameLocationTab,
+  type IntegrityTabState,
   type LocationTab,
-  type StagingOpen,
 } from './tabs/types'
 import {
   DEMO_LOCATIONS,
@@ -125,8 +126,16 @@ export default function App() {
   const [hourOffset] = useState<number | null>(null)
 
   const [tabs, setTabs] = useState<LocationTab[]>([])
-  const [activeTabId, setActiveTabId] = useState<string | null>(null)
-  const [staging, setStaging] = useState<StagingOpen | null>(null)
+  const [activeTabId, setActiveTabId] = useState<string>(INTEGRITY_TAB_ID)
+  const [integrity, setIntegrity] = useState<IntegrityTabState>({
+    label: '',
+    lat: 0,
+    lon: 0,
+    eventId: null,
+    loading: false,
+    error: null,
+    assess: null,
+  })
   const [scrubPlaying, setScrubPlaying] = useState(false)
   const [brief, setBrief] = useState<BriefResponse | null>(null)
   const [briefLoading, setBriefLoading] = useState(false)
@@ -137,17 +146,18 @@ export default function App() {
   const commitGen = useRef(0)
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? null
-  const assess = staging?.blockedAssess ?? activeTab?.assess ?? null
+  const onIntegrityTab = activeTabId === INTEGRITY_TAB_ID
+  const assess = onIntegrityTab ? integrity.assess : activeTab?.assess ?? null
   const fires = activeTab?.fires ?? []
   const firesError = activeTab?.firesError ?? null
   const selectedDay = activeTab?.selectedDay ?? null
   const scrubIndex = activeTab?.scrubIndex ?? 0
-  const locLabel = staging?.label ?? activeTab?.label ?? BOOT_LOC.label
-  const locLat = staging?.lat ?? activeTab?.lat ?? BOOT_LOC.lat
-  const locLon = staging?.lon ?? activeTab?.lon ?? BOOT_LOC.lon
-  const activeEventId = staging?.eventId ?? activeTab?.eventId ?? null
-  const loading = Boolean(staging?.loading)
-  const error = staging?.error ?? null
+  const locLabel = onIntegrityTab
+    ? integrity.label || BOOT_LOC.label
+    : activeTab?.label ?? BOOT_LOC.label
+  const locLat = onIntegrityTab ? integrity.lat || BOOT_LOC.lat : activeTab?.lat ?? BOOT_LOC.lat
+  const locLon = onIntegrityTab ? integrity.lon || BOOT_LOC.lon : activeTab?.lon ?? BOOT_LOC.lon
+  const activeEventId = onIntegrityTab ? integrity.eventId : activeTab?.eventId ?? null
 
   const sidebarLoc: ActiveLocation = {
     lat: locLat,
@@ -169,32 +179,21 @@ export default function App() {
       eventId: string | null
     }) => {
       const gen = ++commitGen.current
-      setStaging({
+      setActiveTabId(INTEGRITY_TAB_ID)
+      setIntegrity({
         label: target.label,
         lat: target.lat,
         lon: target.lon,
         eventId: target.eventId,
         loading: true,
         error: null,
-        blockedAssess: null,
+        assess: null,
       })
       setScrubPlaying(false)
       setLatInput(String(target.lat))
       setLonInput(String(target.lon))
       setSearchHits([])
       setSearchError(null)
-
-      // Focus existing tab while refreshing
-      setTabs((prev) => {
-        const existing = prev.find((t) =>
-          sameLocationTab(
-            { lat: t.lat, lon: t.lon, eventId: t.eventId },
-            { lat: target.lat, lon: target.lon, eventId: target.eventId },
-          ),
-        )
-        if (existing) setActiveTabId(existing.id)
-        return prev
-      })
 
       try {
         const a = await fetchAssess({
@@ -221,18 +220,17 @@ export default function App() {
           setLonInput(String(lon))
         }
 
-        if (isUnusable(a)) {
-          setStaging({
-            label,
-            lat,
-            lon,
-            eventId: target.eventId,
-            loading: false,
-            error: null,
-            blockedAssess: a,
-          })
-          return
-        }
+        setIntegrity({
+          label,
+          lat,
+          lon,
+          eventId: target.eventId,
+          loading: false,
+          error: null,
+          assess: a,
+        })
+
+        if (isUnusable(a)) return
 
         let nextFires: FirePoint[] = []
         let nextFiresError: string | null = null
@@ -279,18 +277,97 @@ export default function App() {
           queueMicrotask(() => setActiveTabId(tab.id))
           return [...prev, tab]
         })
-        setStaging(null)
       } catch (e) {
         if (gen !== commitGen.current) return
-        setStaging({
+        setIntegrity({
           label: target.label,
           lat: target.lat,
           lon: target.lon,
           eventId: target.eventId,
           loading: false,
           error: e instanceof Error ? e.message : 'Failed to load assessment',
-          blockedAssess: null,
+          assess: null,
         })
+      }
+    },
+    [workload, acclimatized, profile, requiredHours, corruptDemo, hourOffset],
+  )
+
+  const refreshLocationTab = useCallback(
+    async (target: LocationTab) => {
+      const gen = ++commitGen.current
+      try {
+        const a = await fetchAssess({
+          lat: target.lat,
+          lon: target.lon,
+          workload,
+          acclimatized,
+          profile,
+          requiredHours,
+          corrupt: corruptDemo && !target.eventId,
+          event: target.eventId,
+          hourOffset,
+        })
+        if (gen !== commitGen.current) return
+
+        let label = target.label
+        let lat = target.lat
+        let lon = target.lon
+        if (a.is_historical && a.lat != null && a.lon != null) {
+          lat = a.lat
+          lon = a.lon
+          label = a.historical_event?.label ?? a.location_label ?? target.label
+        }
+
+        if (isUnusable(a)) {
+          setActiveTabId(INTEGRITY_TAB_ID)
+          setIntegrity({
+            label,
+            lat,
+            lon,
+            eventId: target.eventId,
+            loading: false,
+            error: null,
+            assess: a,
+          })
+          setTabs((prev) => prev.filter((t) => t.id !== target.id))
+          return
+        }
+
+        let nextFires: FirePoint[] = []
+        let nextFiresError: string | null = null
+        if (!a.is_historical) {
+          const half = 2.7
+          const bbox = `${lon - half},${lat - half},${lon + half},${lat + half}`
+          try {
+            const f = await fetchFires(bbox)
+            nextFires = f.fires
+          } catch (e) {
+            nextFiresError = e instanceof Error ? e.message : 'Fire detections unavailable'
+          }
+        }
+        if (gen !== commitGen.current) return
+
+        const curIdx = a.hourly.findIndex((h) => h.is_current)
+        setTabs((prev) =>
+          prev.map((t) =>
+            t.id === target.id
+              ? {
+                  ...t,
+                  label,
+                  lat,
+                  lon,
+                  assess: a,
+                  fires: nextFires,
+                  firesError: nextFiresError,
+                  selectedDay: a.days?.[0]?.day ?? t.selectedDay,
+                  scrubIndex: curIdx >= 0 ? curIdx : t.scrubIndex,
+                }
+              : t,
+          ),
+        )
+      } catch {
+        /* keep existing tab data on refresh failure */
       }
     },
     [workload, acclimatized, profile, requiredHours, corruptDemo, hourOffset],
@@ -317,22 +394,9 @@ export default function App() {
   useEffect(() => {
     if (prevSettings.current === settingsKey) return
     prevSettings.current = settingsKey
-    if (!activeTabId) return
-    setTabs((prev) => {
-      const t = prev.find((x) => x.id === activeTabId)
-      if (t) {
-        queueMicrotask(() => {
-          void commitAssess({
-            lat: t.lat,
-            lon: t.lon,
-            label: t.label,
-            eventId: t.eventId,
-          })
-        })
-      }
-      return prev
-    })
-  }, [settingsKey, activeTabId, commitAssess])
+    if (onIntegrityTab || !activeTab) return
+    void refreshLocationTab(activeTab)
+  }, [settingsKey, onIntegrityTab, activeTab, refreshLocationTab])
 
   const applyLocation = useCallback(
     (next: ActiveLocation) => {
@@ -369,7 +433,7 @@ export default function App() {
   )
 
   useEffect(() => {
-    if (!assess || isUnusable(assess)) {
+    if (onIntegrityTab || !assess || isUnusable(assess)) {
       setBrief(null)
       return
     }
@@ -403,7 +467,7 @@ export default function App() {
     return () => {
       cancelled = true
     }
-  }, [assess, lang, workload, acclimatized, profile])
+  }, [onIntegrityTab, assess, lang, workload, acclimatized, profile])
 
   const scrubHour = assess?.hourly[scrubIndex] ?? null
   const displayVerdict = (scrubHour?.verdict as Verdict | undefined) ?? assess?.current.verdict ?? null
@@ -492,35 +556,29 @@ export default function App() {
     const lat = Number(latInput)
     const lon = Number(lonInput)
     if (!Number.isFinite(lat) || lat < -90 || lat > 90) {
-      setStaging((s) =>
-        s
-          ? { ...s, error: 'Latitude must be between -90 and 90' }
-          : {
-              label: 'Invalid coordinates',
-              lat: locLat,
-              lon: locLon,
-              eventId: null,
-              loading: false,
-              error: 'Latitude must be between -90 and 90',
-              blockedAssess: null,
-            },
-      )
+      setActiveTabId(INTEGRITY_TAB_ID)
+      setIntegrity((s) => ({
+        ...s,
+        label: s.label || 'Invalid coordinates',
+        lat: s.lat || locLat,
+        lon: s.lon || locLon,
+        loading: false,
+        error: 'Latitude must be between -90 and 90',
+        assess: null,
+      }))
       return
     }
     if (!Number.isFinite(lon) || lon < -180 || lon > 180) {
-      setStaging((s) =>
-        s
-          ? { ...s, error: 'Longitude must be between -180 and 180' }
-          : {
-              label: 'Invalid coordinates',
-              lat: locLat,
-              lon: locLon,
-              eventId: null,
-              loading: false,
-              error: 'Longitude must be between -180 and 180',
-              blockedAssess: null,
-            },
-      )
+      setActiveTabId(INTEGRITY_TAB_ID)
+      setIntegrity((s) => ({
+        ...s,
+        label: s.label || 'Invalid coordinates',
+        lat: s.lat || locLat,
+        lon: s.lon || locLon,
+        loading: false,
+        error: 'Longitude must be between -180 and 180',
+        assess: null,
+      }))
       return
     }
     applyLocation({
@@ -532,8 +590,8 @@ export default function App() {
 
   function selectTab(id: string) {
     setActiveTabId(id)
-    setStaging(null)
     setScrubPlaying(false)
+    if (id === INTEGRITY_TAB_ID) return
     const t = tabs.find((x) => x.id === id)
     if (t) {
       setLatInput(String(t.lat))
@@ -542,26 +600,26 @@ export default function App() {
   }
 
   function closeTab(id: string) {
+    if (id === INTEGRITY_TAB_ID) return
     setTabs((prev) => {
       const next = prev.filter((t) => t.id !== id)
       if (activeTabId === id) {
         const fallback = next[next.length - 1] ?? null
-        setActiveTabId(fallback?.id ?? null)
-        setStaging(null)
+        setActiveTabId(fallback?.id ?? INTEGRITY_TAB_ID)
       }
       return next
     })
   }
 
   function setSelectedDay(day: string) {
-    if (!activeTabId) return
+    if (onIntegrityTab || !activeTabId) return
     setTabs((prev) =>
       prev.map((t) => (t.id === activeTabId ? { ...t, selectedDay: day } : t)),
     )
   }
 
   function setScrubIndex(index: number) {
-    if (!activeTabId) return
+    if (onIntegrityTab || !activeTabId) return
     setTabs((prev) =>
       prev.map((t) => (t.id === activeTabId ? { ...t, scrubIndex: index } : t)),
     )
@@ -613,10 +671,9 @@ export default function App() {
     )
   }
 
-  const showBlocked = Boolean(staging?.blockedAssess)
-  const showTabContent = Boolean(activeTab && !showBlocked && !staging?.loading)
-  const showEmpty =
-    !loading && !error && !showBlocked && !activeTab && !staging
+  const showIntegrityPanel = onIntegrityTab
+  const showLocationContent = Boolean(activeTab && !onIntegrityTab)
+  const integrityBlocked = Boolean(integrity.assess && isUnusable(integrity.assess))
 
   return (
     <div className="app-shell min-h-screen">
@@ -658,11 +715,11 @@ export default function App() {
 
       <div className="mx-auto max-w-[1600px] px-4 py-5 sm:px-5 pb-12 layout-stack">
         <LocationTabBar
+          integrity={integrity}
           tabs={tabs}
           activeTabId={activeTabId}
           onSelect={selectTab}
           onClose={closeTab}
-          openingLabel={staging?.loading ? staging.label : null}
         />
 
         <details className="dash-panel lg:hidden">
@@ -691,66 +748,85 @@ export default function App() {
               </aside>
             )}
 
-            {loading && (
-              <div role="status" className="dash-panel space-y-3 p-5">
-                <p className="font-semibold text-sm">
-                  Opening {staging?.label ?? 'location'} — running integrity checks…
-                </p>
-                <p className="text-xs text-[var(--muted)]">
-                  A new tab opens only after checks pass. Unusable inputs will not create a tab.
-                </p>
-              </div>
-            )}
-
-            {error && (
-              <div role="alert" className="dash-panel border-2 border-[var(--stop)] p-4">
-                <p className="font-bold">Could not load assessment</p>
-                <p className="text-sm mt-1">{error}</p>
-                <button
-                  type="button"
-                  className="btn-primary touch-target mt-3 rounded px-4 py-2 text-sm"
-                  onClick={() =>
-                    void commitAssess({
-                      lat: staging?.lat ?? locLat,
-                      lon: staging?.lon ?? locLon,
-                      label: staging?.label ?? locLabel,
-                      eventId: staging?.eventId ?? null,
-                    })
-                  }
-                >
-                  Retry
-                </button>
-              </div>
-            )}
-
-            {showBlocked && staging?.blockedAssess && (
+            {showIntegrityPanel && (
               <div className="layout-stack">
-                <aside
-                  role="status"
-                  className="rounded border-2 border-[var(--stop)] bg-[var(--stop-bg)] px-3.5 py-3 text-sm"
-                >
-                  <p className="font-bold">Integrity checks failed — tab not opened</p>
-                  <p className="mt-1 text-[var(--muted)]">
-                    {staging.label} returned UNUSABLE confidence. Fix the feed or pick another
-                    location. Your other tabs are unchanged.
-                  </p>
-                </aside>
-                <ConfidenceBanner confidence={staging.blockedAssess.data_confidence} />
-                <IntegrityTheater
-                  confidence={staging.blockedAssess.data_confidence}
-                  forceOpen={true}
-                />
+                {integrity.loading && (
+                  <div role="status" className="dash-panel space-y-3 p-5">
+                    <p className="font-semibold text-sm">
+                      Checking {integrity.label || 'location'} — running integrity checks…
+                    </p>
+                    <p className="text-xs text-[var(--muted)]">
+                      A location tab opens when checks pass. Unusable inputs stay on this tab.
+                    </p>
+                  </div>
+                )}
+
+                {integrity.error && (
+                  <div role="alert" className="dash-panel border-2 border-[var(--stop)] p-4">
+                    <p className="font-bold">Could not load assessment</p>
+                    <p className="text-sm mt-1">{integrity.error}</p>
+                    <button
+                      type="button"
+                      className="btn-primary touch-target mt-3 rounded px-4 py-2 text-sm"
+                      onClick={() =>
+                        void commitAssess({
+                          lat: integrity.lat,
+                          lon: integrity.lon,
+                          label: integrity.label,
+                          eventId: integrity.eventId,
+                        })
+                      }
+                    >
+                      Retry
+                    </button>
+                  </div>
+                )}
+
+                {!integrity.loading && !integrity.error && !integrity.assess && (
+                  <div className="dash-panel p-6 text-sm text-[var(--muted)]">
+                    Search or pick a demo location. Integrity checks run here first; a location tab
+                    opens when they pass.
+                  </div>
+                )}
+
+                {integrity.assess && (
+                  <>
+                    {integrityBlocked && (
+                      <aside
+                        role="status"
+                        className="rounded border-2 border-[var(--stop)] bg-[var(--stop-bg)] px-3.5 py-3 text-sm"
+                      >
+                        <p className="font-bold">Integrity checks failed — location tab not opened</p>
+                        <p className="mt-1 text-[var(--muted)]">
+                          {integrity.label} returned UNUSABLE confidence. Fix the feed or pick another
+                          location.
+                        </p>
+                      </aside>
+                    )}
+                    {!integrityBlocked && (
+                      <aside
+                        role="status"
+                        className="rounded border-2 border-[var(--go)] bg-[var(--go-bg)] px-3.5 py-3 text-sm"
+                      >
+                        <p className="font-bold">Integrity checks passed</p>
+                        <p className="mt-1 text-[var(--muted)]">
+                          {integrity.label} opened in a location tab. Switch tabs above to view the
+                          full assessment.
+                        </p>
+                      </aside>
+                    )}
+                    <ConfidenceBanner confidence={integrity.assess.data_confidence} />
+                    <IntegrityTheater
+                      key={`${integrity.lat}|${integrity.lon}|${integrity.eventId}|${integrity.assess.data_confidence?.score}`}
+                      confidence={integrity.assess.data_confidence}
+                      forceOpen={true}
+                    />
+                  </>
+                )}
               </div>
             )}
 
-            {showEmpty && (
-              <div className="dash-panel p-6 text-sm text-[var(--muted)]">
-                Search or pick a demo location to open a tab. Integrity checks run first; unusable
-                inputs will not open a tab.
-              </div>
-            )}
-
-            {showTabContent && assess && activeTab && (
+            {showLocationContent && assess && activeTab && (
               <>
                 {assess.is_historical && assess.historical_event && (
                   <aside
@@ -799,10 +875,6 @@ export default function App() {
                   />
                   <div className="mt-2 space-y-2">
                     <ConfidenceBanner confidence={assess.data_confidence} />
-                    <IntegrityTheater
-                      confidence={assess.data_confidence}
-                      forceOpen={corruptDemo && !activeEventId}
-                    />
                     <DiffStrip summary={assess.diff_summary} />
                     <VerdictCard
                       verdict={displayVerdict}
@@ -929,7 +1001,7 @@ export default function App() {
               <SidebarControls {...controlsProps} />
             </div>
 
-            {showTabContent && assess && (
+            {showLocationContent && assess && (
               <div className="hidden lg:block">{renderBriefingShift()}</div>
             )}
 

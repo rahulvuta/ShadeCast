@@ -1,5 +1,17 @@
 import type { AssessResponse, FirePoint, Verdict } from '../types'
 
+export const INTEGRITY_TAB_ID = 'integrity'
+
+export type IntegrityTabState = {
+  label: string
+  lat: number
+  lon: number
+  eventId: string | null
+  loading: boolean
+  error: string | null
+  assess: AssessResponse | null
+}
+
 export type LocationTab = {
   id: string
   label: string
@@ -11,17 +23,6 @@ export type LocationTab = {
   firesError: string | null
   selectedDay: string | null
   scrubIndex: number
-}
-
-export type StagingOpen = {
-  label: string
-  lat: number
-  lon: number
-  eventId: string | null
-  loading: boolean
-  error: string | null
-  /** Present when assess returned UNUSABLE — no tab opened */
-  blockedAssess: AssessResponse | null
 }
 
 export function shortTabLabel(label: string): string {
