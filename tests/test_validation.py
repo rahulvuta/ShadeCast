@@ -47,6 +47,7 @@ def test_spearman_perfect():
 
 
 def test_concordance_synthetic_sample():
+    """CI unit test of the classifier on synthetic pairs — not an empirical claim."""
     result = synthetic_sample(60)
     assert result.n == 60
     assert result.agree + result.firms_leads + result.model_leads == 60
@@ -54,6 +55,8 @@ def test_concordance_synthetic_sample():
     assert result.model_leads >= 2
     dist = result.distribution
     assert abs(sum(dist.values()) - 1.0) < 1e-9
+    # Synthetic Spearman is for classifier coverage only (~0.83 historically).
+    assert isinstance(result.spearman, float)
 
 
 def test_sensitivity_runs():

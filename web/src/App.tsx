@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
-import { fetchAssess, fetchBrief, fetchFires, fetchGeocode, type GeocodeHit } from './api'
+import { fetchAssess, fetchBrief, fetchEvents, fetchFires, fetchGeocode, type GeocodeHit, type HistoricalEventSummary } from './api'
 import { ActionCards } from './components/ActionCards'
 import { BriefingCard } from './components/BriefingCard'
 import { ClimatologyLine } from './components/ClimatologyLine'
@@ -110,6 +110,11 @@ export default function App() {
   const [requiredHours, setRequiredHours] = useState(4)
   const [selectedDay, setSelectedDay] = useState<string | null>(null)
   const [lang, setLang] = useState<Lang>('en')
+  const [historicalEvents, setHistoricalEvents] = useState<HistoricalEventSummary[]>([])
+  const [activeEventId, setActiveEventId] = useState<string | null>(() => {
+    return new URLSearchParams(window.location.search).get('event')
+  })
+  const [hourOffset, setHourOffset] = useState<number | null>(null)
   const [assess, setAssess] = useState<AssessResponse | null>(null)
   const [brief, setBrief] = useState<BriefResponse | null>(null)
   const [fires, setFires] = useState<FirePoint[]>([])
@@ -124,11 +129,24 @@ export default function App() {
   )
 
   const applyLocation = useCallback((next: ActiveLocation) => {
+    setActiveEventId(null)
+    setHourOffset(null)
     setLoc(next)
     setLatInput(String(next.lat))
     setLonInput(String(next.lon))
     setSearchHits([])
     setSearchError(null)
+  }, [])
+
+  const applyHistoricalEvent = useCallback((eventId: string | null) => {
+    setActiveEventId(eventId)
+    setHourOffset(null)
+  }, [])
+
+  useEffect(() => {
+    void fetchEvents()
+      .then((r) => setHistoricalEvents(r.events))
+      .catch(() => setHistoricalEvents([]))
   }, [])
 
   const load = useCallback(async () => {
@@ -142,19 +160,35 @@ export default function App() {
         acclimatized,
         profile,
         requiredHours,
-        corrupt: corruptDemo,
+        corrupt: corruptDemo && !activeEventId,
+        event: activeEventId,
+        hourOffset,
       })
       setAssess(a)
+      if (a.is_historical && a.lat != null && a.lon != null) {
+        setLoc({
+          lat: a.lat,
+          lon: a.lon,
+          label: a.historical_event?.label ?? a.location_label ?? loc.label,
+        })
+        setLatInput(String(a.lat))
+        setLonInput(String(a.lon))
+      }
       setSelectedDay(a.days?.[0]?.day ?? null)
-      const half = 2.7
-      const bbox = `${loc.lon - half},${loc.lat - half},${loc.lon + half},${loc.lat + half}`
-      try {
-        const f = await fetchFires(bbox)
-        setFires(f.fires)
-        setFiresError(null)
-      } catch (e) {
+      if (!a.is_historical) {
+        const half = 2.7
+        const bbox = `${loc.lon - half},${loc.lat - half},${loc.lon + half},${loc.lat + half}`
+        try {
+          const f = await fetchFires(bbox)
+          setFires(f.fires)
+          setFiresError(null)
+        } catch (e) {
+          setFires([])
+          setFiresError(e instanceof Error ? e.message : 'Fire detections unavailable')
+        }
+      } else {
         setFires([])
-        setFiresError(e instanceof Error ? e.message : 'Fire detections unavailable')
+        setFiresError(null)
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load assessment')
@@ -162,7 +196,18 @@ export default function App() {
     } finally {
       setLoading(false)
     }
-  }, [loc.lat, loc.lon, workload, acclimatized, profile, requiredHours, corruptDemo])
+  }, [
+    loc.lat,
+    loc.lon,
+    loc.label,
+    workload,
+    acclimatized,
+    profile,
+    requiredHours,
+    corruptDemo,
+    activeEventId,
+    hourOffset,
+  ])
 
   useEffect(() => {
     void load()
@@ -219,8 +264,15 @@ export default function App() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
-    params.set('lat', String(loc.lat))
-    params.set('lon', String(loc.lon))
+    if (activeEventId) {
+      params.set('event', activeEventId)
+      params.delete('lat')
+      params.delete('lon')
+    } else {
+      params.delete('event')
+      params.set('lat', String(loc.lat))
+      params.set('lon', String(loc.lon))
+    }
     params.set('workload', workload)
     params.set('profile', profile)
     if (textMode) params.set('text', '1')
@@ -230,7 +282,7 @@ export default function App() {
     const qs = params.toString()
     const next = `${window.location.pathname}?${qs}${window.location.hash}`
     window.history.replaceState(null, '', next)
-  }, [loc.lat, loc.lon, workload, profile, textMode, corruptDemo])
+  }, [loc.lat, loc.lon, workload, profile, textMode, corruptDemo, activeEventId])
 
   async function runSearch(e?: FormEvent) {
     e?.preventDefault()
@@ -286,6 +338,8 @@ export default function App() {
     lang,
     profile,
     acclimatized,
+    historicalEvents,
+    activeEventId,
     onSearchQuery: setSearchQuery,
     onLatInput: setLatInput,
     onLonInput: setLonInput,
@@ -294,6 +348,7 @@ export default function App() {
     onProfile: setProfile,
     onAcclimatized: setAcclimatized,
     onApplyLocation: applyLocation,
+    onSelectHistoricalEvent: applyHistoricalEvent,
     onRunSearch: runSearch,
     onGoLatLon: goLatLon,
   }
@@ -359,6 +414,55 @@ export default function App() {
                 className="rounded border-2 border-amber-700 bg-amber-50 px-3.5 py-2.5 text-sm text-amber-950"
               >
                 You appear offline. Showing the last cached assessment if available.
+              </aside>
+            )}
+            {assess?.is_historical && assess.historical_event && (
+              <aside
+                role="status"
+                className="rounded border-2 border-[var(--ink)] bg-[var(--panel)] px-3.5 py-3 text-sm"
+              >
+                <p className="font-bold uppercase tracking-wide text-[0.7rem] text-[var(--muted)]">
+                  Historical replay — not live data
+                </p>
+                <p className="mt-1 font-semibold text-[var(--ink)]">
+                  {assess.historical_event.label}
+                  {assess.historical_event.start_date
+                    ? ` — ${assess.historical_event.start_date}`
+                    : ''}
+                </p>
+                {assess.actual_vs_expected && (
+                  <p className="mt-2 text-sm">
+                    Expected{' '}
+                    <span className="font-semibold">
+                      {assess.actual_vs_expected.expected.join(' / ') || 'n/a'}
+                    </span>
+                    {' · '}
+                    Engine{' '}
+                    <span className="font-semibold">{assess.actual_vs_expected.actual ?? 'n/a'}</span>
+                    {' · '}
+                    <span
+                      className={
+                        assess.actual_vs_expected.status === 'pass'
+                          ? 'font-bold text-[var(--go)]'
+                          : 'font-bold text-[var(--restrict)]'
+                      }
+                    >
+                      {assess.actual_vs_expected.status.toUpperCase()}
+                    </span>
+                  </p>
+                )}
+                {assess.historical_event.source_url && (
+                  <p className="mt-1 text-xs text-[var(--muted)]">
+                    <a
+                      className="underline"
+                      href={assess.historical_event.source_url}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Event source
+                    </a>
+                  </p>
+                )}
               </aside>
             )}
             {loading && !assess && (

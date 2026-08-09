@@ -157,6 +157,24 @@ export interface AssessResponse {
   served_from_cache: boolean
   demo_mode: boolean
   last_good_assessment_at?: string | null
+  is_historical?: boolean
+  historical_event?: {
+    id: string
+    label: string
+    start_date: string
+    end_date: string
+    hour_offset: number
+    description?: string
+    source_url?: string
+    retrieved_at?: string | null
+  } | null
+  expected_verdict?: string[]
+  actual_vs_expected?: {
+    status: string
+    matched?: boolean | null
+    actual?: string | null
+    expected: string[]
+  } | null
 }
 
 export interface BriefResponse {

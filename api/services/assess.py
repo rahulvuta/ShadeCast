@@ -43,6 +43,7 @@ from api.models import (
 )
 from api.schemas import (
     ActionOut,
+    ActualVsExpected,
     AirDetail,
     AssessResponse,
     ClimatologyDelta,
@@ -51,6 +52,7 @@ from api.schemas import (
     DaySummaryOut,
     DriverOut,
     EnvironmentalLoadOut,
+    HistoricalEventMeta,
     HourlyAssessment,
     IntegrityFindingOut,
     ScheduleSummaryOut,
@@ -59,6 +61,7 @@ from api.schemas import (
     UVDetail,
 )
 from api.services.diff import diff_assessments
+from api.services.historical_bundle import actual_vs_expected as _actual_vs_expected
 
 
 def _wants_corrupt(lat: float, lon: float, force_corrupt: bool) -> bool:
@@ -393,9 +396,27 @@ def build_assessment(
     required_hours: float = 4.0,
     force_corrupt: bool = False,
     allow_network: bool = True,
+    event_id: str | None = None,
+    hour_offset: int | None = None,
 ) -> AssessResponse:
     settings = get_settings()
-    if settings.demo_mode:
+    historical_meta = None
+    hist_injection = None
+
+    # Time Machine: load committed historical bundle; same engine path below.
+    if event_id:
+        from api.services.historical_bundle import prepare_historical
+
+        hist_injection = prepare_historical(event_id, hour_offset)
+        lat = hist_injection.event.lat
+        lon = hist_injection.event.lon
+        workload = hist_injection.event.workload  # type: ignore[assignment]
+        acclimatized = hist_injection.event.acclimatized
+        sensitivity_profile = hist_injection.event.profile  # type: ignore[assignment]
+        allow_network = False
+        historical_meta = hist_injection
+
+    if settings.demo_mode and historical_meta is None:
         cached, _cached_at = _load_assessment_cache(
             session,
             lat,
@@ -412,7 +433,7 @@ def build_assessment(
             f"profile ({sensitivity_profile}). Run ingest seed or disable DEMO_MODE."
         )
 
-    if allow_network and not settings.demo_mode:
+    if allow_network and not settings.demo_mode and historical_meta is None:
         try:
             from api.services.ensure_location_data import ensure_location_data
 
@@ -420,93 +441,100 @@ def build_assessment(
         except Exception as exc:  # noqa: BLE001
             logger.warning("ensure_location_data failed: %s", exc)
 
-    fires = _fires_near(session, lat, lon)
-    fire_inputs = [
-        FireDetectionInput(latitude=f.latitude, longitude=f.longitude, frp=f.frp) for f in fires
-    ]
-    fire_fetched = max((f.fetched_at for f in fires), default=None)
-
-    forecast_rows: list[forecast_client.ForecastRow] = []
-    forecast_fetched: datetime | None = None
-    used_live = False
-
-    if allow_network and not settings.demo_mode:
-        try:
-            forecast_rows = _fetch_forecast_with_retry(lat, lon, forecast_days=5)
-            used_live = True
-            forecast_fetched = datetime.now(timezone.utc)
-            _upsert_forecast_safe(session, lat, lon, forecast_rows)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Live Open-Meteo forecast unavailable, trying DB cache: %s", exc)
-            try:
-                session.rollback()
-            except Exception:  # noqa: BLE001
-                pass
-
-    if not forecast_rows:
-        lat_r, lon_r = round_coord(lat), round_coord(lon)
-        try:
-            db_rows = session.scalars(
-                select(ForecastHour)
-                .where(
-                    ForecastHour.lat_round == lat_r,
-                    ForecastHour.lon_round == lon_r,
-                )
-                .order_by(ForecastHour.valid_at)
-            ).all()
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("DB forecast read failed: %s", exc)
-            session.rollback()
-            db_rows = []
-        forecast_fetched = max((r.fetched_at for r in db_rows), default=None)
-        forecast_rows = [
-            forecast_client.ForecastRow(
-                valid_at=r.valid_at,
-                temperature_c=r.temperature_c,
-                relative_humidity=r.relative_humidity,
-                wind_speed_kmh=r.wind_speed_kmh,
-                wind_direction_deg=r.wind_direction_deg,
-                wind_gusts_kmh=r.wind_gusts_kmh,
-                precipitation_probability=r.precipitation_probability,
-                cloud_cover=r.cloud_cover,
-                apparent_temperature_c=r.apparent_temperature_c,
-                uv_index=r.uv_index,
-                uv_index_clear_sky=r.uv_index_clear_sky,
-                timezone=r.timezone or "UTC",
-            )
-            for r in db_rows
+    if hist_injection is not None:
+        fire_inputs = hist_injection.fire_inputs
+        fire_fetched = hist_injection.fetched_at
+        forecast_rows = hist_injection.forecast_rows
+        forecast_fetched = hist_injection.fetched_at
+        aq_rows = hist_injection.aq_rows
+        aq_fetched = hist_injection.fetched_at
+    else:
+        fires = _fires_near(session, lat, lon)
+        fire_inputs = [
+            FireDetectionInput(latitude=f.latitude, longitude=f.longitude, frp=f.frp)
+            for f in fires
         ]
+        fire_fetched = max((f.fetched_at for f in fires), default=None)
 
-    if not forecast_rows:
-        cached, _ = _load_assessment_cache(
-            session,
-            lat,
-            lon,
-            workload,
-            acclimatized,
-            sensitivity_profile=sensitivity_profile,
-        )
-        if cached:
-            return cached
-        raise RuntimeError(
-            "No forecast data available (live and cache empty). "
-            "Retry in a moment — Open-Meteo may be slow after a cold start."
-        )
+        forecast_rows = []
+        forecast_fetched = None
 
-    aq_rows, aq_fetched = _aq_rows_from_db(session, lat, lon)
-    aq_needs_refresh = not aq_rows or _is_fetched_stale(aq_fetched, STALE_AIR_QUALITY)
-    if allow_network and not settings.demo_mode and aq_needs_refresh:
-        try:
-            aq_rows = aq_client.fetch_air_quality(lat, lon)
-            aq_fetched = datetime.now(timezone.utc)
-            _upsert_air_quality_safe(session, lat, lon, aq_rows)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Live air quality failed: %s", exc)
+        if allow_network and not settings.demo_mode:
             try:
+                forecast_rows = _fetch_forecast_with_retry(lat, lon, forecast_days=5)
+                forecast_fetched = datetime.now(timezone.utc)
+                _upsert_forecast_safe(session, lat, lon, forecast_rows)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Live Open-Meteo forecast unavailable, trying DB cache: %s", exc)
+                try:
+                    session.rollback()
+                except Exception:  # noqa: BLE001
+                    pass
+
+        if not forecast_rows:
+            lat_r, lon_r = round_coord(lat), round_coord(lon)
+            try:
+                db_rows = session.scalars(
+                    select(ForecastHour)
+                    .where(
+                        ForecastHour.lat_round == lat_r,
+                        ForecastHour.lon_round == lon_r,
+                    )
+                    .order_by(ForecastHour.valid_at)
+                ).all()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("DB forecast read failed: %s", exc)
                 session.rollback()
-            except Exception:  # noqa: BLE001
-                pass
-            aq_rows, aq_fetched = _aq_rows_from_db(session, lat, lon)
+                db_rows = []
+            forecast_fetched = max((r.fetched_at for r in db_rows), default=None)
+            forecast_rows = [
+                forecast_client.ForecastRow(
+                    valid_at=r.valid_at,
+                    temperature_c=r.temperature_c,
+                    relative_humidity=r.relative_humidity,
+                    wind_speed_kmh=r.wind_speed_kmh,
+                    wind_direction_deg=r.wind_direction_deg,
+                    wind_gusts_kmh=r.wind_gusts_kmh,
+                    precipitation_probability=r.precipitation_probability,
+                    cloud_cover=r.cloud_cover,
+                    apparent_temperature_c=r.apparent_temperature_c,
+                    uv_index=r.uv_index,
+                    uv_index_clear_sky=r.uv_index_clear_sky,
+                    timezone=r.timezone or "UTC",
+                )
+                for r in db_rows
+            ]
+
+        if not forecast_rows:
+            cached, _ = _load_assessment_cache(
+                session,
+                lat,
+                lon,
+                workload,
+                acclimatized,
+                sensitivity_profile=sensitivity_profile,
+            )
+            if cached:
+                return cached
+            raise RuntimeError(
+                "No forecast data available (live and cache empty). "
+                "Retry in a moment — Open-Meteo may be slow after a cold start."
+            )
+
+        aq_rows, aq_fetched = _aq_rows_from_db(session, lat, lon)
+        aq_needs_refresh = not aq_rows or _is_fetched_stale(aq_fetched, STALE_AIR_QUALITY)
+        if allow_network and not settings.demo_mode and aq_needs_refresh:
+            try:
+                aq_rows = aq_client.fetch_air_quality(lat, lon)
+                aq_fetched = datetime.now(timezone.utc)
+                _upsert_air_quality_safe(session, lat, lon, aq_rows)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Live air quality failed: %s", exc)
+                try:
+                    session.rollback()
+                except Exception:  # noqa: BLE001
+                    pass
+                aq_rows, aq_fetched = _aq_rows_from_db(session, lat, lon)
 
     aq_by_hour = {r.valid_at: r for r in aq_rows}
 
@@ -529,7 +557,11 @@ def build_assessment(
     today = day_keys[0]
     today_rows = by_day[today]
 
-    now_utc = datetime.now(timezone.utc)
+    now_utc = (
+        hist_injection.focus_time
+        if hist_injection is not None
+        else datetime.now(timezone.utc)
+    )
     try:
         current_row = _nearest_usable_hour(today_rows, now_utc)
     except RuntimeError:
@@ -545,17 +577,20 @@ def build_assessment(
         wind_speed_kmh=current_row.wind_speed_kmh,
     )
 
-    baseline = _climatology_baseline(session, lat, lon, current_row.valid_at)
-    clim_fetched_row = session.scalars(
-        select(ClimatologyPoint)
-        .where(
-            ClimatologyPoint.lat_round == round_coord(lat),
-            ClimatologyPoint.lon_round == round_coord(lon),
-        )
-        .order_by(ClimatologyPoint.fetched_at.desc())
-        .limit(1)
-    ).first()
-    clim_fetched = clim_fetched_row.fetched_at if clim_fetched_row else None
+    baseline = None
+    clim_fetched = None
+    if hist_injection is None:
+        baseline = _climatology_baseline(session, lat, lon, current_row.valid_at)
+        clim_fetched_row = session.scalars(
+            select(ClimatologyPoint)
+            .where(
+                ClimatologyPoint.lat_round == round_coord(lat),
+                ClimatologyPoint.lon_round == round_coord(lon),
+            )
+            .order_by(ClimatologyPoint.fetched_at.desc())
+            .limit(1)
+        ).first()
+        clim_fetched = clim_fetched_row.fetched_at if clim_fetched_row else None
 
     integrity_bundle = make_bundle(
         forecast_rows=today_rows,
@@ -574,19 +609,24 @@ def build_assessment(
         # the UNUSABLE integrity path is demoable without waiting for a real outage.
         findings = _corrupted_findings()
     conf_result = aggregate(findings)
-    try:
-        conf_result.narration = narrate_findings(conf_result)
-    except Exception as exc:  # noqa: BLE001
-        logger.info("Integrity narration skipped: %s", exc)
+    if hist_injection is None:
+        try:
+            conf_result.narration = narrate_findings(conf_result)
+        except Exception as exc:  # noqa: BLE001
+            logger.info("Integrity narration skipped: %s", exc)
+    else:
+        conf_result.narration = None
 
-    prior_cached, prior_at = _load_assessment_cache(
-        session,
-        lat,
-        lon,
-        workload,
-        acclimatized,
-        sensitivity_profile=sensitivity_profile,
-    )
+    prior_cached, prior_at = (None, None)
+    if hist_injection is None:
+        prior_cached, prior_at = _load_assessment_cache(
+            session,
+            lat,
+            lon,
+            workload,
+            acclimatized,
+            sensitivity_profile=sensitivity_profile,
+        )
 
     uv_today = assess_uv(today_rows, skin_type=3)
     cur_aq = _aq_for(current_row.valid_at)
@@ -785,7 +825,9 @@ def build_assessment(
         lon=lon,
         workload=workload,
         acclimatized=acclimatized,
-        location_label=_label_for(lat, lon),
+        location_label=(
+            hist_injection.event.label if hist_injection is not None else _label_for(lat, lon)
+        ),
         sensitivity_profile=sensitivity_profile,
         current=CurrentConditions(
             temperature_c=current_row.temperature_c,
@@ -892,10 +934,39 @@ def build_assessment(
         data_freshness=freshness,
         data_confidence=conf_out,
         sources=SOURCES,
-        served_from_cache=not used_live,
+        served_from_cache=hist_injection is None and forecast_fetched is not None,
         demo_mode=settings.demo_mode,
         last_good_assessment_at=prior_at if conf_result.level == ConfidenceLevel.UNUSABLE else None,
+        is_historical=hist_injection is not None,
+        historical_event=(
+            HistoricalEventMeta(
+                id=hist_injection.event.id,
+                label=hist_injection.event.label,
+                start_date=hist_injection.event.start_date,
+                end_date=hist_injection.event.end_date,
+                hour_offset=hist_injection.hour_offset,
+                description=hist_injection.event.description,
+                source_url=hist_injection.event.source_url,
+                retrieved_at=str(hist_injection.bundle_meta.get("retrieved_at")),
+            )
+            if hist_injection is not None
+            else None
+        ),
+        expected_verdict=(
+            list(hist_injection.event.expected_verdicts) if hist_injection is not None else []
+        ),
+        actual_vs_expected=(
+            ActualVsExpected(
+                **_actual_vs_expected(adj_current, hist_injection.event.expected_verdicts)
+            )
+            if hist_injection is not None
+            else None
+        ),
     )
+
+    if hist_injection is not None:
+        # Do not overwrite live assessment_cache with historical replays.
+        return resp
 
     if conf_result.level == ConfidenceLevel.UNUSABLE and prior_cached is not None:
         prior_cached.data_confidence = conf_out

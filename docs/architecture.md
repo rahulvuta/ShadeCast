@@ -40,12 +40,13 @@ ShadeCast answers: **plan the next five days around every environmental stressor
 
 | Path | Role |
 | --- | --- |
-| `api/clients/` | FIRMS, POWER, Open-Meteo forecast + air quality |
+| `api/clients/` | FIRMS, POWER, Open-Meteo forecast + air quality + **historical** |
+| `api/events/` | Time Machine event registry (`registry.yaml`) |
 | `api/integrity/` | Pre-engine validity / confidence |
 | `api/engine/` | Heat, smoke, UV, air, environmental load, schedule, explain |
 | `api/actions/` | Curated sourced action library + selection |
-| `api/services/assess.py` | Assembles the `/api/assess` response |
-| `validation/` | Offline backtests, concordance, sensitivity |
+| `api/services/assess.py` | Assembles the `/api/assess` response (live + `event=` historical) |
+| `validation/` | Offline backtests, concordance, **historical fixtures/bundles** |
 | `web/src/` | Mobile-first React UI |
 
 ## Invariants

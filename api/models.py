@@ -231,3 +231,19 @@ class AssessmentCache(Base):
     fetched_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class HistoricalBundle(Base):
+    """Cached historical weather/AQ/fires JSON for Time Machine replay."""
+
+    __tablename__ = "historical_bundles"
+    __table_args__ = (UniqueConstraint("event_id", name="uq_historical_bundle_event"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    event_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    start_date: Mapped[str] = mapped_column(String(16), nullable=False)
+    end_date: Mapped[str] = mapped_column(String(16), nullable=False)
+    payload_json: Mapped[str] = mapped_column(Text, nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

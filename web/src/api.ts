@@ -41,17 +41,41 @@ export function fetchAssess(opts: {
   profile?: SensitivityProfile
   requiredHours?: number
   corrupt?: boolean
+  event?: string | null
+  hourOffset?: number | null
 }): Promise<AssessResponse> {
   const q = new URLSearchParams({
-    lat: String(opts.lat),
-    lon: String(opts.lon),
     workload: opts.workload,
     acclimatized: String(opts.acclimatized),
     profile: opts.profile ?? 'general',
     required_hours: String(opts.requiredHours ?? 4),
   })
+  if (opts.event) {
+    q.set('event', opts.event)
+    if (opts.hourOffset != null) q.set('hour_offset', String(opts.hourOffset))
+  } else {
+    q.set('lat', String(opts.lat))
+    q.set('lon', String(opts.lon))
+  }
   if (opts.corrupt) q.set('corrupt', 'true')
   return getJson(`/api/assess?${q}`)
+}
+
+export type HistoricalEventSummary = {
+  id: string
+  label: string
+  lat: number
+  lon: number
+  start_date: string
+  end_date: string
+  default_hour_offset: number
+  description: string
+  source_url: string
+  expected_verdicts: string[]
+}
+
+export function fetchEvents(): Promise<{ events: HistoricalEventSummary[] }> {
+  return getJson('/api/events')
 }
 
 export function fetchFires(bbox: string): Promise<{ fires: FirePoint[]; count: number }> {

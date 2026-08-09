@@ -28,8 +28,8 @@ def _safe_detail(msg: str) -> str:
 
 @router.get("/assess", response_model=AssessResponse)
 def assess(
-    lat: float = Query(..., ge=-90, le=90),
-    lon: float = Query(..., ge=-180, le=180),
+    lat: float | None = Query(None, ge=-90, le=90),
+    lon: float | None = Query(None, ge=-180, le=180),
     workload: str = Query("moderate", pattern="^(light|moderate|heavy)$"),
     acclimatized: bool = False,
     profile: str = Query(
@@ -38,26 +38,44 @@ def assess(
     ),
     required_hours: float = Query(4.0, ge=1.0, le=12.0),
     corrupt: bool = Query(False, description="Inject a corrupted feed for integrity demos"),
+    event: str | None = Query(None, description="Historical Time Machine event id"),
+    hour_offset: int | None = Query(
+        None, ge=0, le=200, description="Hour index into historical bundle"
+    ),
     db: Session = Depends(get_db),
 ) -> AssessResponse:
+    if event is None and (lat is None or lon is None):
+        raise HTTPException(
+            status_code=422, detail="lat and lon are required unless event= is set"
+        )
+    use_lat = float(lat if lat is not None else 0.0)
+    use_lon = float(lon if lon is not None else 0.0)
     try:
         return build_assessment(
             db,
-            lat,
-            lon,
+            use_lat,
+            use_lon,
             workload=workload,  # type: ignore[arg-type]
             acclimatized=acclimatized,
             sensitivity_profile=profile,  # type: ignore[arg-type]
             required_hours=required_hours,
             force_corrupt=corrupt,
             allow_network=True,
+            event_id=event,
+            hour_offset=hour_offset,
         )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=503, detail=_safe_detail(str(exc))) from exc
     except Exception as exc:  # noqa: BLE001
+        if event:
+            raise HTTPException(status_code=503, detail=_safe_detail(str(exc))) from exc
         try:
             return build_assessment(
                 db,
-                lat,
-                lon,
+                use_lat,
+                use_lon,
                 workload=workload,  # type: ignore[arg-type]
                 acclimatized=acclimatized,
                 sensitivity_profile=profile,  # type: ignore[arg-type]

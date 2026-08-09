@@ -25,15 +25,15 @@ Public-health authorities already validate the compound-risk premise. ShadeCast'
 
 ## Validation snapshot
 
-Offline harness results (see [docs/validation.md](docs/validation.md)):
-
-| Scenario | Result |
+| Kind | Result |
 | --- | --- |
-| June 2023 Canadian smoke (NYC, AQI>400) | RESTRICT · MODEL_LEADS |
-| Phoenix July 2023 heat wave | RESTRICT |
-| Seattle benign control | GO |
-| Corrupted feed (RH=250 / PM=-5 / POWER -999) | UNUSABLE |
-| FIRMS↔CAMS Spearman (synthetic n=60) | 0.83 |
+| Unit (NWS HI / WHO UV / EPA AQI) | pytest green |
+| Historical replay — Phoenix Jul 2023 | RESTRICT (pass) |
+| Historical replay — Seattle control | GO (pass) |
+| Historical replay — NYC Jun 2023 smoke | CAUTION vs expected STOP — CAMS archive understates ground AQI (documented fail) |
+| FIRMS↔CAMS Spearman | Recomputed on **real** bundle hours in CI — see [docs/validation.md](docs/validation.md); do not quote synthetic figures as empirical |
+
+Full write-up: [docs/validation.md](docs/validation.md) (unit · historical replay · concordance).
 
 ## Why not just use AirNow or the OSHA app?
 

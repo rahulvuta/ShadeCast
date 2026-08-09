@@ -167,6 +167,24 @@ class ClimatologyDelta(BaseModel):
     )
 
 
+class HistoricalEventMeta(BaseModel):
+    id: str
+    label: str
+    start_date: str
+    end_date: str
+    hour_offset: int
+    description: str = ""
+    source_url: str = ""
+    retrieved_at: str | None = None
+
+
+class ActualVsExpected(BaseModel):
+    status: str  # pass | fail | n/a
+    matched: bool | None = None
+    actual: str | None = None
+    expected: list[str] = Field(default_factory=list)
+
+
 class AssessResponse(BaseModel):
     lat: float
     lon: float
@@ -194,6 +212,10 @@ class AssessResponse(BaseModel):
     served_from_cache: bool = False
     demo_mode: bool = False
     last_good_assessment_at: datetime | None = None
+    is_historical: bool = False
+    historical_event: HistoricalEventMeta | None = None
+    expected_verdict: list[str] = Field(default_factory=list)
+    actual_vs_expected: ActualVsExpected | None = None
 
 
 class FirePoint(BaseModel):

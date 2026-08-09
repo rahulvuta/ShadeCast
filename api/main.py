@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from api.config import get_settings
 from api.middleware.rate_limit import RateLimitMiddleware
-from api.routes import assess, brief, geocode, health
+from api.routes import assess, brief, events, geocode, health
 
 settings = get_settings()
 
@@ -33,13 +33,14 @@ app.add_middleware(
     RateLimitMiddleware,
     max_requests=60,
     window_s=60.0,
-    paths=("/api/assess", "/api/brief", "/api/fires", "/api/geocode"),
+    paths=("/api/assess", "/api/brief", "/api/fires", "/api/geocode", "/api/events"),
 )
 
 app.include_router(health.router)
 app.include_router(assess.router)
 app.include_router(brief.router)
 app.include_router(geocode.router)
+app.include_router(events.router)
 
 
 @app.get("/")

@@ -1,0 +1,98 @@
+# ShadeCast Time Machine — historical event registry
+# Expected verdicts are what the product claims for the real-world event.
+# Engine actuals come from replaying Open-Meteo archive + FIRMS fixtures
+# through the unmodified environmental-load path.
+
+events:
+  - id: nyc_2023_06
+    label: Canadian wildfire smoke — NYC (June 2023)
+    lat: 40.71
+    lon: -74.01
+    start_date: "2023-06-07"
+    end_date: "2023-06-08"
+    default_hour_offset: 14
+    workload: moderate
+    acclimatized: false
+    profile: general
+    expected_verdicts: [STOP, RESTRICT]
+    expected_concordance: MODEL_LEADS
+    description: >
+      In early June 2023, Canadian wildfire smoke blanketed the US Northeast.
+      New York City ground monitors reported AQI above 400 on some hours —
+      among the worst air-quality days on record for the city. ShadeCast
+      replays Open-Meteo archive weather and CAMS air-quality for these
+      coordinates; FIRMS NRT does not retain 2023 detections, so local fire
+      rows are empty (MODEL_LEADS). Source:
+      https://www.nytimes.com/2023/06/07/nyregion/nyc-air-quality-smoke.html
+    source_url: https://www.nytimes.com/2023/06/07/nyregion/nyc-air-quality-smoke.html
+
+  - id: phoenix_2023_07
+    label: Phoenix heat wave (July 2023)
+    lat: 33.45
+    lon: -112.07
+    start_date: "2023-07-15"
+    end_date: "2023-07-16"
+    default_hour_offset: 15
+    workload: moderate
+    acclimatized: false
+    profile: general
+    expected_verdicts: [STOP, RESTRICT]
+    expected_concordance: null
+    description: >
+      Phoenix recorded a historic stretch of days at or above 110°F in July
+      2023. This replay uses Open-Meteo archive temperatures and humidity
+      for mid-July; air quality is typically moderate and FIRMS quiet.
+      Source: https://www.weather.gov/psr/
+    source_url: https://www.weather.gov/psr/
+
+  - id: seattle_benign
+    label: Seattle benign control (October)
+    lat: 47.61
+    lon: -122.33
+    start_date: "2023-10-10"
+    end_date: "2023-10-11"
+    default_hour_offset: 12
+    workload: light
+    acclimatized: true
+    profile: general
+    expected_verdicts: [GO]
+    expected_concordance: null
+    description: >
+      Cool, clear Pacific Northwest control day used to confirm the engine
+      does not over-call risk when heat, smoke, and AQI are all mild.
+    source_url: https://www.weather.gov/sew/
+
+  - id: dust_event
+    label: Dust / haze — MODEL_LEADS (Phoenix window)
+    lat: 33.45
+    lon: -112.07
+    start_date: "2023-08-20"
+    end_date: "2023-08-21"
+    default_hour_offset: 14
+    workload: moderate
+    acclimatized: false
+    profile: general
+    expected_verdicts: [CAUTION, RESTRICT, STOP, GO]
+    expected_concordance: MODEL_LEADS
+    description: >
+      Dust and regional haze raise CAMS AQI while satellite fire detections
+      stay quiet — the MODEL_LEADS concordance case. Quiet FIRMS is not
+      treated as data corruption.
+    source_url: https://www.airnow.gov/
+
+  - id: hot_but_clean
+    label: Hot clear day — smoke must not escalate
+    lat: 33.45
+    lon: -112.07
+    start_date: "2023-06-20"
+    end_date: "2023-06-21"
+    default_hour_offset: 14
+    workload: moderate
+    acclimatized: false
+    profile: general
+    expected_verdicts: [CAUTION, RESTRICT, STOP, GO]
+    expected_concordance: AGREE
+    description: >
+      False-positive check: hot desert day with clean air and no fires.
+      Smoke pressure must not invent STOP when FIRMS is empty and AQI is good.
+    source_url: https://www.weather.gov/psr/

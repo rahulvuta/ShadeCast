@@ -78,3 +78,7 @@ CRITICAL is reserved for physically impossible inputs (POWER −999 sentinels, o
 `/api/assess` may soft-refresh FIRMS (and forecast/AQ/POWER) for new or stale coordinates, writing into Postgres with fail-soft behavior. Cron remains the primary demo-location ingest. Place search goes through `/api/geocode` (server proxy).
 
 The web service worker caches the app shell and **per-URL** `/api/assess` responses for offline replay of a previously viewed location — not a full PWA product claim.
+
+## 15. Time Machine historical replay
+
+`/api/assess?event=` replays committed Open-Meteo archive weather + CAMS air-quality bundles through the **same** engine as live assess. FIRMS NRT does not retain 2023 detections; those bundles use an empty archive fixture (labeled in `validation/fixtures/`). Concordance of smoke_pressure vs CAMS is a consistency study, not ground-station PM2.5 validation — see `docs/validation.md`.

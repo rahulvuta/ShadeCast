@@ -1,4 +1,5 @@
 import type { FormEvent } from 'react'
+import type { HistoricalEventSummary } from '../api'
 import {
   CORRUPT_DEMO,
   DEMO_LOCATIONS,
@@ -36,6 +37,8 @@ export function SidebarControls({
   lang,
   profile,
   acclimatized,
+  historicalEvents,
+  activeEventId,
   onSearchQuery,
   onLatInput,
   onLonInput,
@@ -44,6 +47,7 @@ export function SidebarControls({
   onProfile,
   onAcclimatized,
   onApplyLocation,
+  onSelectHistoricalEvent,
   onRunSearch,
   onGoLatLon,
 }: {
@@ -59,6 +63,8 @@ export function SidebarControls({
   lang: Lang
   profile: SensitivityProfile
   acclimatized: boolean
+  historicalEvents: HistoricalEventSummary[]
+  activeEventId: string | null
   onSearchQuery: (v: string) => void
   onLatInput: (v: string) => void
   onLonInput: (v: string) => void
@@ -67,6 +73,7 @@ export function SidebarControls({
   onProfile: (v: SensitivityProfile) => void
   onAcclimatized: (v: boolean) => void
   onApplyLocation: (next: ActiveLocation) => void
+  onSelectHistoricalEvent: (eventId: string | null) => void
   onRunSearch: (e?: FormEvent) => void
   onGoLatLon: (e?: FormEvent) => void
 }) {
@@ -76,10 +83,13 @@ export function SidebarControls({
   return (
     <nav aria-label="Location and settings" className="space-y-3">
       <div>
-        <p className="dash-section-label mb-1.5">Quick demos</p>
+        <p className="dash-section-label mb-1.5">Quick demos (live)</p>
         <div className="flex flex-wrap gap-1.5">
           {[...DEMO_LOCATIONS, ...(corruptDemo ? [CORRUPT_DEMO] : [])].map((d) => {
-            const active = Math.abs(loc.lat - d.lat) < 0.01 && Math.abs(loc.lon - d.lon) < 0.01
+            const active =
+              !activeEventId &&
+              Math.abs(loc.lat - d.lat) < 0.01 &&
+              Math.abs(loc.lon - d.lon) < 0.01
             return (
               <button
                 key={d.key}
@@ -97,6 +107,30 @@ export function SidebarControls({
           })}
         </div>
       </div>
+
+      {historicalEvents.length > 0 && (
+        <div className="rounded border border-[var(--border)] bg-[var(--panel)] p-2.5">
+          <p className="dash-section-label mb-1.5">Time Machine (historical)</p>
+          <p className="mb-2 text-[0.65rem] leading-snug text-[var(--muted)]">
+            Replay archived weather and air quality through the same engine as live.
+          </p>
+          <label className="block text-xs font-semibold">
+            Event
+            <select
+              className={field}
+              value={activeEventId ?? ''}
+              onChange={(e) => onSelectHistoricalEvent(e.target.value || null)}
+            >
+              <option value="">Live mode</option>
+              {historicalEvents.map((ev) => (
+                <option key={ev.id} value={ev.id}>
+                  {ev.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      )}
 
       <form onSubmit={(e) => void onRunSearch(e)} className="space-y-1.5">
         <label className="block text-xs font-semibold" htmlFor="place-search">
@@ -176,6 +210,7 @@ export function SidebarControls({
         Active: <strong className="text-[var(--ink)]">{loc.label}</strong>
         <br />
         {loc.lat.toFixed(3)}, {loc.lon.toFixed(3)}
+        {activeEventId ? ' · historical' : ''}
       </p>
 
       <div className="grid grid-cols-2 gap-2">
