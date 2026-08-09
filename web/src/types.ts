@@ -177,16 +177,6 @@ export interface FirePoint {
   satellite: string
 }
 
-export interface IncidentLogEntry {
-  id: string
-  at: string
-  lat: number
-  lon: number
-  label: string
-  note: string
-  verdict: string | null
-}
-
 export const DEMO_LOCATIONS = [
   { key: 'hot_clear', label: 'Phoenix, AZ (hot + clear)', lat: 33.45, lon: -112.07 },
   { key: 'hot_smoky', label: 'Inland Empire, CA (hot + fires nearby)', lat: 34.05, lon: -117.25 },

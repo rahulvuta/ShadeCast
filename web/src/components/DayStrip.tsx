@@ -1,5 +1,44 @@
 import type { AssessResponse } from '../types'
 
+type ShiftWindow = NonNullable<AssessResponse['shift_windows']>[number]
+
+function formatHour12(hour: number): string {
+  const h = hour % 24
+  const period = h < 12 ? 'AM' : 'PM'
+  const hour12 = h % 12 || 12
+  return `${hour12}:00 ${period}`
+}
+
+function formatDayLabel(day: string): string {
+  const d = new Date(`${day}T12:00:00`)
+  if (Number.isNaN(d.getTime())) return day
+  return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+}
+
+function formatWindow(w: ShiftWindow): { dayLabel: string; timeRange: string } {
+  const dayLabel = formatDayLabel(w.day)
+  const spansNextDay = w.end_hour <= w.start_hour
+  const timeRange = spansNextDay
+    ? `${formatHour12(w.start_hour)} – ${formatHour12(w.end_hour)} (next day)`
+    : `${formatHour12(w.start_hour)} – ${formatHour12(w.end_hour)}`
+  return { dayLabel, timeRange }
+}
+
+function windowQuality(meanRank: number): { label: string; tone: 'go' | 'caution' | 'restrict' | 'marginal' } {
+  if (meanRank < 0.25) return { label: 'All GO', tone: 'go' }
+  if (meanRank < 0.75) return { label: 'Mostly GO', tone: 'go' }
+  if (meanRank < 1.25) return { label: 'Caution mix', tone: 'caution' }
+  if (meanRank < 2) return { label: 'Some restrictions', tone: 'restrict' }
+  return { label: 'Marginal', tone: 'marginal' }
+}
+
+const QUALITY_CLASS: Record<ReturnType<typeof windowQuality>['tone'], string> = {
+  go: 'border-[var(--go)]/35 bg-[var(--go)]/10 text-[#006b50]',
+  caution: 'border-[var(--caution)]/40 bg-[var(--caution)]/12 text-[#7a4a00]',
+  restrict: 'border-[var(--restrict)]/35 bg-[var(--restrict)]/10 text-[#8a2800]',
+  marginal: 'border-[var(--border)] bg-[var(--panel)] text-[var(--muted)]',
+}
+
 export function DiffStrip({ summary }: { summary?: string | null }) {
   if (!summary) return null
   return (
@@ -77,39 +116,90 @@ export function ShiftPlanner({
   requiredHours: number
   onRequiredHours: (n: number) => void
 }) {
+  const hours = Math.min(12, Math.max(1, requiredHours))
+
+  function stepHours(delta: number) {
+    onRequiredHours(Math.min(12, Math.max(1, hours + delta)))
+  }
+
   return (
     <section aria-labelledby="shift-heading">
-      <div className="flex flex-wrap items-end justify-between gap-2">
-        <h2 id="shift-heading" className="dash-section-label">
-          Shift planner
-        </h2>
-        <label className="text-xs font-semibold">
-          Hours
-          <input
-            type="number"
-            min={1}
-            max={12}
-            value={requiredHours}
-            onChange={(e) => onRequiredHours(Number(e.target.value) || 4)}
-            className="ml-1.5 w-14 rounded border border-[var(--border)] bg-white px-2 py-1.5 text-sm touch-target"
-          />
-        </label>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 id="shift-heading" className="dash-section-label">
+            Shift planner
+          </h2>
+          <p className="mt-1 text-xs leading-snug text-[var(--muted)]">
+            Best contiguous blocks with enough GO or caution hours.
+          </p>
+        </div>
+        <div className="flex items-center gap-1 rounded border border-[var(--border)] bg-white p-0.5">
+          <span className="px-2 text-[0.65rem] font-semibold uppercase tracking-wide text-[var(--muted)]">
+            Block
+          </span>
+          <button
+            type="button"
+            onClick={() => stepHours(-1)}
+            disabled={hours <= 1}
+            aria-label="Shorter block"
+            className="touch-target flex h-8 w-8 items-center justify-center rounded text-sm font-bold disabled:opacity-40"
+          >
+            −
+          </button>
+          <span className="min-w-[2rem] text-center text-sm font-bold tabular-nums" aria-live="polite">
+            {hours}h
+          </span>
+          <button
+            type="button"
+            onClick={() => stepHours(1)}
+            disabled={hours >= 12}
+            aria-label="Longer block"
+            className="touch-target flex h-8 w-8 items-center justify-center rounded text-sm font-bold disabled:opacity-40"
+          >
+            +
+          </button>
+        </div>
       </div>
+
       {windows.length === 0 ? (
-        <p className="mt-2 text-xs text-[var(--muted)]">
-          No contiguous window meets that requirement in the next 5 days.
+        <p className="mt-3 rounded border border-dashed border-[var(--border)] bg-[var(--panel)] px-3 py-2.5 text-xs text-[var(--muted)]">
+          No {hours}-hour window fits in the next 5 days without a hard stop.
         </p>
       ) : (
-        <ol className="mt-2 space-y-1.5">
-          {windows.map((w) => (
-            <li
-              key={w.label}
-              className="rounded border border-[var(--border)] bg-[var(--panel)] px-2.5 py-1.5 text-xs"
-            >
-              <span className="font-semibold">{w.label}</span>
-              <span className="text-[var(--muted)]"> · rank {w.mean_rank.toFixed(2)}</span>
-            </li>
-          ))}
+        <ol className="mt-3 space-y-2">
+          {windows.map((w, index) => {
+            const { dayLabel, timeRange } = formatWindow(w)
+            const quality = windowQuality(w.mean_rank)
+            return (
+              <li
+                key={`${w.day}-${w.start_hour}-${w.end_hour}`}
+                className="rounded-md border border-[var(--border)] bg-[var(--panel)] px-3 py-2.5"
+              >
+                <div className="flex items-start gap-2.5">
+                  <span
+                    className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--ink)] text-[0.65rem] font-bold text-white"
+                    aria-hidden
+                  >
+                    {index + 1}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-semibold text-[var(--muted)]">{dayLabel}</p>
+                    <p className="mt-0.5 text-sm font-bold tracking-tight text-[var(--ink)]">{timeRange}</p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <span className="rounded border border-[var(--border)] bg-white px-2 py-0.5 text-[0.65rem] font-semibold text-[var(--muted)]">
+                        {w.required_hours}h block
+                      </span>
+                      <span
+                        className={`rounded border px-2 py-0.5 text-[0.65rem] font-bold uppercase tracking-wide ${QUALITY_CLASS[quality.tone]}`}
+                      >
+                        {quality.label}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </li>
+            )
+          })}
         </ol>
       )}
     </section>

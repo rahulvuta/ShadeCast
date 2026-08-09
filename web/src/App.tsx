@@ -8,7 +8,6 @@ import { ConfidenceBanner } from './components/ConfidenceBanner'
 import { DiffStrip, ShiftPlanner } from './components/DayStrip'
 import { FireMap } from './components/FireMap'
 import { HowWeCalculate } from './components/HowWeCalculate'
-import { IncidentLog } from './components/IncidentLog'
 import { SidebarControls } from './components/SidebarControls'
 import { StaleBanner } from './components/StaleBanner'
 import { TimelinePanel } from './components/TimelinePanel'
@@ -299,7 +298,7 @@ export default function App() {
     onGoLatLon: goLatLon,
   }
 
-  function renderBriefingShiftLog() {
+  function renderBriefingShift() {
     if (!assess) return null
     return (
       <>
@@ -311,14 +310,6 @@ export default function App() {
             windows={assess.shift_windows ?? []}
             requiredHours={requiredHours}
             onRequiredHours={setRequiredHours}
-          />
-        </div>
-        <div className="sidebar-module">
-          <IncidentLog
-            lat={assess.lat}
-            lon={assess.lon}
-            label={loc.label}
-            verdict={assess.current.verdict}
           />
         </div>
       </>
@@ -453,7 +444,7 @@ export default function App() {
                   todayIso={assess.days?.[0]?.day ?? null}
                 />
 
-                <div className="dash-panel lg:hidden">{renderBriefingShiftLog()}</div>
+                <div className="dash-panel lg:hidden">{renderBriefingShift()}</div>
 
                 <div className="grid gap-3 lg:grid-cols-2 lg:items-stretch">
                   <div className="min-w-0">
@@ -495,7 +486,7 @@ export default function App() {
               <SidebarControls {...controlsProps} />
             </div>
 
-            {assess && <div className="hidden lg:block">{renderBriefingShiftLog()}</div>}
+            {assess && <div className="hidden lg:block">{renderBriefingShift()}</div>}
 
             <div className="sidebar-module">
               <HowWeCalculate />
