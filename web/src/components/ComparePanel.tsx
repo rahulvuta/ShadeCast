@@ -217,7 +217,7 @@ export function ComparePanel({
           <button
             type="button"
             className={`touch-target rounded px-3 text-xs font-semibold ${
-              mode === 'profile' ? 'bg-[var(--ink)] text-[var(--bg)]' : ''
+              mode === 'profile' ? 'btn-selected' : ''
             }`}
             aria-pressed={mode === 'profile'}
             onClick={() => setMode('profile')}
@@ -227,7 +227,7 @@ export function ComparePanel({
           <button
             type="button"
             className={`touch-target rounded px-3 text-xs font-semibold ${
-              mode === 'workload' ? 'bg-[var(--ink)] text-[var(--bg)]' : ''
+              mode === 'workload' ? 'btn-selected' : ''
             }`}
             aria-pressed={mode === 'workload'}
             onClick={() => setMode('workload')}

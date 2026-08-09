@@ -45,7 +45,7 @@ export function BriefingCard({
         </h2>
         <button
           type="button"
-          className="touch-target rounded bg-[var(--ink)] px-2.5 py-1.5 text-[0.7rem] font-semibold text-[var(--bg)] disabled:opacity-50"
+          className="btn-primary touch-target rounded px-2.5 py-1.5 text-[0.7rem] font-semibold disabled:opacity-50"
           onClick={() => void copy()}
           disabled={!brief || loading}
         >

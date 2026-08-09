@@ -96,7 +96,7 @@ export function SidebarControls({
                 type="button"
                 className={`touch-target rounded border px-2.5 py-1.5 text-xs font-semibold ${
                   active
-                    ? 'border-[var(--ink)] bg-[var(--ink)] text-[var(--bg)]'
+                    ? 'btn-selected'
                     : 'border-[var(--border)] bg-[var(--chip-bg)] hover:border-[var(--ink)]'
                 }`}
                 onClick={() => onApplyLocation({ lat: d.lat, lon: d.lon, label: d.label })}
@@ -147,7 +147,7 @@ export function SidebarControls({
           />
           <button
             type="submit"
-            className="touch-target shrink-0 rounded bg-[var(--ink)] px-3 text-xs font-semibold text-[var(--bg)] disabled:opacity-50"
+            className="btn-primary touch-target shrink-0 rounded px-3 text-xs font-semibold disabled:opacity-50"
             disabled={searchBusy}
           >
             {searchBusy ? '…' : 'Go'}

@@ -269,16 +269,19 @@ body.text-mode {
 
 input,
 select,
-textarea,
-button {
-  color: inherit;
-}
-
-input,
-select,
 textarea {
+  color: inherit;
   background: var(--input-bg);
   border-color: var(--border);
+}
+
+/* Primary / selected controls — do not use Tailwind text-[var(--bg)] with
+   button { color: inherit }, which made solid black/white boxes. */
+.btn-primary,
+.btn-selected {
+  background: var(--ink);
+  color: var(--bg);
+  border-color: var(--ink);
 }
 
 .theme-toggle {
@@ -289,6 +292,10 @@ textarea {
   font-size: var(--font-caption);
   font-weight: 700;
   padding: 0.35rem 0.75rem;
+}
+
+button:not(.btn-primary):not(.btn-selected):not(.theme-toggle) {
+  color: inherit;
 }
 
 .layout-stack {

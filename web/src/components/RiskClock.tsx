@@ -213,7 +213,7 @@ export function RiskClock({
           <button
             type="button"
             className={`touch-target rounded px-3 text-xs font-semibold ${
-              mode === 'clock' ? 'bg-[var(--ink)] text-[var(--bg)]' : ''
+              mode === 'clock' ? 'btn-selected' : ''
             }`}
             aria-pressed={mode === 'clock'}
             onClick={() => setMode('clock')}
@@ -223,7 +223,7 @@ export function RiskClock({
           <button
             type="button"
             className={`touch-target rounded px-3 text-xs font-semibold ${
-              mode === 'bars' ? 'bg-[var(--ink)] text-[var(--bg)]' : ''
+              mode === 'bars' ? 'btn-selected' : ''
             }`}
             aria-pressed={mode === 'bars'}
             onClick={() => setMode('bars')}

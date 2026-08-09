@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { fetchAssess, fetchBrief, fetchEvents, fetchFires, fetchGeocode, type GeocodeHit, type HistoricalEventSummary } from './api'
 import { ActionCards } from './components/ActionCards'
 import { BriefingCard } from './components/BriefingCard'
@@ -11,6 +11,7 @@ import { DriverWaterfall } from './components/DriverWaterfall'
 import { FireMap } from './components/FireMap'
 import { HowWeCalculate } from './components/HowWeCalculate'
 import { IntegrityTheater } from './components/IntegrityTheater'
+import { LocationTabBar } from './components/LocationTabBar'
 import { SidebarControls } from './components/SidebarControls'
 import { ShiftSheetExport } from './components/ShiftSheetExport'
 import { StaleBanner } from './components/StaleBanner'
@@ -21,8 +22,14 @@ import { VerdictCard } from './components/VerdictCard'
 import { verdictPalette, type VerdictKey } from './design/tokens'
 import { useThemeMode } from './design/useThemeMode'
 import {
+  isUnusable,
+  newTabId,
+  sameLocationTab,
+  type LocationTab,
+  type StagingOpen,
+} from './tabs/types'
+import {
   DEMO_LOCATIONS,
-  type AssessResponse,
   type BriefResponse,
   type FirePoint,
   type Lang,
@@ -102,11 +109,7 @@ export default function App() {
   const textMode = useTextMode()
   const corruptDemo = useCorruptDemo()
   const { theme, toggleTheme } = useThemeMode()
-  const [loc, setLoc] = useState<ActiveLocation>(() => ({
-    lat: BOOT_LOC.lat,
-    lon: BOOT_LOC.lon,
-    label: BOOT_LOC.label,
-  }))
+
   const [searchQuery, setSearchQuery] = useState('')
   const [searchHits, setSearchHits] = useState<GeocodeHit[]>([])
   const [searchBusy, setSearchBusy] = useState(false)
@@ -117,39 +120,40 @@ export default function App() {
   const [acclimatized, setAcclimatized] = useState(false)
   const [profile, setProfile] = useState<SensitivityProfile>(() => initialProfile())
   const [requiredHours, setRequiredHours] = useState(4)
-  const [selectedDay, setSelectedDay] = useState<string | null>(null)
   const [lang, setLang] = useState<Lang>('en')
   const [historicalEvents, setHistoricalEvents] = useState<HistoricalEventSummary[]>([])
-  const [activeEventId, setActiveEventId] = useState<string | null>(() => {
-    return new URLSearchParams(window.location.search).get('event')
-  })
-  const [hourOffset, setHourOffset] = useState<number | null>(null)
-  const [assess, setAssess] = useState<AssessResponse | null>(null)
+  const [hourOffset] = useState<number | null>(null)
+
+  const [tabs, setTabs] = useState<LocationTab[]>([])
+  const [activeTabId, setActiveTabId] = useState<string | null>(null)
+  const [staging, setStaging] = useState<StagingOpen | null>(null)
+  const [scrubPlaying, setScrubPlaying] = useState(false)
   const [brief, setBrief] = useState<BriefResponse | null>(null)
-  const [fires, setFires] = useState<FirePoint[]>([])
-  const [firesError, setFiresError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
   const [briefLoading, setBriefLoading] = useState(false)
   const [briefError, setBriefError] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
   const [online, setOnline] = useState(() => navigator.onLine)
-  const [scrubIndex, setScrubIndex] = useState(0)
-  const [scrubPlaying, setScrubPlaying] = useState(false)
 
-  const applyLocation = useCallback((next: ActiveLocation) => {
-    setActiveEventId(null)
-    setHourOffset(null)
-    setLoc(next)
-    setLatInput(String(next.lat))
-    setLonInput(String(next.lon))
-    setSearchHits([])
-    setSearchError(null)
-  }, [])
+  const bootDone = useRef(false)
+  const commitGen = useRef(0)
 
-  const applyHistoricalEvent = useCallback((eventId: string | null) => {
-    setActiveEventId(eventId)
-    setHourOffset(null)
-  }, [])
+  const activeTab = tabs.find((t) => t.id === activeTabId) ?? null
+  const assess = staging?.blockedAssess ?? activeTab?.assess ?? null
+  const fires = activeTab?.fires ?? []
+  const firesError = activeTab?.firesError ?? null
+  const selectedDay = activeTab?.selectedDay ?? null
+  const scrubIndex = activeTab?.scrubIndex ?? 0
+  const locLabel = staging?.label ?? activeTab?.label ?? BOOT_LOC.label
+  const locLat = staging?.lat ?? activeTab?.lat ?? BOOT_LOC.lat
+  const locLon = staging?.lon ?? activeTab?.lon ?? BOOT_LOC.lon
+  const activeEventId = staging?.eventId ?? activeTab?.eventId ?? null
+  const loading = Boolean(staging?.loading)
+  const error = staging?.error ?? null
+
+  const sidebarLoc: ActiveLocation = {
+    lat: locLat,
+    lon: locLon,
+    label: locLabel,
+  }
 
   useEffect(() => {
     void fetchEvents()
@@ -157,81 +161,224 @@ export default function App() {
       .catch(() => setHistoricalEvents([]))
   }, [])
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const a = await fetchAssess({
-        lat: loc.lat,
-        lon: loc.lon,
-        workload,
-        acclimatized,
-        profile,
-        requiredHours,
-        corrupt: corruptDemo && !activeEventId,
-        event: activeEventId,
-        hourOffset,
+  const commitAssess = useCallback(
+    async (target: {
+      lat: number
+      lon: number
+      label: string
+      eventId: string | null
+    }) => {
+      const gen = ++commitGen.current
+      setStaging({
+        label: target.label,
+        lat: target.lat,
+        lon: target.lon,
+        eventId: target.eventId,
+        loading: true,
+        error: null,
+        blockedAssess: null,
       })
-      setAssess(a)
-      const curIdx = a.hourly.findIndex((h) => h.is_current)
-      setScrubIndex(curIdx >= 0 ? curIdx : 0)
       setScrubPlaying(false)
-      if (a.is_historical && a.lat != null && a.lon != null) {
-        setLoc({
-          lat: a.lat,
-          lon: a.lon,
-          label: a.historical_event?.label ?? a.location_label ?? loc.label,
+      setLatInput(String(target.lat))
+      setLonInput(String(target.lon))
+      setSearchHits([])
+      setSearchError(null)
+
+      // Focus existing tab while refreshing
+      setTabs((prev) => {
+        const existing = prev.find((t) =>
+          sameLocationTab(
+            { lat: t.lat, lon: t.lon, eventId: t.eventId },
+            { lat: target.lat, lon: target.lon, eventId: target.eventId },
+          ),
+        )
+        if (existing) setActiveTabId(existing.id)
+        return prev
+      })
+
+      try {
+        const a = await fetchAssess({
+          lat: target.lat,
+          lon: target.lon,
+          workload,
+          acclimatized,
+          profile,
+          requiredHours,
+          corrupt: corruptDemo && !target.eventId,
+          event: target.eventId,
+          hourOffset,
         })
-        setLatInput(String(a.lat))
-        setLonInput(String(a.lon))
-      }
-      setSelectedDay(a.days?.[0]?.day ?? null)
-      if (!a.is_historical) {
-        const half = 2.7
-        const bbox = `${loc.lon - half},${loc.lat - half},${loc.lon + half},${loc.lat + half}`
-        try {
-          const f = await fetchFires(bbox)
-          setFires(f.fires)
-          setFiresError(null)
-        } catch (e) {
-          setFires([])
-          setFiresError(e instanceof Error ? e.message : 'Fire detections unavailable')
+        if (gen !== commitGen.current) return
+
+        let label = target.label
+        let lat = target.lat
+        let lon = target.lon
+        if (a.is_historical && a.lat != null && a.lon != null) {
+          lat = a.lat
+          lon = a.lon
+          label = a.historical_event?.label ?? a.location_label ?? target.label
+          setLatInput(String(lat))
+          setLonInput(String(lon))
         }
-      } else {
-        setFires([])
-        setFiresError(null)
+
+        if (isUnusable(a)) {
+          setStaging({
+            label,
+            lat,
+            lon,
+            eventId: target.eventId,
+            loading: false,
+            error: null,
+            blockedAssess: a,
+          })
+          return
+        }
+
+        let nextFires: FirePoint[] = []
+        let nextFiresError: string | null = null
+        if (!a.is_historical) {
+          const half = 2.7
+          const bbox = `${lon - half},${lat - half},${lon + half},${lat + half}`
+          try {
+            const f = await fetchFires(bbox)
+            nextFires = f.fires
+          } catch (e) {
+            nextFiresError = e instanceof Error ? e.message : 'Fire detections unavailable'
+          }
+        }
+        if (gen !== commitGen.current) return
+
+        const curIdx = a.hourly.findIndex((h) => h.is_current)
+        const tab: LocationTab = {
+          id: newTabId(),
+          label,
+          lat,
+          lon,
+          eventId: target.eventId,
+          assess: a,
+          fires: nextFires,
+          firesError: nextFiresError,
+          selectedDay: a.days?.[0]?.day ?? null,
+          scrubIndex: curIdx >= 0 ? curIdx : 0,
+        }
+
+        setTabs((prev) => {
+          const idx = prev.findIndex((t) =>
+            sameLocationTab(
+              { lat: t.lat, lon: t.lon, eventId: t.eventId },
+              { lat: tab.lat, lon: tab.lon, eventId: tab.eventId },
+            ),
+          )
+          if (idx >= 0) {
+            const id = prev[idx]!.id
+            const next = [...prev]
+            next[idx] = { ...tab, id }
+            queueMicrotask(() => setActiveTabId(id))
+            return next
+          }
+          queueMicrotask(() => setActiveTabId(tab.id))
+          return [...prev, tab]
+        })
+        setStaging(null)
+      } catch (e) {
+        if (gen !== commitGen.current) return
+        setStaging({
+          label: target.label,
+          lat: target.lat,
+          lon: target.lon,
+          eventId: target.eventId,
+          loading: false,
+          error: e instanceof Error ? e.message : 'Failed to load assessment',
+          blockedAssess: null,
+        })
       }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load assessment')
-      setAssess(null)
-    } finally {
-      setLoading(false)
+    },
+    [workload, acclimatized, profile, requiredHours, corruptDemo, hourOffset],
+  )
+
+  // Boot: open first tab from URL / default demo
+  useEffect(() => {
+    if (bootDone.current) return
+    bootDone.current = true
+    const event = new URLSearchParams(window.location.search).get('event')
+    void commitAssess({
+      lat: BOOT_LOC.lat,
+      lon: BOOT_LOC.lon,
+      label: event
+        ? event
+        : BOOT_LOC.label,
+      eventId: event,
+    })
+  }, [commitAssess])
+
+  // Refresh active tab when shared settings change (after boot)
+  const settingsKey = `${workload}|${acclimatized}|${profile}|${requiredHours}`
+  const prevSettings = useRef(settingsKey)
+  useEffect(() => {
+    if (prevSettings.current === settingsKey) return
+    prevSettings.current = settingsKey
+    if (!activeTabId) return
+    setTabs((prev) => {
+      const t = prev.find((x) => x.id === activeTabId)
+      if (t) {
+        queueMicrotask(() => {
+          void commitAssess({
+            lat: t.lat,
+            lon: t.lon,
+            label: t.label,
+            eventId: t.eventId,
+          })
+        })
+      }
+      return prev
+    })
+  }, [settingsKey, activeTabId, commitAssess])
+
+  const applyLocation = useCallback(
+    (next: ActiveLocation) => {
+      void commitAssess({
+        lat: next.lat,
+        lon: next.lon,
+        label: next.label,
+        eventId: null,
+      })
+    },
+    [commitAssess],
+  )
+
+  const applyHistoricalEvent = useCallback(
+    (eventId: string | null) => {
+      if (!eventId) {
+        void commitAssess({
+          lat: BOOT_LOC.lat,
+          lon: BOOT_LOC.lon,
+          label: BOOT_LOC.label,
+          eventId: null,
+        })
+        return
+      }
+      const ev = historicalEvents.find((e) => e.id === eventId)
+      void commitAssess({
+        lat: ev?.lat ?? locLat,
+        lon: ev?.lon ?? locLon,
+        label: ev?.label ?? eventId,
+        eventId,
+      })
+    },
+    [commitAssess, historicalEvents, locLat, locLon],
+  )
+
+  useEffect(() => {
+    if (!assess || isUnusable(assess)) {
+      setBrief(null)
+      return
     }
-  }, [
-    loc.lat,
-    loc.lon,
-    loc.label,
-    workload,
-    acclimatized,
-    profile,
-    requiredHours,
-    corruptDemo,
-    activeEventId,
-    hourOffset,
-  ])
-
-  useEffect(() => {
-    void load()
-  }, [load])
-
-  useEffect(() => {
-    if (!assess) return
     let cancelled = false
     setBriefLoading(true)
     setBriefError(null)
     void fetchBrief({
-      lat: loc.lat,
-      lon: loc.lon,
+      lat: assess.lat,
+      lon: assess.lon,
       lang,
       workload,
       acclimatized,
@@ -256,7 +403,7 @@ export default function App() {
     return () => {
       cancelled = true
     }
-  }, [assess, lang, loc.lat, loc.lon, workload, acclimatized, profile])
+  }, [assess, lang, workload, acclimatized, profile])
 
   const scrubHour = assess?.hourly[scrubIndex] ?? null
   const displayVerdict = (scrubHour?.verdict as Verdict | undefined) ?? assess?.current.verdict ?? null
@@ -304,8 +451,8 @@ export default function App() {
       params.delete('lon')
     } else {
       params.delete('event')
-      params.set('lat', String(loc.lat))
-      params.set('lon', String(loc.lon))
+      params.set('lat', String(locLat))
+      params.set('lon', String(locLon))
     }
     params.set('workload', workload)
     params.set('profile', profile)
@@ -316,7 +463,7 @@ export default function App() {
     const qs = params.toString()
     const next = `${window.location.pathname}?${qs}${window.location.hash}`
     window.history.replaceState(null, '', next)
-  }, [loc.lat, loc.lon, workload, profile, textMode, corruptDemo, activeEventId])
+  }, [locLat, locLon, workload, profile, textMode, corruptDemo, activeEventId])
 
   async function runSearch(e?: FormEvent) {
     e?.preventDefault()
@@ -345,11 +492,35 @@ export default function App() {
     const lat = Number(latInput)
     const lon = Number(lonInput)
     if (!Number.isFinite(lat) || lat < -90 || lat > 90) {
-      setError('Latitude must be between -90 and 90')
+      setStaging((s) =>
+        s
+          ? { ...s, error: 'Latitude must be between -90 and 90' }
+          : {
+              label: 'Invalid coordinates',
+              lat: locLat,
+              lon: locLon,
+              eventId: null,
+              loading: false,
+              error: 'Latitude must be between -90 and 90',
+              blockedAssess: null,
+            },
+      )
       return
     }
     if (!Number.isFinite(lon) || lon < -180 || lon > 180) {
-      setError('Longitude must be between -180 and 180')
+      setStaging((s) =>
+        s
+          ? { ...s, error: 'Longitude must be between -180 and 180' }
+          : {
+              label: 'Invalid coordinates',
+              lat: locLat,
+              lon: locLon,
+              eventId: null,
+              loading: false,
+              error: 'Longitude must be between -180 and 180',
+              blockedAssess: null,
+            },
+      )
       return
     }
     applyLocation({
@@ -359,8 +530,45 @@ export default function App() {
     })
   }
 
+  function selectTab(id: string) {
+    setActiveTabId(id)
+    setStaging(null)
+    setScrubPlaying(false)
+    const t = tabs.find((x) => x.id === id)
+    if (t) {
+      setLatInput(String(t.lat))
+      setLonInput(String(t.lon))
+    }
+  }
+
+  function closeTab(id: string) {
+    setTabs((prev) => {
+      const next = prev.filter((t) => t.id !== id)
+      if (activeTabId === id) {
+        const fallback = next[next.length - 1] ?? null
+        setActiveTabId(fallback?.id ?? null)
+        setStaging(null)
+      }
+      return next
+    })
+  }
+
+  function setSelectedDay(day: string) {
+    if (!activeTabId) return
+    setTabs((prev) =>
+      prev.map((t) => (t.id === activeTabId ? { ...t, selectedDay: day } : t)),
+    )
+  }
+
+  function setScrubIndex(index: number) {
+    if (!activeTabId) return
+    setTabs((prev) =>
+      prev.map((t) => (t.id === activeTabId ? { ...t, scrubIndex: index } : t)),
+    )
+  }
+
   const controlsProps = {
-    loc,
+    loc: sidebarLoc,
     corruptDemo,
     searchQuery,
     searchHits,
@@ -388,7 +596,7 @@ export default function App() {
   }
 
   function renderBriefingShift() {
-    if (!assess) return null
+    if (!assess || isUnusable(assess)) return null
     return (
       <>
         <div className="sidebar-module">
@@ -404,6 +612,11 @@ export default function App() {
       </>
     )
   }
+
+  const showBlocked = Boolean(staging?.blockedAssess)
+  const showTabContent = Boolean(activeTab && !showBlocked && !staging?.loading)
+  const showEmpty =
+    !loading && !error && !showBlocked && !activeTab && !staging
 
   return (
     <div className="app-shell min-h-screen">
@@ -444,10 +657,18 @@ export default function App() {
       </header>
 
       <div className="mx-auto max-w-[1600px] px-4 py-5 sm:px-5 pb-12 layout-stack">
+        <LocationTabBar
+          tabs={tabs}
+          activeTabId={activeTabId}
+          onSelect={selectTab}
+          onClose={closeTab}
+          openingLabel={staging?.loading ? staging.label : null}
+        />
+
         <details className="dash-panel lg:hidden">
           <summary className="touch-target cursor-pointer list-none px-3.5 py-3 flex items-center justify-between gap-2">
             <span className="dash-section-label">Controls & settings</span>
-            <span className="type-caption text-[var(--muted)] font-normal">{loc.label}</span>
+            <span className="type-caption text-[var(--muted)] font-normal">{locLabel}</span>
           </summary>
           <div className="border-t border-[var(--border)] px-3.5 py-3">
             <SidebarControls {...controlsProps} />
@@ -455,7 +676,12 @@ export default function App() {
         </details>
 
         <div className="grid gap-6 lg:grid-cols-[minmax(0,4fr)_minmax(280px,1fr)] lg:items-start">
-          <main id="main" className="min-w-0 layout-stack">
+          <main
+            id="main"
+            className="min-w-0 layout-stack"
+            role="tabpanel"
+            aria-labelledby={activeTabId ? `tab-${activeTabId}` : undefined}
+          >
             {!online && (
               <aside
                 role="status"
@@ -464,88 +690,108 @@ export default function App() {
                 You appear offline. Showing the last cached assessment if available.
               </aside>
             )}
-            {assess?.is_historical && assess.historical_event && (
-              <aside
-                role="status"
-                className="rounded border-2 accent-border bg-[var(--panel)] px-3.5 py-3 text-sm"
-              >
-                <p className="type-micro text-[var(--muted)]">
-                  Historical replay — not live data
+
+            {loading && (
+              <div role="status" className="dash-panel space-y-3 p-5">
+                <p className="font-semibold text-sm">
+                  Opening {staging?.label ?? 'location'} — running integrity checks…
                 </p>
-                <p className="mt-1 font-semibold text-[var(--ink)]">
-                  {assess.historical_event.label}
-                  {assess.historical_event.start_date
-                    ? ` — ${assess.historical_event.start_date}`
-                    : ''}
+                <p className="text-xs text-[var(--muted)]">
+                  A new tab opens only after checks pass. Unusable inputs will not create a tab.
                 </p>
-                {assess.actual_vs_expected && (
-                  <p className="mt-2 text-sm">
-                    Expected{' '}
-                    <span className="font-semibold">
-                      {assess.actual_vs_expected.expected.join(' / ') || 'n/a'}
-                    </span>
-                    {' · '}
-                    Engine{' '}
-                    <span className="font-semibold">{assess.actual_vs_expected.actual ?? 'n/a'}</span>
-                    {' · '}
-                    <span
-                      className={
-                        assess.actual_vs_expected.status === 'pass'
-                          ? 'font-bold text-[var(--go)]'
-                          : 'font-bold text-[var(--restrict)]'
-                      }
-                    >
-                      {assess.actual_vs_expected.status.toUpperCase()}
-                    </span>
-                  </p>
-                )}
-                {assess.historical_event.source_url && (
-                  <p className="mt-1 type-micro text-[var(--muted)] normal-case tracking-normal font-normal">
-                    <a
-                      className="underline"
-                      href={assess.historical_event.source_url}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Event source
-                    </a>
-                  </p>
-                )}
-              </aside>
-            )}
-            {loading && !assess && (
-              <div role="status" className="dash-panel p-5 font-semibold text-sm">
-                Loading assessment…
               </div>
             )}
-            {loading && assess && (
-              <div
-                role="status"
-                className="rounded border border-[var(--border)] bg-[var(--panel)] px-3.5 py-2 type-caption text-[var(--muted)]"
-              >
-                Updating assessment…
-              </div>
-            )}
+
             {error && (
               <div role="alert" className="dash-panel border-2 border-[var(--stop)] p-4">
                 <p className="font-bold">Could not load assessment</p>
                 <p className="text-sm mt-1">{error}</p>
-                <p className="text-sm mt-2 text-[var(--muted)]">
-                  Weather data may still be loading for this location. Try again in a moment.
-                </p>
                 <button
                   type="button"
-                  className="touch-target mt-3 rounded bg-[var(--ink)] px-4 py-2 text-sm text-[var(--bg)]"
-                  onClick={() => void load()}
+                  className="btn-primary touch-target mt-3 rounded px-4 py-2 text-sm"
+                  onClick={() =>
+                    void commitAssess({
+                      lat: staging?.lat ?? locLat,
+                      lon: staging?.lon ?? locLon,
+                      label: staging?.label ?? locLabel,
+                      eventId: staging?.eventId ?? null,
+                    })
+                  }
                 >
                   Retry
                 </button>
               </div>
             )}
 
-            {assess && (
+            {showBlocked && staging?.blockedAssess && (
+              <div className="layout-stack">
+                <aside
+                  role="status"
+                  className="rounded border-2 border-[var(--stop)] bg-[var(--stop-bg)] px-3.5 py-3 text-sm"
+                >
+                  <p className="font-bold">Integrity checks failed — tab not opened</p>
+                  <p className="mt-1 text-[var(--muted)]">
+                    {staging.label} returned UNUSABLE confidence. Fix the feed or pick another
+                    location. Your other tabs are unchanged.
+                  </p>
+                </aside>
+                <ConfidenceBanner confidence={staging.blockedAssess.data_confidence} />
+                <IntegrityTheater
+                  confidence={staging.blockedAssess.data_confidence}
+                  forceOpen={true}
+                />
+              </div>
+            )}
+
+            {showEmpty && (
+              <div className="dash-panel p-6 text-sm text-[var(--muted)]">
+                Search or pick a demo location to open a tab. Integrity checks run first; unusable
+                inputs will not open a tab.
+              </div>
+            )}
+
+            {showTabContent && assess && activeTab && (
               <>
-                {/* Row 1 — Hero */}
+                {assess.is_historical && assess.historical_event && (
+                  <aside
+                    role="status"
+                    className="rounded border-2 accent-border bg-[var(--panel)] px-3.5 py-3 text-sm"
+                  >
+                    <p className="type-micro text-[var(--muted)]">
+                      Historical replay — not live data
+                    </p>
+                    <p className="mt-1 font-semibold text-[var(--ink)]">
+                      {assess.historical_event.label}
+                      {assess.historical_event.start_date
+                        ? ` — ${assess.historical_event.start_date}`
+                        : ''}
+                    </p>
+                    {assess.actual_vs_expected && (
+                      <p className="mt-2 text-sm">
+                        Expected{' '}
+                        <span className="font-semibold">
+                          {assess.actual_vs_expected.expected.join(' / ') || 'n/a'}
+                        </span>
+                        {' · '}
+                        Engine{' '}
+                        <span className="font-semibold">
+                          {assess.actual_vs_expected.actual ?? 'n/a'}
+                        </span>
+                        {' · '}
+                        <span
+                          className={
+                            assess.actual_vs_expected.status === 'pass'
+                              ? 'font-bold text-[var(--go)]'
+                              : 'font-bold text-[var(--restrict)]'
+                          }
+                        >
+                          {assess.actual_vs_expected.status.toUpperCase()}
+                        </span>
+                      </p>
+                    )}
+                  </aside>
+                )}
+
                 <div className="layout-hero-band">
                   <StaleBanner
                     freshness={assess.data_freshness}
@@ -574,16 +820,12 @@ export default function App() {
                         assess.ceiling_reason ?? assess.environmental_load?.ceiling_reason
                       }
                       confidence={assess.data_confidence?.level}
-                      unusable={
-                        assess.data_confidence?.level === 'UNUSABLE' ||
-                        displayVerdict == null
-                      }
+                      unusable={false}
                       interactions={assess.environmental_load?.interactions}
                     />
                   </div>
                 </div>
 
-                {/* Row 2 — Reasoning charts */}
                 <div className="grid gap-4 lg:grid-cols-2">
                   {assess.environmental_load?.waterfall &&
                     assess.environmental_load.waterfall.length > 0 && (
@@ -600,7 +842,6 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Row 3 — Map dominant + scrubber */}
                 <TimeScrubber
                   hours={assess.hourly}
                   index={scrubIndex}
@@ -626,7 +867,6 @@ export default function App() {
                   )}
                 </div>
 
-                {/* Row 4 — Timeline */}
                 <TimelinePanel
                   hourly={assess.hourly}
                   days={assess.days}
@@ -653,12 +893,11 @@ export default function App() {
 
                 <ShiftSheetExport
                   assess={assess}
-                  locationLabel={loc.label}
+                  locationLabel={activeTab.label}
                   workload={workload}
                   profile={profile}
                 />
 
-                {/* Row 5 — Actions / briefing / climatology */}
                 <div className="dash-panel lg:hidden">{renderBriefingShift()}</div>
                 <div className="grid gap-4 lg:grid-cols-2">
                   {assess.actions && assess.actions.length > 0 && (
@@ -690,7 +929,9 @@ export default function App() {
               <SidebarControls {...controlsProps} />
             </div>
 
-            {assess && <div className="hidden lg:block">{renderBriefingShift()}</div>}
+            {showTabContent && assess && (
+              <div className="hidden lg:block">{renderBriefingShift()}</div>
+            )}
 
             <div className="sidebar-module">
               <HowWeCalculate />

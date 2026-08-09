@@ -104,7 +104,7 @@ export function FiveDayStrip({
               aria-pressed={active}
               className={`touch-target min-w-[5.5rem] shrink-0 rounded border px-2.5 py-2 text-left ${
                 active
-                  ? 'border-[var(--ink)] bg-[var(--ink)] text-[var(--bg)]'
+                  ? 'btn-selected'
                   : 'border-[var(--border)] bg-[var(--panel)] hover:border-[var(--ink)]'
               }`}
             >
@@ -197,7 +197,7 @@ export function ShiftPlanner({
               >
                 <div className="flex items-start gap-2.5">
                   <span
-                    className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--ink)] text-[0.65rem] font-bold text-[var(--bg)]"
+                    className="btn-selected mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[0.65rem] font-bold"
                     aria-hidden
                   >
                     {index + 1}

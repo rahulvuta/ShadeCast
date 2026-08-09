@@ -48,7 +48,7 @@ export function ShiftSheetExport({
         </div>
         <button
           type="button"
-          className="touch-target rounded bg-[var(--ink)] px-4 text-sm font-semibold text-[var(--bg)] disabled:opacity-50"
+          className="btn-primary touch-target rounded px-4 text-sm font-semibold disabled:opacity-50"
           disabled={busy}
           onClick={() => void onExport()}
         >
