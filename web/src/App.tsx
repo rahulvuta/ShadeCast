@@ -10,6 +10,7 @@ import { DiffStrip, ShiftPlanner } from './components/DayStrip'
 import { DriverWaterfall } from './components/DriverWaterfall'
 import { FireMap } from './components/FireMap'
 import { HowWeCalculate } from './components/HowWeCalculate'
+import { IntegrityTheater } from './components/IntegrityTheater'
 import { SidebarControls } from './components/SidebarControls'
 import { StaleBanner } from './components/StaleBanner'
 import { TimelinePanel } from './components/TimelinePanel'
@@ -551,6 +552,10 @@ export default function App() {
                   />
                   <div className="mt-2 space-y-2">
                     <ConfidenceBanner confidence={assess.data_confidence} />
+                    <IntegrityTheater
+                      confidence={assess.data_confidence}
+                      forceOpen={corruptDemo && !activeEventId}
+                    />
                     <DiffStrip summary={assess.diff_summary} />
                     <VerdictCard
                       verdict={displayVerdict}
