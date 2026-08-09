@@ -96,6 +96,64 @@ def detection_weight(frp: float, distance_km: float) -> float:
     return frp / (1.0 + (distance_km / DECAY_SCALE_KM) ** 2)
 
 
+def destination_point(
+    lat: float, lon: float, bearing_deg: float, distance_km: float
+) -> tuple[float, float]:
+    """Destination lat/lon from start along bearing for distance_km (great-circle)."""
+    δ = distance_km / EARTH_RADIUS_KM
+    θ = math.radians(bearing_deg)
+    φ1 = math.radians(lat)
+    λ1 = math.radians(lon)
+    φ2 = math.asin(math.sin(φ1) * math.cos(δ) + math.cos(φ1) * math.sin(δ) * math.cos(θ))
+    λ2 = λ1 + math.atan2(
+        math.sin(θ) * math.sin(δ) * math.cos(φ1),
+        math.cos(δ) - math.sin(φ1) * math.sin(φ2),
+    )
+    return math.degrees(φ2), (math.degrees(λ2) + 540.0) % 360.0 - 180.0
+
+
+@dataclass(frozen=True)
+class DetectionContribution:
+    latitude: float
+    longitude: float
+    frp: float | None
+    distance_km: float
+    bearing_deg: float
+    within_radius: bool
+    upwind: bool
+    weight: float
+
+
+def annotate_detections(
+    user_lat: float,
+    user_lon: float,
+    fires: Sequence[FireDetectionInput],
+    wind_from_deg: float,
+) -> list[DetectionContribution]:
+    """Per-detection geometry + weight matching assess_smoke (for map / tooltips)."""
+    out: list[DetectionContribution] = []
+    for f in fires:
+        d = haversine_km(user_lat, user_lon, f.latitude, f.longitude)
+        bearing = initial_bearing_deg(user_lat, user_lon, f.latitude, f.longitude)
+        within = d <= SEARCH_RADIUS_KM
+        upwind = within and is_upwind(user_lat, user_lon, f.latitude, f.longitude, wind_from_deg)
+        frp_eff = float(f.frp) if f.frp is not None and f.frp > 0 else 1.0
+        weight = detection_weight(frp_eff, d) if upwind else 0.0
+        out.append(
+            DetectionContribution(
+                latitude=f.latitude,
+                longitude=f.longitude,
+                frp=f.frp,
+                distance_km=round(d, 2),
+                bearing_deg=round(bearing, 1),
+                within_radius=within,
+                upwind=upwind,
+                weight=round(weight, 3),
+            )
+        )
+    return out
+
+
 def label_smoke(pressure: float) -> str:
     if pressure >= SMOKE_THRESHOLDS["high"]:
         return "very_high"

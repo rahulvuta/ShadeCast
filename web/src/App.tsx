@@ -11,6 +11,7 @@ import { HowWeCalculate } from './components/HowWeCalculate'
 import { SidebarControls } from './components/SidebarControls'
 import { StaleBanner } from './components/StaleBanner'
 import { TimelinePanel } from './components/TimelinePanel'
+import { TimeScrubber } from './components/TimeScrubber'
 import { UVPanel } from './components/UVPanel'
 import { VerdictCard } from './components/VerdictCard'
 import { verdictPalette, type VerdictKey } from './design/tokens'
@@ -128,6 +129,8 @@ export default function App() {
   const [briefError, setBriefError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [online, setOnline] = useState(() => navigator.onLine)
+  const [scrubIndex, setScrubIndex] = useState(0)
+  const [scrubPlaying, setScrubPlaying] = useState(false)
 
   const applyLocation = useCallback((next: ActiveLocation) => {
     setActiveEventId(null)
@@ -166,6 +169,9 @@ export default function App() {
         hourOffset,
       })
       setAssess(a)
+      const curIdx = a.hourly.findIndex((h) => h.is_current)
+      setScrubIndex(curIdx >= 0 ? curIdx : 0)
+      setScrubPlaying(false)
       if (a.is_historical && a.lat != null && a.lon != null) {
         setLoc({
           lat: a.lat,
@@ -248,21 +254,32 @@ export default function App() {
     }
   }, [assess, lang, loc.lat, loc.lon, workload, acclimatized, profile])
 
+  const scrubHour = assess?.hourly[scrubIndex] ?? null
+  const displayVerdict = (scrubHour?.verdict as Verdict | undefined) ?? assess?.current.verdict ?? null
+  const displayHeat = scrubHour?.heat_index_f ?? assess?.current.heat_index_f ?? null
+  const displaySmoke = scrubHour?.smoke_pressure ?? assess?.smoke.smoke_pressure ?? 0
+  const displayWind =
+    scrubHour?.wind_direction_deg ?? assess?.current.wind_direction_deg ?? null
+  const displayWindSpeed =
+    scrubHour?.wind_speed_kmh ?? assess?.current.wind_speed_kmh ?? null
+  const scrubbingAway =
+    scrubHour != null && !scrubHour.is_current && (assess?.hourly.length ?? 0) > 1
+
   useEffect(() => {
     document.body.classList.toggle('text-mode', textMode)
   }, [textMode])
 
   useEffect(() => {
     const v: VerdictKey =
-      assess?.data_confidence?.level === 'UNUSABLE' || assess?.current.verdict == null
+      assess?.data_confidence?.level === 'UNUSABLE' || displayVerdict == null
         ? 'UNUSABLE'
-        : ((assess?.current.verdict as Verdict) ?? 'UNUSABLE')
+        : (displayVerdict as Verdict)
     const palette = verdictPalette[v]
     const root = document.documentElement
     root.style.setProperty('--verdict-accent', palette.base)
     root.style.setProperty('--verdict-glow', palette.glow)
     root.style.setProperty('--verdict-wash', palette.bg)
-  }, [assess?.current.verdict, assess?.data_confidence?.level])
+  }, [displayVerdict, assess?.data_confidence?.level])
 
   useEffect(() => {
     const onOnline = () => setOnline(true)
@@ -534,21 +551,25 @@ export default function App() {
                     <ConfidenceBanner confidence={assess.data_confidence} />
                     <DiffStrip summary={assess.diff_summary} />
                     <VerdictCard
-                      verdict={assess.current.verdict}
+                      verdict={displayVerdict}
                       hardStop={assess.schedule.hard_stop_window}
                       bestWork={assess.schedule.best_work_window}
-                      heatIndex={assess.current.heat_index_f}
-                      smokePressure={assess.smoke.smoke_pressure}
+                      heatIndex={displayHeat}
+                      smokePressure={displaySmoke}
                       loadScore={assess.environmental_load?.load_score}
                       drivers={assess.environmental_load?.drivers}
-                      explainText={assess.explain_text}
+                      explainText={
+                        scrubbingAway
+                          ? `Scrubbed hour ${scrubHour?.valid_at ?? scrubHour?.hour} — schedule windows still reflect the full assessment.`
+                          : assess.explain_text
+                      }
                       ceilingReason={
                         assess.ceiling_reason ?? assess.environmental_load?.ceiling_reason
                       }
                       confidence={assess.data_confidence?.level}
                       unusable={
                         assess.data_confidence?.level === 'UNUSABLE' ||
-                        assess.current.verdict == null
+                        displayVerdict == null
                       }
                       interactions={assess.environmental_load?.interactions}
                     />
@@ -566,12 +587,21 @@ export default function App() {
                   {assess.uv && <UVPanel uv={assess.uv} />}
                 </div>
 
-                {/* Row 3 — Map dominant */}
+                {/* Row 3 — Map dominant + scrubber */}
+                <TimeScrubber
+                  hours={assess.hourly}
+                  index={scrubIndex}
+                  onIndex={setScrubIndex}
+                  playing={scrubPlaying}
+                  onPlaying={setScrubPlaying}
+                />
                 <div className="map-stage dash-panel overflow-hidden accent-border">
                   <FireMap
                     lat={assess.lat}
                     lon={assess.lon}
-                    windFromDeg={assess.current.wind_direction_deg}
+                    windFromDeg={displayWind}
+                    windSpeedKmh={displayWindSpeed}
+                    smokePressure={displaySmoke}
                     fires={fires}
                     textMode={textMode}
                     defaultOpen={true}

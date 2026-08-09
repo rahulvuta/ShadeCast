@@ -143,6 +143,8 @@ class HourlyAssessment(BaseModel):
     smoke_pressure: float
     uv_index: float | None = None
     us_aqi: float | None = None
+    wind_direction_deg: float | None = None
+    wind_speed_kmh: float | None = None
     verdict: str
     work_minutes: int
     rest_minutes: int

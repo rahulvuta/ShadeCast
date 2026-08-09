@@ -75,6 +75,8 @@ export interface AssessResponse {
     smoke_pressure: number
     uv_index?: number | null
     us_aqi?: number | null
+    wind_direction_deg?: number | null
+    wind_speed_kmh?: number | null
     verdict: Verdict
     work_minutes: number
     rest_minutes: number

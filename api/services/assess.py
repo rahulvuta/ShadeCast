@@ -735,6 +735,8 @@ def build_assessment(
                     smoke_pressure=hour_smoke.smoke_pressure,
                     uv_index=r.uv_index,
                     us_aqi=aq_u,
+                    wind_direction_deg=r.wind_direction_deg,
+                    wind_speed_kmh=r.wind_speed_kmh,
                     verdict=hour_load.verdict.value,
                     work_minutes=0,
                     rest_minutes=0,

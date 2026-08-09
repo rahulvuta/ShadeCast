@@ -63,3 +63,30 @@ def test_nearby_upwind_fire_raises_pressure():
     result = assess_smoke(user_lat, user_lon, [fire], wind_from_deg=0.0)
     assert result.upwind_count == 1
     assert result.smoke_pressure > 10.0
+
+
+def test_annotate_detections_matches_assess_counts():
+    from api.engine.smoke import annotate_detections
+
+    user_lat, user_lon = 34.0, -117.0
+    fires = [
+        FireDetectionInput(latitude=34.2, longitude=-117.0, frp=80.0),  # upwind north
+        FireDetectionInput(latitude=33.8, longitude=-117.0, frp=80.0),  # downwind south
+        FireDetectionInput(latitude=34.0 + 2.8, longitude=-117.0, frp=200.0),  # beyond radius
+    ]
+    rows = annotate_detections(user_lat, user_lon, fires, wind_from_deg=0.0)
+    assert len(rows) == 3
+    assert rows[0].upwind and rows[0].weight > 0
+    assert not rows[1].upwind and rows[1].weight == 0.0
+    assert not rows[2].within_radius and rows[2].weight == 0.0
+    result = assess_smoke(user_lat, user_lon, fires, wind_from_deg=0.0)
+    assert result.upwind_count == sum(1 for r in rows if r.upwind)
+    assert result.considered_count == sum(1 for r in rows if r.within_radius)
+
+
+def test_destination_point_north_approx():
+    from api.engine.smoke import destination_point
+
+    lat2, lon2 = destination_point(34.0, -117.0, 0.0, 111.0)
+    assert abs(lat2 - 35.0) < 0.05
+    assert abs(lon2 - (-117.0)) < 0.05
