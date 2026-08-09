@@ -79,6 +79,7 @@ export interface AssessResponse {
     work_minutes: number
     rest_minutes: number
     note: string
+    is_current?: boolean
   }>
   schedule: {
     hard_stop_window: string | null

@@ -28,7 +28,12 @@ export function HowWeCalculate() {
         </p>
         <p>
           Full notes:{' '}
-          <a className="underline font-semibold text-[var(--ink)]" href="/docs/limitations.md">
+          <a
+            className="underline font-semibold text-[var(--ink)]"
+            href="https://github.com/rahulvuta/ShadeCast/blob/main/docs/limitations.md"
+            target="_blank"
+            rel="noreferrer"
+          >
             docs/limitations.md
           </a>
         </p>

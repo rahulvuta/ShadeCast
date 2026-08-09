@@ -75,6 +75,10 @@ If Render logs show forecast or air-quality upsert failures about missing column
 alembic upgrade head
 ```
 
+The ingest cron start command also runs `alembic upgrade head` before `python -m ingest.job`.
+
+If assessment cache upserts fail after the sensitivity-profile unique-key change, ensure revision `d8f3b2c1a0e9` is applied (`sensitivity_profile` column on `assessment_cache`).
+
 Assess still serves **live** Open-Meteo rows even when upsert fails (after the empty-location fix), but caching and offline fallback need the schema.
 
 ## Featherless LLM (optional)

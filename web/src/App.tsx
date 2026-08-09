@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
-import { fetchAssess, fetchBrief, fetchFires } from './api'
+import { fetchAssess, fetchBrief, fetchFires, fetchGeocode, type GeocodeHit } from './api'
 import { ActionCards } from './components/ActionCards'
 import { BriefingCard } from './components/BriefingCard'
 import { ClimatologyLine } from './components/ClimatologyLine'
@@ -26,13 +26,61 @@ import {
 
 type ActiveLocation = { lat: number; lon: number; label: string }
 
-type GeocodeHit = {
-  id: number
-  name: string
-  latitude: number
-  longitude: number
-  country?: string
-  admin1?: string
+const WORKLOADS: Workload[] = ['light', 'moderate', 'heavy']
+const PROFILES: SensitivityProfile[] = [
+  'general',
+  'asthma_respiratory',
+  'cardiovascular',
+  'pregnant',
+  'youth_athlete',
+  'over_65',
+]
+
+function parseWorkload(raw: string | null): Workload | null {
+  if (raw && (WORKLOADS as string[]).includes(raw)) return raw as Workload
+  return null
+}
+
+function parseProfile(raw: string | null): SensitivityProfile | null {
+  if (raw && (PROFILES as string[]).includes(raw)) return raw as SensitivityProfile
+  return null
+}
+
+function initialLocation(): ActiveLocation {
+  const params = new URLSearchParams(window.location.search)
+  const lat = Number(params.get('lat'))
+  const lon = Number(params.get('lon'))
+  if (
+    Number.isFinite(lat) &&
+    Number.isFinite(lon) &&
+    lat >= -90 &&
+    lat <= 90 &&
+    lon >= -180 &&
+    lon <= 180
+  ) {
+    const roundedLat = Math.round(lat * 1000) / 1000
+    const roundedLon = Math.round(lon * 1000) / 1000
+    return {
+      lat: roundedLat,
+      lon: roundedLon,
+      label: `${roundedLat.toFixed(3)}, ${roundedLon.toFixed(3)}`,
+    }
+  }
+  return {
+    lat: DEMO_LOCATIONS[1].lat,
+    lon: DEMO_LOCATIONS[1].lon,
+    label: DEMO_LOCATIONS[1].label,
+  }
+}
+
+const BOOT_LOC = typeof window !== 'undefined' ? initialLocation() : DEMO_LOCATIONS[1]
+
+function initialWorkload(): Workload {
+  return parseWorkload(new URLSearchParams(window.location.search).get('workload')) ?? 'moderate'
+}
+
+function initialProfile(): SensitivityProfile {
+  return parseProfile(new URLSearchParams(window.location.search).get('profile')) ?? 'general'
 }
 
 function useTextMode(): boolean {
@@ -46,29 +94,35 @@ function useCorruptDemo(): boolean {
 export default function App() {
   const textMode = useTextMode()
   const corruptDemo = useCorruptDemo()
-  const [loc, setLoc] = useState<ActiveLocation>({
-    lat: DEMO_LOCATIONS[1].lat,
-    lon: DEMO_LOCATIONS[1].lon,
-    label: DEMO_LOCATIONS[1].label,
-  })
+  const [loc, setLoc] = useState<ActiveLocation>(() => ({
+    lat: BOOT_LOC.lat,
+    lon: BOOT_LOC.lon,
+    label: BOOT_LOC.label,
+  }))
   const [searchQuery, setSearchQuery] = useState('')
   const [searchHits, setSearchHits] = useState<GeocodeHit[]>([])
   const [searchBusy, setSearchBusy] = useState(false)
   const [searchError, setSearchError] = useState<string | null>(null)
-  const [latInput, setLatInput] = useState(String(DEMO_LOCATIONS[1].lat))
-  const [lonInput, setLonInput] = useState(String(DEMO_LOCATIONS[1].lon))
-  const [workload, setWorkload] = useState<Workload>('moderate')
+  const [latInput, setLatInput] = useState(() => String(BOOT_LOC.lat))
+  const [lonInput, setLonInput] = useState(() => String(BOOT_LOC.lon))
+  const [workload, setWorkload] = useState<Workload>(() => initialWorkload())
   const [acclimatized, setAcclimatized] = useState(false)
-  const [profile, setProfile] = useState<SensitivityProfile>('general')
+  const [profile, setProfile] = useState<SensitivityProfile>(() => initialProfile())
   const [requiredHours, setRequiredHours] = useState(4)
   const [selectedDay, setSelectedDay] = useState<string | null>(null)
   const [lang, setLang] = useState<Lang>('en')
   const [assess, setAssess] = useState<AssessResponse | null>(null)
   const [brief, setBrief] = useState<BriefResponse | null>(null)
   const [fires, setFires] = useState<FirePoint[]>([])
+  const [firesError, setFiresError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [briefLoading, setBriefLoading] = useState(false)
+  const [briefError, setBriefError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [online, setOnline] = useState(() => navigator.onLine)
+  const [mapDefaultOpen] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches,
+  )
 
   const applyLocation = useCallback((next: ActiveLocation) => {
     setLoc(next)
@@ -93,12 +147,15 @@ export default function App() {
       })
       setAssess(a)
       setSelectedDay(a.days?.[0]?.day ?? null)
-      const bbox = `${loc.lon - 1.5},${loc.lat - 1.5},${loc.lon + 1.5},${loc.lat + 1.5}`
+      const half = 2.7
+      const bbox = `${loc.lon - half},${loc.lat - half},${loc.lon + half},${loc.lat + half}`
       try {
         const f = await fetchFires(bbox)
         setFires(f.fires)
-      } catch {
+        setFiresError(null)
+      } catch (e) {
         setFires([])
+        setFiresError(e instanceof Error ? e.message : 'Fire detections unavailable')
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load assessment')
@@ -116,18 +173,27 @@ export default function App() {
     if (!assess) return
     let cancelled = false
     setBriefLoading(true)
+    setBriefError(null)
     void fetchBrief({
       lat: loc.lat,
       lon: loc.lon,
       lang,
       workload,
       acclimatized,
+      profile,
+      engine: assess,
     })
       .then((b) => {
-        if (!cancelled) setBrief(b)
+        if (!cancelled) {
+          setBrief(b)
+          setBriefError(null)
+        }
       })
-      .catch(() => {
-        if (!cancelled) setBrief(null)
+      .catch((e) => {
+        if (!cancelled) {
+          setBrief(null)
+          setBriefError(e instanceof Error ? e.message : 'Failed to load briefing')
+        }
       })
       .finally(() => {
         if (!cancelled) setBriefLoading(false)
@@ -135,11 +201,37 @@ export default function App() {
     return () => {
       cancelled = true
     }
-  }, [assess, lang, loc.lat, loc.lon, workload, acclimatized])
+  }, [assess, lang, loc.lat, loc.lon, workload, acclimatized, profile])
 
   useEffect(() => {
     document.body.classList.toggle('text-mode', textMode)
   }, [textMode])
+
+  useEffect(() => {
+    const onOnline = () => setOnline(true)
+    const onOffline = () => setOnline(false)
+    window.addEventListener('online', onOnline)
+    window.addEventListener('offline', onOffline)
+    return () => {
+      window.removeEventListener('online', onOnline)
+      window.removeEventListener('offline', onOffline)
+    }
+  }, [])
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    params.set('lat', String(loc.lat))
+    params.set('lon', String(loc.lon))
+    params.set('workload', workload)
+    params.set('profile', profile)
+    if (textMode) params.set('text', '1')
+    else params.delete('text')
+    if (corruptDemo) params.set('corrupt', '1')
+    else params.delete('corrupt')
+    const qs = params.toString()
+    const next = `${window.location.pathname}?${qs}${window.location.hash}`
+    window.history.replaceState(null, '', next)
+  }, [loc.lat, loc.lon, workload, profile, textMode, corruptDemo])
 
   async function runSearch(e?: FormEvent) {
     e?.preventDefault()
@@ -151,10 +243,7 @@ export default function App() {
     setSearchBusy(true)
     setSearchError(null)
     try {
-      const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=5&language=en&format=json`
-      const res = await fetch(url)
-      if (!res.ok) throw new Error('Geocoding failed')
-      const data = (await res.json()) as { results?: GeocodeHit[] }
+      const data = await fetchGeocode(q)
       const hits = data.results ?? []
       setSearchHits(hits)
       if (hits.length === 0) setSearchError('No places found')
@@ -210,6 +299,32 @@ export default function App() {
     onGoLatLon: goLatLon,
   }
 
+  function renderBriefingShiftLog() {
+    if (!assess) return null
+    return (
+      <>
+        <div className="sidebar-module">
+          <BriefingCard brief={brief} loading={briefLoading} error={briefError} />
+        </div>
+        <div className="sidebar-module">
+          <ShiftPlanner
+            windows={assess.shift_windows ?? []}
+            requiredHours={requiredHours}
+            onRequiredHours={setRequiredHours}
+          />
+        </div>
+        <div className="sidebar-module">
+          <IncidentLog
+            lat={assess.lat}
+            lon={assess.lon}
+            label={loc.label}
+            verdict={assess.current.verdict}
+          />
+        </div>
+      </>
+    )
+  }
+
   return (
     <div className="min-h-screen">
       <a
@@ -221,7 +336,7 @@ export default function App() {
 
       <header className="sticky top-0 z-40 border-b border-[var(--border)] bg-[var(--topbar)]/95 backdrop-blur-sm">
         <div className="mx-auto flex max-w-[1600px] flex-wrap items-baseline gap-x-4 gap-y-1 px-4 py-3 sm:px-5">
-          <p className="text-sm font-black tracking-[0.12em] uppercase text-[var(--ink)]">
+          <p className="text-sm font-bold tracking-[0.12em] uppercase text-[var(--ink)]">
             ShadeCast
           </p>
           <h1 className="text-base sm:text-lg font-semibold tracking-tight text-[var(--ink)]">
@@ -247,7 +362,7 @@ export default function App() {
 
         <div className="grid gap-4 lg:grid-cols-[minmax(0,4fr)_minmax(280px,1fr)] lg:items-start">
           <main id="main" className="min-w-0 space-y-3">
-            {!navigator.onLine && (
+            {!online && (
               <aside
                 role="status"
                 className="rounded border-2 border-amber-700 bg-amber-50 px-3.5 py-2.5 text-sm text-amber-950"
@@ -255,9 +370,17 @@ export default function App() {
                 You appear offline. Showing the last cached assessment if available.
               </aside>
             )}
-            {loading && (
+            {loading && !assess && (
               <div role="status" className="dash-panel p-5 font-semibold text-sm">
                 Loading assessment…
+              </div>
+            )}
+            {loading && assess && (
+              <div
+                role="status"
+                className="rounded border border-[var(--border)] bg-[var(--panel)] px-3.5 py-2 text-xs font-semibold text-[var(--muted)]"
+              >
+                Updating assessment…
               </div>
             )}
             {error && (
@@ -277,7 +400,7 @@ export default function App() {
               </div>
             )}
 
-            {assess && !loading && (
+            {assess && (
               <>
                 <StaleBanner
                   freshness={assess.data_freshness}
@@ -289,6 +412,7 @@ export default function App() {
                 <VerdictCard
                   verdict={assess.current.verdict}
                   hardStop={assess.schedule.hard_stop_window}
+                  bestWork={assess.schedule.best_work_window}
                   heatIndex={assess.current.heat_index_f}
                   smokePressure={assess.smoke.smoke_pressure}
                   loadScore={assess.environmental_load?.load_score}
@@ -302,6 +426,7 @@ export default function App() {
                     assess.data_confidence?.level === 'UNUSABLE' ||
                     assess.current.verdict == null
                   }
+                  interactions={assess.environmental_load?.interactions}
                 />
 
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[1fr_1fr_1.2fr]">
@@ -325,20 +450,33 @@ export default function App() {
                   selectedDay={selectedDay}
                   onSelectDay={setSelectedDay}
                   textMode={textMode}
+                  todayIso={assess.days?.[0]?.day ?? null}
                 />
 
+                <div className="dash-panel lg:hidden">{renderBriefingShiftLog()}</div>
+
                 <div className="grid gap-3 lg:grid-cols-2 lg:items-stretch">
-                  <FireMap
-                    lat={assess.lat}
-                    lon={assess.lon}
-                    windFromDeg={assess.current.wind_direction_deg}
-                    fires={fires}
-                    textMode={textMode}
-                    defaultOpen
-                  />
+                  <div className="min-w-0">
+                    <FireMap
+                      lat={assess.lat}
+                      lon={assess.lon}
+                      windFromDeg={assess.current.wind_direction_deg}
+                      fires={fires}
+                      textMode={textMode}
+                      defaultOpen={mapDefaultOpen}
+                    />
+                    {firesError && (
+                      <p className="mt-1.5 text-[0.7rem] text-[var(--muted)]">
+                        Fire detections unavailable
+                      </p>
+                    )}
+                  </div>
                   <ClimatologyLine
                     message={assess.climatology.message}
                     note={assess.climatology.note}
+                    todayTemp={assess.climatology.today_temp_c}
+                    baseline={assess.climatology.baseline_temp_c}
+                    delta={assess.climatology.delta_c}
                   />
                 </div>
 
@@ -357,28 +495,7 @@ export default function App() {
               <SidebarControls {...controlsProps} />
             </div>
 
-            {assess && !loading && (
-              <>
-                <div className="sidebar-module">
-                  <ShiftPlanner
-                    windows={assess.shift_windows ?? []}
-                    requiredHours={requiredHours}
-                    onRequiredHours={setRequiredHours}
-                  />
-                </div>
-                <div className="sidebar-module">
-                  <BriefingCard brief={brief} loading={briefLoading} />
-                </div>
-                <div className="sidebar-module">
-                  <IncidentLog
-                    lat={assess.lat}
-                    lon={assess.lon}
-                    label={loc.label}
-                    verdict={assess.current.verdict}
-                  />
-                </div>
-              </>
-            )}
+            {assess && <div className="hidden lg:block">{renderBriefingShiftLog()}</div>}
 
             <div className="sidebar-module">
               <HowWeCalculate />

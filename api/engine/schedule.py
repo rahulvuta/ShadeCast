@@ -114,8 +114,16 @@ def _fmt_window(hours: Sequence[int]) -> str | None:
     return f"{a:02d}:00–{(b + 1) % 24:02d}:00" if b < 23 else f"{a:02d}:00–24:00"
 
 
-def _apply_exposure_cap(work: int, exposure_minutes_cap: int | None) -> int:
+def _apply_exposure_cap(
+    work: int,
+    exposure_minutes_cap: int | None,
+    *,
+    hour: int | None = None,
+) -> int:
+    """Apply UV exposure cap only during daylight hours (08–17 local)."""
     if exposure_minutes_cap is None:
+        return work
+    if hour is not None and (hour < 8 or hour >= 18):
         return work
     return min(work, max(0, exposure_minutes_cap))
 
@@ -131,16 +139,16 @@ def build_schedule(
     plans: list[HourPlan] = []
     for hour, verdict in hourly_verdicts:
         work, rest = _RATIOS[verdict][workload]
-        work = _apply_exposure_cap(work, exposure_minutes_cap)
-        rest = 60 - work if work < 60 else rest
+        capped = _apply_exposure_cap(work, exposure_minutes_cap, hour=hour)
+        rest = 60 - capped if capped < 60 else rest
         note = _NOTES[verdict]
-        if exposure_minutes_cap is not None and work < _RATIOS[verdict][workload][0]:
+        if capped < work:
             note = f"{note} UV exposure capped at {exposure_minutes_cap} min/hr."
         plans.append(
             HourPlan(
                 hour=hour,
                 verdict=verdict,
-                work_minutes=work,
+                work_minutes=capped,
                 rest_minutes=rest,
                 note=note,
                 day=day,

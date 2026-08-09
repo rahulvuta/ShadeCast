@@ -34,6 +34,7 @@ from api.integrity.types import IntegrityFinding, Severity
 # --- Documented thresholds -------------------------------------------------
 
 CLIMATOLOGY_MARGIN_C = 15.0
+CLIMATOLOGY_ERROR_C = 25.0  # beyond this vs POWER mean → ERROR
 CLIMATOLOGY_CRITICAL_C = 40.0  # beyond this vs POWER mean → CRITICAL
 UV_CROSS_SOURCE_MAX_DELTA = 3.0
 
@@ -168,7 +169,7 @@ def check_relative_humidity(hours: Sequence[HourlyInputs]) -> list[IntegrityFind
             out.append(
                 _finding(
                     "rh_range",
-                    Severity.ERROR,
+                    Severity.CRITICAL,
                     f"Relative humidity {rh} is outside 0–100.",
                     "relative_humidity",
                     rh,
@@ -218,7 +219,7 @@ def check_pm25(hours: Sequence[HourlyInputs]) -> list[IntegrityFinding]:
             out.append(
                 _finding(
                     "pm25_range",
-                    Severity.ERROR,
+                    Severity.CRITICAL,
                     f"PM2.5 {pm} µg/m³ outside 0–1000.",
                     "pm2_5",
                     pm,
@@ -258,7 +259,7 @@ def check_us_aqi(hours: Sequence[HourlyInputs]) -> list[IntegrityFinding]:
             out.append(
                 _finding(
                     "us_aqi_range",
-                    Severity.ERROR,
+                    Severity.CRITICAL,
                     f"US AQI {aqi} outside 0–500.",
                     "us_aqi",
                     aqi,
@@ -272,12 +273,12 @@ def check_temp_vs_climatology(
     hours: Sequence[HourlyInputs],
     climatology_temp_c: float | None,
     margin_c: float = CLIMATOLOGY_MARGIN_C,
+    error_c: float = CLIMATOLOGY_ERROR_C,
     critical_c: float = CLIMATOLOGY_CRITICAL_C,
 ) -> list[IntegrityFinding]:
     """Flag temperatures far from POWER climatology mean.
 
-    ±margin_c is seasonal / sensor noise (WARNING). Beyond critical_c is
-    treated as corruption (CRITICAL) — e.g. a 250°C reading.
+    ±margin_c: WARNING. Beyond error_c: ERROR. Beyond critical_c: CRITICAL.
     """
     if climatology_temp_c is None:
         return []
@@ -286,17 +287,18 @@ def check_temp_vs_climatology(
         t = h.temperature_c
         if t is None:
             continue
-        excess = abs(t - climatology_temp_c) - margin_c
-        if excess <= 0:
+        beyond = abs(t - climatology_temp_c)
+        if beyond <= margin_c:
             continue
-        # Distance beyond the warn margin, mapped against (critical - margin).
-        beyond_warn = abs(t - climatology_temp_c)
-        if beyond_warn > critical_c:
+        if beyond > critical_c:
             severity = Severity.CRITICAL
-            check_id = "temp_climatology_critical"
+            check_id = "cross_temp_power_critical"
+        elif beyond > error_c:
+            severity = Severity.ERROR
+            check_id = "cross_temp_power_large"
         else:
             severity = Severity.WARNING
-            check_id = "temp_climatology"
+            check_id = "cross_temp_power"
         out.append(
             _finding(
                 check_id,
@@ -304,12 +306,19 @@ def check_temp_vs_climatology(
                 (
                     f"Temperature {t}°C is outside POWER climatology "
                     f"mean {climatology_temp_c}°C ± {margin_c}°C"
-                    + (" — physically implausible." if severity == Severity.CRITICAL else ".")
+                    + (
+                        " — physically implausible."
+                        if severity == Severity.CRITICAL
+                        else "."
+                    )
                 ),
                 "temperature_c",
-                {"temp_c": t, "climatology_c": climatology_temp_c, "delta_c": round(t - climatology_temp_c, 2)},
-                f"{climatology_temp_c - margin_c:.1f}–{climatology_temp_c + margin_c:.1f}°C "
-                f"(critical beyond ±{critical_c}°C)",
+                {
+                    "temp_c": t,
+                    "climatology_c": climatology_temp_c,
+                    "delta_c": round(t - climatology_temp_c, 2),
+                },
+                f"±{margin_c}°C warn / ±{error_c}°C error / ±{critical_c}°C critical",
             )
         )
     return out
@@ -513,27 +522,37 @@ def check_forecast_vs_climatology_temp(
 
 def check_uv_cross_source(
     hours: Sequence[HourlyInputs],
-    max_delta: float = UV_CROSS_SOURCE_MAX_DELTA,
+    *,
+    warn: float = UV_CROSS_SOURCE_MAX_DELTA,
+    error: float = 6.0,
+    critical: float = 10.0,
 ) -> list[IntegrityFinding]:
     out: list[IntegrityFinding] = []
     for h in hours:
         if h.uv_index is None or h.aq_uv_index is None:
             continue
         delta = abs(h.uv_index - h.aq_uv_index)
-        if delta > max_delta:
-            out.append(
-                _finding(
-                    "uv_cross_source",
-                    Severity.WARNING,
-                    (
-                        f"Forecast UV {h.uv_index} diverges from air-quality UV "
-                        f"{h.aq_uv_index} by {delta:.1f} (max {max_delta})."
-                    ),
-                    "uv_index",
-                    {"forecast_uv": h.uv_index, "aq_uv": h.aq_uv_index, "delta": delta},
-                    f"abs(delta) <= {max_delta}",
-                )
+        severity = _severity_for_excess(delta, warn=warn, error=error, critical=critical)
+        if severity is None:
+            continue
+        check_id = {
+            Severity.WARNING: "uv_cross_source",
+            Severity.ERROR: "uv_cross_source_large",
+            Severity.CRITICAL: "uv_cross_source_critical",
+        }[severity]
+        out.append(
+            _finding(
+                check_id,
+                severity,
+                (
+                    f"Forecast UV {h.uv_index} diverges from air-quality UV "
+                    f"{h.aq_uv_index} by {delta:.1f}."
+                ),
+                "uv_index",
+                {"forecast_uv": h.uv_index, "aq_uv": h.aq_uv_index, "delta": delta},
+                f"abs(delta) <= {warn} (error {error}, critical {critical})",
             )
+        )
     return out
 
 
@@ -751,13 +770,19 @@ def check_staleness(
         tol: timedelta,
         check_id: str,
         severity: Severity = Severity.WARNING,
+        *,
+        missing_severity: Severity | None = None,
+        missing_check_id: str | None = None,
     ) -> None:
         fetched_a = _aware(fetched)
         if fetched_a is None:
+            miss_sev = missing_severity
+            if miss_sev is None:
+                miss_sev = Severity.ERROR if name == "forecast" else severity
             out.append(
                 _finding(
-                    check_id,
-                    severity if name != "forecast" else Severity.ERROR,
+                    missing_check_id or check_id,
+                    miss_sev,
                     f"{name} fetch timestamp missing.",
                     f"{name}_fetched_at",
                     None,
@@ -778,10 +803,24 @@ def check_staleness(
                 )
             )
 
-    _stale("FIRMS", firms_fetched_at, STALE_FIRMS, "stale_firms")
+    # Quiet scenes often have no FIRMS rows — missing timestamp is INFO, not WARNING.
+    _stale(
+        "FIRMS",
+        firms_fetched_at,
+        STALE_FIRMS,
+        "stale_firms",
+        missing_severity=Severity.INFO,
+        missing_check_id="firms_fetch_unknown",
+    )
     _stale("forecast", forecast_fetched_at, STALE_FORECAST, "stale_forecast", Severity.ERROR)
     _stale("air_quality", air_quality_fetched_at, STALE_AIR_QUALITY, "stale_air_quality")
-    _stale("climatology", climatology_fetched_at, STALE_CLIMATOLOGY, "stale_climatology", Severity.INFO)
+    _stale(
+        "climatology",
+        climatology_fetched_at,
+        STALE_CLIMATOLOGY,
+        "stale_climatology",
+        Severity.INFO,
+    )
     return out
 
 
@@ -797,13 +836,13 @@ def run_all_checks(bundle: IntegrityBundle) -> list[IntegrityFinding]:
     findings.extend(check_pm25(hours))
     findings.extend(check_uv(hours))
     findings.extend(check_us_aqi(hours))
+    # Single climatology cross-check (cross_temp_power*) — no duplicate.
     findings.extend(check_temp_vs_climatology(hours, bundle.climatology_temp_c))
     findings.extend(check_temperature_physical_range(hours, bundle.climatology_temp_c))
     findings.extend(check_power_sentinel(hours, bundle.climatology_temp_c))
     findings.extend(check_required_nulls(hours))
     findings.extend(check_missing_hours(hours))
     findings.extend(check_horizon_coverage(hours, bundle.horizon_hours))
-    findings.extend(check_forecast_vs_climatology_temp(hours, bundle.climatology_temp_c))
     findings.extend(check_uv_cross_source(hours))
     findings.extend(check_hi_vs_apparent(hours))
     findings.extend(check_hi_gte_air_temp(hours))

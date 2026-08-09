@@ -17,9 +17,9 @@ from api.clients import forecast as forecast_client
 from api.clients import power as power_client
 from api.config import DEMO_LOCATIONS, get_settings
 from api.db import SessionLocal, engine
+from api.engine.smoke import FIRE_BBOX_DEG
 from api.models import (
     AirQualityHour,
-    Base,
     ClimatologyPoint,
     FireDetection,
     ForecastHour,
@@ -34,7 +34,11 @@ logger = logging.getLogger("ingest.job")
 
 
 def ensure_schema() -> None:
-    Base.metadata.create_all(bind=engine)
+    """Schema is owned by Alembic. Prefer `alembic upgrade head` before ingest.
+
+    No-op placeholder kept so older callers do not crash.
+    """
+    logger.info("Schema management via Alembic (create_all skipped)")
 
 
 def _chunked(items: list, size: int):
@@ -253,9 +257,10 @@ def upsert_climatology(session, lat: float, lon: float, rows: list[power_client.
     return len(payloads)
 
 
-def bbox_around(lat: float, lon: float, deg: float = 1.5) -> tuple[float, float, float, float]:
-    """Return west,south,east,north."""
-    return lon - deg, lat - deg, lon + deg, lat + deg
+def bbox_around(lat: float, lon: float, deg: float | None = None) -> tuple[float, float, float, float]:
+    """Return west,south,east,north covering the smoke search radius by default."""
+    d = FIRE_BBOX_DEG if deg is None else deg
+    return lon - d, lat - d, lon + d, lat + d
 
 
 def run() -> int:
@@ -268,12 +273,11 @@ def run() -> int:
 
     fires_n = forecast_n = clim_n = aq_n = 0
     try:
-        # FIRMS: one wide western-US pull covering demo sites, plus SE Asia skip
-        # Cover CA + AZ + WA with three overlapping boxes
+        # FIRMS boxes sized to SEARCH_RADIUS_KM (~300 km) around demo sites
         boxes = [
-            bbox_around(34.05, -117.25, 1.5),  # CA
-            bbox_around(33.45, -112.07, 1.5),  # AZ
-            bbox_around(47.61, -122.33, 1.5),  # WA
+            bbox_around(34.05, -117.25),  # CA
+            bbox_around(33.45, -112.07),  # AZ
+            bbox_around(47.61, -122.33),  # WA
         ]
         all_fires: list[firms_client.FireRow] = []
         for west, south, east, north in boxes:
@@ -294,7 +298,7 @@ def run() -> int:
         for loc in DEMO_LOCATIONS:
             lat, lon = loc["lat"], loc["lon"]
             try:
-                forecast = forecast_client.fetch_forecast(lat, lon, forecast_days=2)
+                forecast = forecast_client.fetch_forecast(lat, lon, forecast_days=5)
                 n = upsert_forecast(session, lat, lon, forecast)
                 forecast_n += n
                 logger.info("Open-Meteo forecast %s upserted=%d", loc["key"], n)

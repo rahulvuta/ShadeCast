@@ -20,14 +20,14 @@ def brief(body: BriefRequest, db: Session = Depends(get_db)) -> BriefResponse:
             db,
             body.lat,
             body.lon,
-            workload=body.workload,
+            workload=body.workload,  # type: ignore[arg-type]
             acclimatized=body.acclimatized,
+            sensitivity_profile=body.profile,  # type: ignore[arg-type]
         )
         engine = assessment.model_dump(mode="json")
     else:
         engine = body.engine
 
-    # Phase 6 wires Featherless here; fallback always works today.
     try:
         from api.llm.client import generate_brief
 

@@ -1,14 +1,13 @@
 """On-demand FIRMS + POWER + forecast + air-quality for arbitrary coordinates.
 
-Web clients never call FIRMS; only this server path does, with DB caching.
-Forecast and air quality warm the cache so a later assess request can fall
-back to Postgres if a live Open-Meteo call fails.
+The assess path may soft-refresh FIRMS/POWER/forecast/AQ when missing or stale,
+with DB caching. Fail soft — never raise to the assess caller.
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -18,6 +17,13 @@ from api.clients import firms as firms_client
 from api.clients import forecast as forecast_client
 from api.clients import power as power_client
 from api.config import get_settings
+from api.engine.smoke import SEARCH_RADIUS_KM, fire_deg_for_radius
+from api.integrity.checks import (
+    STALE_AIR_QUALITY,
+    STALE_CLIMATOLOGY,
+    STALE_FIRMS,
+    STALE_FORECAST,
+)
 from api.models import AirQualityHour, ClimatologyPoint, FireDetection, ForecastHour
 from ingest.job import (
     bbox_around,
@@ -35,9 +41,9 @@ def ensure_location_data(
     lat: float,
     lon: float,
     *,
-    fire_deg: float = 1.5,
+    fire_deg: float | None = None,
 ) -> None:
-    """Fill FIRMS + POWER + forecast + AQ caches around a point when missing.
+    """Fill/refresh FIRMS + POWER + forecast + AQ caches around a point.
 
     Fail soft — never raise to the assess caller.
     """
@@ -45,14 +51,38 @@ def ensure_location_data(
     if settings.demo_mode:
         return
 
-    _ensure_fires(session, lat, lon, fire_deg=fire_deg)
+    deg = fire_deg if fire_deg is not None else fire_deg_for_radius(SEARCH_RADIUS_KM)
+    _ensure_fires(session, lat, lon, fire_deg=deg)
     _ensure_climatology(session, lat, lon)
     _ensure_forecast(session, lat, lon)
     _ensure_air_quality(session, lat, lon)
 
 
+def _aware(dt: datetime | None) -> datetime | None:
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def _is_stale(fetched_at: datetime | None, tol: timedelta, now: datetime) -> bool:
+    if fetched_at is None:
+        return True
+    fa = _aware(fetched_at)
+    assert fa is not None
+    return (now - fa) > tol
+
+
 def _ensure_fires(session: Session, lat: float, lon: float, *, fire_deg: float) -> None:
-    nearby = session.scalar(
+    now = datetime.now(timezone.utc)
+    newest = session.scalar(
+        select(func.max(FireDetection.fetched_at)).where(
+            FireDetection.latitude.between(lat - fire_deg, lat + fire_deg),
+            FireDetection.longitude.between(lon - fire_deg, lon + fire_deg),
+        )
+    )
+    count = session.scalar(
         select(func.count())
         .select_from(FireDetection)
         .where(
@@ -60,7 +90,7 @@ def _ensure_fires(session: Session, lat: float, lon: float, *, fire_deg: float) 
             FireDetection.longitude.between(lon - fire_deg, lon + fire_deg),
         )
     )
-    if nearby and nearby > 0:
+    if count and count > 0 and not _is_stale(newest, STALE_FIRMS, now):
         return
 
     west, south, east, north = bbox_around(lat, lon, fire_deg)
@@ -69,11 +99,12 @@ def _ensure_fires(session: Session, lat: float, lon: float, *, fire_deg: float) 
         n = upsert_fires(session, rows)
         session.commit()
         logger.info(
-            "On-demand FIRMS for (%.3f, %.3f): fetched=%d upserted=%d",
+            "On-demand FIRMS for (%.3f, %.3f): fetched=%d upserted=%d deg=%.2f",
             lat,
             lon,
             len(rows),
             n,
+            fire_deg,
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("On-demand FIRMS failed for (%.3f, %.3f): %s", lat, lon, exc)
@@ -83,6 +114,13 @@ def _ensure_fires(session: Session, lat: float, lon: float, *, fire_deg: float) 
 def _ensure_climatology(session: Session, lat: float, lon: float) -> None:
     lat_r = firms_client.round_coord(lat)
     lon_r = firms_client.round_coord(lon)
+    now = datetime.now(timezone.utc)
+    newest = session.scalar(
+        select(func.max(ClimatologyPoint.fetched_at)).where(
+            ClimatologyPoint.lat_round == lat_r,
+            ClimatologyPoint.lon_round == lon_r,
+        )
+    )
     existing = session.scalar(
         select(func.count())
         .select_from(ClimatologyPoint)
@@ -91,7 +129,7 @@ def _ensure_climatology(session: Session, lat: float, lon: float) -> None:
             ClimatologyPoint.lon_round == lon_r,
         )
     )
-    if existing and existing > 0:
+    if existing and existing > 0 and not _is_stale(newest, STALE_CLIMATOLOGY, now):
         return
 
     end = date.today() - timedelta(days=2)
@@ -115,6 +153,13 @@ def _ensure_climatology(session: Session, lat: float, lon: float) -> None:
 def _ensure_forecast(session: Session, lat: float, lon: float) -> None:
     lat_r = firms_client.round_coord(lat)
     lon_r = firms_client.round_coord(lon)
+    now = datetime.now(timezone.utc)
+    newest = session.scalar(
+        select(func.max(ForecastHour.fetched_at)).where(
+            ForecastHour.lat_round == lat_r,
+            ForecastHour.lon_round == lon_r,
+        )
+    )
     existing = session.scalar(
         select(func.count())
         .select_from(ForecastHour)
@@ -123,7 +168,7 @@ def _ensure_forecast(session: Session, lat: float, lon: float) -> None:
             ForecastHour.lon_round == lon_r,
         )
     )
-    if existing and existing >= 12:
+    if existing and existing >= 12 and not _is_stale(newest, STALE_FORECAST, now):
         return
 
     try:
@@ -145,6 +190,13 @@ def _ensure_forecast(session: Session, lat: float, lon: float) -> None:
 def _ensure_air_quality(session: Session, lat: float, lon: float) -> None:
     lat_r = firms_client.round_coord(lat)
     lon_r = firms_client.round_coord(lon)
+    now = datetime.now(timezone.utc)
+    newest = session.scalar(
+        select(func.max(AirQualityHour.fetched_at)).where(
+            AirQualityHour.lat_round == lat_r,
+            AirQualityHour.lon_round == lon_r,
+        )
+    )
     existing = session.scalar(
         select(func.count())
         .select_from(AirQualityHour)
@@ -153,7 +205,7 @@ def _ensure_air_quality(session: Session, lat: float, lon: float) -> None:
             AirQualityHour.lon_round == lon_r,
         )
     )
-    if existing and existing >= 12:
+    if existing and existing >= 12 and not _is_stale(newest, STALE_AIR_QUALITY, now):
         return
 
     try:

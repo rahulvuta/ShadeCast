@@ -220,10 +220,10 @@ export function SidebarControls({
         </select>
       </label>
 
-      <label className="flex items-start gap-2 text-xs font-semibold leading-snug">
+      <label className="touch-target flex items-center gap-3 text-xs font-semibold leading-snug">
         <input
           type="checkbox"
-          className="mt-0.5 h-4 w-4 shrink-0"
+          className="h-5 w-5 shrink-0"
           checked={acclimatized}
           onChange={(e) => onAcclimatized(e.target.checked)}
         />

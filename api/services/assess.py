@@ -57,9 +57,23 @@ from api.services.diff import diff_assessments
 
 
 def _wants_corrupt(lat: float, lon: float, force_corrupt: bool) -> bool:
+    """Corrupt demo only at the special location, or ?corrupt=1 under DEMO_MODE."""
     settings = get_settings()
-    if force_corrupt or settings.demo_corrupt:
+    is_special = (
+        abs(lat - CORRUPT_DEMO_LOCATION["lat"]) < 0.05
+        and abs(lon - CORRUPT_DEMO_LOCATION["lon"]) < 0.05
+    )
+    if is_special:
         return True
+    if settings.demo_corrupt:
+        # DEMO_CORRUPT=1 only activates the special integrity demo location.
+        return False
+    if force_corrupt and settings.demo_mode:
+        return True
+    return False
+
+
+def _is_corrupt_demo_location(lat: float, lon: float) -> bool:
     return (
         abs(lat - CORRUPT_DEMO_LOCATION["lat"]) < 0.05
         and abs(lon - CORRUPT_DEMO_LOCATION["lon"]) < 0.05
@@ -103,12 +117,15 @@ def _label_for(lat: float, lon: float) -> str | None:
     return None
 
 
-def _fires_near(session: Session, lat: float, lon: float, deg: float = 3.0) -> list[FireDetection]:
+def _fires_near(session: Session, lat: float, lon: float, deg: float | None = None) -> list[FireDetection]:
+    from api.engine.smoke import FIRE_BBOX_DEG
+
+    d = deg if deg is not None else FIRE_BBOX_DEG
     return list(
         session.scalars(
             select(FireDetection).where(
-                FireDetection.latitude.between(lat - deg, lat + deg),
-                FireDetection.longitude.between(lon - deg, lon + deg),
+                FireDetection.latitude.between(lat - d, lat + d),
+                FireDetection.longitude.between(lon - d, lon + d),
             )
         ).all()
     )
@@ -152,12 +169,15 @@ def _save_assessment_cache(
     workload: str,
     acclimatized: bool,
     payload: AssessResponse,
+    *,
+    sensitivity_profile: str = "general",
 ) -> None:
     stmt = pg_insert(AssessmentCache).values(
         lat_round=round_coord(lat),
         lon_round=round_coord(lon),
         workload=workload,
         acclimatized=acclimatized,
+        sensitivity_profile=sensitivity_profile,
         payload_json=payload.model_dump_json(),
         fetched_at=datetime.now(timezone.utc),
     )
@@ -173,7 +193,13 @@ def _save_assessment_cache(
 
 
 def _load_assessment_cache(
-    session: Session, lat: float, lon: float, workload: str, acclimatized: bool
+    session: Session,
+    lat: float,
+    lon: float,
+    workload: str,
+    acclimatized: bool,
+    *,
+    sensitivity_profile: str = "general",
 ) -> tuple[AssessResponse | None, datetime | None]:
     row = session.scalars(
         select(AssessmentCache).where(
@@ -181,6 +207,7 @@ def _load_assessment_cache(
             AssessmentCache.lon_round == round_coord(lon),
             AssessmentCache.workload == workload,
             AssessmentCache.acclimatized == acclimatized,
+            AssessmentCache.sensitivity_profile == sensitivity_profile,
         )
     ).first()
     if not row:
@@ -347,10 +374,21 @@ def build_assessment(
 ) -> AssessResponse:
     settings = get_settings()
     if settings.demo_mode:
-        cached, _cached_at = _load_assessment_cache(session, lat, lon, workload, acclimatized)
+        cached, _cached_at = _load_assessment_cache(
+            session,
+            lat,
+            lon,
+            workload,
+            acclimatized,
+            sensitivity_profile=sensitivity_profile,
+        )
         if cached:
             cached.demo_mode = True
             return cached
+        raise RuntimeError(
+            "DEMO_MODE: no seeded assessment_cache row for this location/workload/"
+            f"profile ({sensitivity_profile}). Run ingest seed or disable DEMO_MODE."
+        )
 
     if allow_network and not settings.demo_mode:
         try:
@@ -418,7 +456,14 @@ def build_assessment(
         ]
 
     if not forecast_rows:
-        cached, _ = _load_assessment_cache(session, lat, lon, workload, acclimatized)
+        cached, _ = _load_assessment_cache(
+            session,
+            lat,
+            lon,
+            workload,
+            acclimatized,
+            sensitivity_profile=sensitivity_profile,
+        )
         if cached:
             return cached
         raise RuntimeError(
@@ -511,25 +556,46 @@ def build_assessment(
     except Exception as exc:  # noqa: BLE001
         logger.info("Integrity narration skipped: %s", exc)
 
-    prior_cached, prior_at = _load_assessment_cache(session, lat, lon, workload, acclimatized)
+    prior_cached, prior_at = _load_assessment_cache(
+        session,
+        lat,
+        lon,
+        workload,
+        acclimatized,
+        sensitivity_profile=sensitivity_profile,
+    )
 
     uv_today = assess_uv(today_rows, skin_type=3)
     cur_aq = _aq_for(current_row.valid_at)
+
+    # Guard: do not feed physically impossible RH/PM/AQI into the engine.
+    rh_raw = current_row.relative_humidity
+    rh_safe = rh_raw if rh_raw is not None and 0.0 <= rh_raw <= 100.0 else None
+    us_aqi_raw = cur_aq.us_aqi if cur_aq else None
+    pm_raw = cur_aq.pm2_5 if cur_aq else None
+    us_aqi_safe = (
+        us_aqi_raw if us_aqi_raw is not None and 0.0 <= us_aqi_raw <= 500.0 else None
+    )
+    pm_safe = pm_raw if pm_raw is not None and 0.0 <= pm_raw <= 1000.0 else None
+
     air_now = assess_air(
         smoke_pressure=smoke.smoke_pressure,
-        us_aqi=cur_aq.us_aqi if cur_aq else None,
-        pm2_5=cur_aq.pm2_5 if cur_aq else None,
+        us_aqi=us_aqi_safe,
+        pm2_5=pm_safe,
         dominant_pollutant=cur_aq.dominant_pollutant if cur_aq else None,
     )
 
     # Guaranteed by _nearest_usable_hour
     cur_tf = celsius_to_fahrenheit(current_row.temperature_c)  # type: ignore[arg-type]
+    rh_for_heat = rh_safe if rh_safe is not None else 50.0
+    cloud = current_row.cloud_cover
+    full_sun = cloud is None or cloud < 50.0
     cur_heat = assess_heat(
         cur_tf,
-        current_row.relative_humidity,  # type: ignore[arg-type]
+        rh_for_heat,
         workload=workload,
         acclimatized=acclimatized,
-        full_sun=True,
+        full_sun=full_sun,
     )
     load = assess_environmental_load(
         heat_band=cur_heat.effective_band,
@@ -556,13 +622,17 @@ def build_assessment(
         for r in rows:
             if r.temperature_c is None or r.relative_humidity is None:
                 continue
+            rh_h = r.relative_humidity
+            if rh_h < 0.0 or rh_h > 100.0:
+                continue
             tf = celsius_to_fahrenheit(r.temperature_c)
+            cloud_h = r.cloud_cover
             heat = assess_heat(
                 tf,
-                r.relative_humidity,
+                rh_h,
                 workload=workload,
                 acclimatized=acclimatized,
-                full_sun=True,
+                full_sun=cloud_h is None or cloud_h < 50.0,
             )
             hour_smoke = assess_smoke(
                 lat,
@@ -572,10 +642,12 @@ def build_assessment(
                 wind_speed_kmh=r.wind_speed_kmh,
             )
             aq = _aq_for(r.valid_at)
+            aq_u = aq.us_aqi if aq and aq.us_aqi is not None and 0.0 <= aq.us_aqi <= 500.0 else None
+            aq_pm = aq.pm2_5 if aq and aq.pm2_5 is not None and 0.0 <= aq.pm2_5 <= 1000.0 else None
             air_h = assess_air(
                 smoke_pressure=hour_smoke.smoke_pressure,
-                us_aqi=aq.us_aqi if aq else None,
-                pm2_5=aq.pm2_5 if aq else None,
+                us_aqi=aq_u,
+                pm2_5=aq_pm,
             )
             hour_load = assess_environmental_load(
                 heat_band=heat.effective_band,
@@ -599,11 +671,12 @@ def build_assessment(
                     heat_band=heat.effective_band.value,
                     smoke_pressure=hour_smoke.smoke_pressure,
                     uv_index=r.uv_index,
-                    us_aqi=aq.us_aqi if aq else None,
+                    us_aqi=aq_u,
                     verdict=hour_load.verdict.value,
                     work_minutes=0,
                     rest_minutes=0,
                     note="",
+                    is_current=r.valid_at == current_row.valid_at,
                 )
             )
         daily_verdicts.append((day, day_pairs))
@@ -808,7 +881,15 @@ def build_assessment(
 
     try:
         if conf_result.level != ConfidenceLevel.UNUSABLE:
-            _save_assessment_cache(session, lat, lon, workload, acclimatized, resp)
+            _save_assessment_cache(
+                session,
+                lat,
+                lon,
+                workload,
+                acclimatized,
+                resp,
+                sensitivity_profile=sensitivity_profile,
+            )
     except Exception as exc:  # noqa: BLE001
         logger.warning("Failed to cache assessment: %s", exc)
 

@@ -66,9 +66,15 @@ Cross-derived checks use **magnitude-graduated** severity so minor, physically n
 | HI vs apparent temp | ≤10°F | 10–20°F | 20–35°F | >35°F |
 | Dew point above air temp | ≤1°C | 1–4°C | 4–10°C | >10°C |
 | UV above clear-sky | ≤1 | 1–3 | 3–6 | >6 |
-| Temp vs POWER climatology | within ±15°C | 15–40°C beyond | — | >40°C beyond |
+| Temp vs POWER climatology | within ±15°C | 15–25°C beyond | 25–40°C beyond | >40°C beyond |
 | Absolute temp range | −90…60°C | — | — | outside |
 
 **Rothfusz low-RH note:** the NWS heat-index regression legitimately yields HI below air temperature in dry heat (gaps up to ~8–9°F at RH≈0%). That is a formula quirk, not corrupted data — those cases stay clean (no finding) so desert / arid locations remain usable.
 
-CRITICAL is reserved for physically impossible inputs (POWER −999 sentinels, out-of-Earth-range temperatures, extreme consistency gaps). Small formula quirks and model rounding never refuse a verdict.
+CRITICAL is reserved for physically impossible inputs (POWER −999 sentinels, out-of-Earth-range temperatures, extreme consistency gaps, impossible RH/PM/AQI). Small formula quirks and model rounding never refuse a verdict. Integrity findings are collapsed per `check_id` before scoring so hour-count alone cannot force LOW confidence.
+
+## 14. On-demand FIRMS and offline helper
+
+`/api/assess` may soft-refresh FIRMS (and forecast/AQ/POWER) for new or stale coordinates, writing into Postgres with fail-soft behavior. Cron remains the primary demo-location ingest. Place search goes through `/api/geocode` (server proxy).
+
+The web service worker caches the app shell and **per-URL** `/api/assess` responses for offline replay of a previously viewed location — not a full PWA product claim.

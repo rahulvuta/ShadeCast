@@ -158,11 +158,14 @@ def test_temp_vs_climatology_tiers():
     assert check_temp_vs_climatology([_h(temperature_c=32.0)], 33.0) == []
     # 20°C beyond mean → WARNING
     warn = check_temp_vs_climatology([_h(temperature_c=55.0)], 33.0)
-    assert any(f.check_id == "temp_climatology" and f.severity == Severity.WARNING for f in warn)
+    assert any(f.check_id == "cross_temp_power" and f.severity == Severity.WARNING for f in warn)
+    # 30°C beyond mean → ERROR
+    err = check_temp_vs_climatology([_h(temperature_c=65.0)], 33.0)
+    assert any(f.check_id == "cross_temp_power_large" and f.severity == Severity.ERROR for f in err)
     # 50°C beyond mean → CRITICAL (corruption)
     crit = check_temp_vs_climatology([_h(temperature_c=250.0)], 33.0)
     assert any(
-        f.check_id == "temp_climatology_critical" and f.severity == Severity.CRITICAL
+        f.check_id == "cross_temp_power_critical" and f.severity == Severity.CRITICAL
         for f in crit
     )
 

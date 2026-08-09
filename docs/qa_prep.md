@@ -26,7 +26,7 @@ OSHA treats heat index as a **screening** tool. WBGT is the real standard. We sa
 
 ## "Transaction quota on FIRMS?"
 
-Yes. That is why the web request path never hits FIRMS live — only the cron ingest job does — and why `/healthz` reports remaining quota when available.
+Yes. Assess may soft-refresh FIRMS for new/stale coordinates (server-side, DB-cached, fail-soft). Cron ingest still does the primary pull for demo locations. `/healthz` reports remaining quota when available.
 
 ## "Show me every LLM call."
 

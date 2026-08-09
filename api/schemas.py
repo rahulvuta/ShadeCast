@@ -146,6 +146,7 @@ class HourlyAssessment(BaseModel):
     work_minutes: int
     rest_minutes: int
     note: str
+    is_current: bool = False
 
 
 class ScheduleSummaryOut(BaseModel):
@@ -217,6 +218,7 @@ class BriefRequest(BaseModel):
     lang: Literal["en", "es", "vi"] = "en"
     workload: Literal["light", "moderate", "heavy"] = "moderate"
     acclimatized: bool = False
+    profile: str = "general"
     # Optional precomputed engine JSON; if omitted, server recomputes assess
     engine: dict[str, Any] | None = None
 

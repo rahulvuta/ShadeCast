@@ -14,6 +14,17 @@ from api.services.assess import build_assessment
 
 router = APIRouter(prefix="/api")
 
+_MAX_DETAIL = 400
+_MAX_BBOX_SPAN_DEG = 20.0
+_MAX_FIRES = 500
+
+
+def _safe_detail(msg: str) -> str:
+    text = " ".join(str(msg).split())
+    if len(text) > _MAX_DETAIL:
+        return text[:_MAX_DETAIL] + "…"
+    return text
+
 
 @router.get("/assess", response_model=AssessResponse)
 def assess(
@@ -42,7 +53,6 @@ def assess(
             allow_network=True,
         )
     except Exception as exc:  # noqa: BLE001
-        # Offline path: force cache-only rebuild
         try:
             return build_assessment(
                 db,
@@ -56,17 +66,17 @@ def assess(
                 allow_network=False,
             )
         except Exception as exc2:  # noqa: BLE001
-            # Prefer the original live-path message; append offline failure if different.
-            detail = str(exc)
-            offline = str(exc2)
+            detail = _safe_detail(str(exc))
+            offline = _safe_detail(str(exc2))
             if offline and offline != detail:
-                detail = f"{detail} (offline retry: {offline})"
+                detail = _safe_detail(f"{detail} (offline retry: {offline})")
             raise HTTPException(status_code=503, detail=detail) from exc
 
 
 @router.get("/fires", response_model=FiresResponse)
 def fires(
     bbox: str = Query(..., description="west,south,east,north"),
+    limit: int = Query(_MAX_FIRES, ge=1, le=_MAX_FIRES),
     db: Session = Depends(get_db),
 ) -> FiresResponse:
     try:
@@ -74,11 +84,26 @@ def fires(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="bbox must be west,south,east,north") from exc
 
+    if not (-180 <= west <= 180 and -180 <= east <= 180 and -90 <= south <= 90 and -90 <= north <= 90):
+        raise HTTPException(status_code=400, detail="bbox coordinates out of range")
+    if west >= east or south >= north:
+        raise HTTPException(
+            status_code=400,
+            detail="bbox requires west < east and south < north (no antimeridian wrap)",
+        )
+    if (east - west) > _MAX_BBOX_SPAN_DEG or (north - south) > _MAX_BBOX_SPAN_DEG:
+        raise HTTPException(
+            status_code=400,
+            detail=f"bbox span must be <= {_MAX_BBOX_SPAN_DEG} degrees on each axis",
+        )
+
     rows = db.scalars(
-        select(FireDetection).where(
+        select(FireDetection)
+        .where(
             FireDetection.longitude.between(west, east),
             FireDetection.latitude.between(south, north),
         )
+        .limit(limit)
     ).all()
     fetched = max((r.fetched_at for r in rows), default=None)
     points = [

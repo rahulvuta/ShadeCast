@@ -1,7 +1,15 @@
 import { useState } from 'react'
 import type { BriefResponse } from '../types'
 
-export function BriefingCard({ brief, loading }: { brief: BriefResponse | null; loading: boolean }) {
+export function BriefingCard({
+  brief,
+  loading,
+  error,
+}: {
+  brief: BriefResponse | null
+  loading: boolean
+  error?: string | null
+}) {
   const [copied, setCopied] = useState(false)
 
   function plainText(): string {
@@ -20,10 +28,13 @@ export function BriefingCard({ brief, loading }: { brief: BriefResponse | null; 
   }
 
   async function copy() {
-    const text = plainText()
-    await navigator.clipboard.writeText(text)
-    setCopied(true)
-    window.setTimeout(() => setCopied(false), 2000)
+    try {
+      await navigator.clipboard.writeText(plainText())
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 2000)
+    } catch {
+      setCopied(false)
+    }
   }
 
   return (
@@ -42,6 +53,14 @@ export function BriefingCard({ brief, loading }: { brief: BriefResponse | null; 
         </button>
       </div>
       {loading && <p className="mt-2 text-xs text-[var(--muted)]">Writing briefing…</p>}
+      {!loading && error && (
+        <p className="mt-2 text-xs text-[var(--oi-vermillion)]">{error}</p>
+      )}
+      {!loading && !error && !brief && (
+        <p className="mt-2 text-xs text-[var(--muted)]">
+          No briefing available yet. Retry after the assessment loads.
+        </p>
+      )}
       {!loading && brief && (
         <div className="mt-2 space-y-2 text-xs leading-relaxed">
           <p className="text-sm font-bold">{brief.verdict_line}</p>

@@ -117,7 +117,7 @@ The natural institutional home is a school environmental or CS club, or a county
 The architecture minimizes upkeep by design:
 
 - Three of four data sources need **no API key** (Open-Meteo forecast, Open-Meteo geocoding, NASA POWER). FIRMS needs one free MAP_KEY.
-- The risk engine is pure functions with **37 tests** — contributors cannot silently break the science.
+- The risk engine is pure functions with a large automated pytest suite — contributors cannot silently break the science.
 - `docs/limitations.md` and `docs/runbook.md` transfer the reasoning, not just the code.
 
 ### Monthly cost (Render blueprint)
@@ -129,7 +129,7 @@ The architecture minimizes upkeep by design:
 | `shadecast-web` | Static site | $0 |
 | `shadecast-ingest` | Starter cron | **~$1/mo** minimum |
 
-Sustained total after the free Postgres window: **~$7/month**. Marginal cost per additional user is effectively zero — all data fetches are server-side and cached.
+Sustained total after the free Postgres window: **~$7/month**. Marginal cost per additional user is effectively zero — weather/FIRMS/AQ fetches are server-side and Postgres-cached; place search is proxied via `/api/geocode`.
 
 ### Responsible impact
 
@@ -182,7 +182,7 @@ Open http://127.0.0.1:5173
 Hard demo (offline from cache): set `DEMO_MODE=1` in `.env`.
 
 ```bash
-pytest -v   # 37 tests, no secrets required
+pytest -v   # full suite, no secrets required for unit tests
 ```
 
 Deploy: [docs/deploy_render.md](docs/deploy_render.md) and [render.yaml](render.yaml).  

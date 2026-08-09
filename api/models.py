@@ -209,7 +209,14 @@ class AssessmentCache(Base):
 
     __tablename__ = "assessment_cache"
     __table_args__ = (
-        UniqueConstraint("lat_round", "lon_round", "workload", "acclimatized", name="uq_assessment"),
+        UniqueConstraint(
+            "lat_round",
+            "lon_round",
+            "workload",
+            "acclimatized",
+            "sensitivity_profile",
+            name="uq_assessment",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -217,6 +224,9 @@ class AssessmentCache(Base):
     lon_round: Mapped[float] = mapped_column(Float, nullable=False)
     workload: Mapped[str] = mapped_column(String(16), nullable=False, default="moderate")
     acclimatized: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    sensitivity_profile: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="general"
+    )
     payload_json: Mapped[str] = mapped_column(Text, nullable=False)
     fetched_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

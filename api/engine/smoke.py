@@ -13,6 +13,13 @@ from typing import Iterable, Sequence
 
 EARTH_RADIUS_KM = 6371.0
 SEARCH_RADIUS_KM = 300.0
+# Approx degrees of lat/lon for SEARCH_RADIUS_KM (1° ≈ 111 km).
+FIRE_BBOX_DEG = SEARCH_RADIUS_KM / 111.0
+
+
+def fire_deg_for_radius(radius_km: float = SEARCH_RADIUS_KM) -> float:
+    """Degrees of lat/lon covering the smoke search radius."""
+    return radius_km / 111.0
 DECAY_SCALE_KM = 25.0
 UPWIND_HALF_ANGLE_DEG = 45.0
 

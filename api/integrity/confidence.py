@@ -69,6 +69,27 @@ _SOURCE_HINTS: list[tuple[str, str]] = [
 ]
 
 
+def _severity_rank(s: Severity) -> int:
+    return {Severity.INFO: 0, Severity.WARNING: 1, Severity.ERROR: 2, Severity.CRITICAL: 3}[s]
+
+
+def collapse_findings(findings: list[IntegrityFinding]) -> list[IntegrityFinding]:
+    """Keep one finding per check_id at max severity (message from worst).
+
+    Prevents per-hour WARNING spam from driving score → LOW falsely.
+    """
+    best: dict[str, IntegrityFinding] = {}
+    for f in findings:
+        prev = best.get(f.check_id)
+        if prev is None or _severity_rank(f.severity) > _severity_rank(prev.severity):
+            best[f.check_id] = f
+    # Stable order by severity then check_id
+    return sorted(
+        best.values(),
+        key=lambda x: (-_severity_rank(x.severity), x.check_id),
+    )
+
+
 def _sources_from_findings(findings: list[IntegrityFinding]) -> list[str]:
     degraded: set[str] = set()
     for f in findings:
@@ -107,14 +128,19 @@ def _level_from(findings: list[IntegrityFinding], score: int) -> ConfidenceLevel
 
 
 def aggregate(findings: list[IntegrityFinding], narration: str | None = None) -> ConfidenceResult:
-    """Aggregate findings into a ConfidenceResult. Never drops findings."""
-    score = _score(findings)
-    level = _level_from(findings, score)
+    """Aggregate findings into a ConfidenceResult.
+
+    Collapses per-check_id duplicates before scoring so hour-count cannot
+    alone force LOW. Never drops the worst finding per check.
+    """
+    collapsed = collapse_findings(findings)
+    score = _score(collapsed)
+    level = _level_from(collapsed, score)
     return ConfidenceResult(
         level=level,
         score=score,
-        findings=list(findings),
-        sources_degraded=_sources_from_findings(findings),
+        findings=collapsed,
+        sources_degraded=_sources_from_findings(collapsed),
         narration=narration,
     )
 

@@ -1,6 +1,5 @@
-/* ShadeCast offline cache — last successful assess JSON + app shell. */
-const CACHE = 'shadecast-shell-v1'
-const ASSESS_KEY = 'shadecast-last-assess'
+/* ShadeCast offline cache — app shell + assess responses keyed by full URL. */
+const CACHE = 'shadecast-shell-v2'
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -9,14 +8,18 @@ self.addEventListener('install', (event) => {
 })
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim())
+  event.waitUntil(
+    caches.keys().then((keys) =>
+      Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
+    ).then(() => self.clients.claim())
+  )
 })
 
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url)
   if (event.request.method !== 'GET') return
 
-  // Cache successful assess responses for offline replay
+  // Cache successful assess responses keyed by full request URL (includes lat/lon).
   if (url.pathname.startsWith('/api/assess')) {
     event.respondWith(
       fetch(event.request)
@@ -25,15 +28,15 @@ self.addEventListener('fetch', (event) => {
             const clone = res.clone()
             const body = await clone.text()
             await caches.open(CACHE).then((c) =>
-              c.put(ASSESS_KEY, new Response(body, { headers: { 'Content-Type': 'application/json' } }))
+              c.put(event.request, new Response(body, { headers: { 'Content-Type': 'application/json' } }))
             )
           }
           return res
         })
         .catch(async () => {
-          const cached = await caches.open(CACHE).then((c) => c.match(ASSESS_KEY))
+          const cached = await caches.open(CACHE).then((c) => c.match(event.request))
           if (cached) return cached
-          return new Response(JSON.stringify({ detail: 'offline and no cached assessment' }), {
+          return new Response(JSON.stringify({ detail: 'offline and no cached assessment for this location' }), {
             status: 503,
             headers: { 'Content-Type': 'application/json' },
           })

@@ -14,7 +14,6 @@ export function ScheduleStrip({
   hourly: AssessResponse['hourly']
   embedded?: boolean
 }) {
-  const nowHour = new Date().getHours()
   const body = (
     <>
       {!embedded && (
@@ -25,18 +24,16 @@ export function ScheduleStrip({
           <p className="text-sm text-[var(--muted)] mb-3">Swipe sideways. Current hour is outlined.</p>
         </>
       )}
-      {embedded && (
-        <p className="dash-section-label mb-2">Hour-by-hour</p>
-      )}
+      {embedded && <p className="dash-section-label mb-2">Hour-by-hour (today)</p>}
       <ul
         className="flex gap-1.5 overflow-x-auto pb-1 snap-x snap-mandatory"
         style={{ WebkitOverflowScrolling: 'touch' }}
       >
         {hourly.map((h) => {
-          const current = h.hour === nowHour
+          const current = Boolean(h.is_current)
           return (
             <li
-              key={h.hour}
+              key={`${h.day ?? ''}-${h.hour}`}
               className={`hour-pill snap-start shrink-0 w-[4.75rem] rounded border-2 px-2 py-2 ${CLASS[h.verdict]} ${
                 current ? 'border-black' : 'border-transparent'
               }`}
@@ -59,10 +56,7 @@ export function ScheduleStrip({
   if (embedded) return <div>{body}</div>
 
   return (
-    <section
-      aria-labelledby="schedule-heading"
-      className="dash-panel p-4"
-    >
+    <section aria-labelledby="schedule-heading" className="dash-panel p-4">
       {body}
     </section>
   )

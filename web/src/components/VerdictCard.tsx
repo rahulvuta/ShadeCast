@@ -7,6 +7,13 @@ const LABELS: Record<Verdict, string> = {
   STOP: 'STOP',
 }
 
+const ICONS: Record<Verdict, string> = {
+  GO: 'OK',
+  CAUTION: '!',
+  RESTRICT: '!!',
+  STOP: 'X',
+}
+
 const CLASS: Record<Verdict, string> = {
   GO: 'verdict-go',
   CAUTION: 'verdict-caution',
@@ -27,6 +34,7 @@ const DRIVER_COLORS: Record<string, string> = {
 export function VerdictCard({
   verdict,
   hardStop,
+  bestWork,
   heatIndex,
   smokePressure,
   loadScore,
@@ -35,9 +43,11 @@ export function VerdictCard({
   ceilingReason,
   confidence,
   unusable,
+  interactions,
 }: {
   verdict: Verdict | null
   hardStop: string | null
+  bestWork?: string | null
   heatIndex: number | null
   smokePressure: number
   loadScore?: number | null
@@ -46,15 +56,13 @@ export function VerdictCard({
   ceilingReason?: string | null
   confidence?: ConfidenceLevel | null
   unusable?: boolean
+  interactions?: string[]
 }) {
   const displayVerdict = unusable || verdict == null ? null : verdict
   const headerClass = displayVerdict ? CLASS[displayVerdict] : 'bg-zinc-700 text-white'
 
   return (
-    <section
-      aria-labelledby="verdict-heading"
-      className="dash-panel overflow-hidden verdict-enter"
-    >
+    <section aria-labelledby="verdict-heading" className="dash-panel overflow-hidden verdict-enter">
       <div
         className={`${headerClass} px-5 py-4 sm:px-6 sm:py-5`}
         role="status"
@@ -75,19 +83,37 @@ export function VerdictCard({
           )}
         </div>
         <div className="mt-2 flex flex-wrap items-end justify-between gap-4">
-          <h1
-            id="verdict-heading"
-            className="text-5xl sm:text-6xl font-black leading-none tracking-tight"
-          >
-            {displayVerdict ? LABELS[displayVerdict] : 'UNUSABLE'}
-          </h1>
-          <div className="min-w-[12rem] flex-1 sm:text-right">
-            <p className="text-[0.65rem] font-bold uppercase tracking-wide opacity-85">
-              Hard-stop window
+          <div className="flex items-center gap-3">
+            <span
+              aria-hidden="true"
+              className="flex h-12 w-12 items-center justify-center rounded-full bg-black/20 text-xl font-black"
+            >
+              {displayVerdict ? ICONS[displayVerdict] : '?'}
+            </span>
+            <p
+              id="verdict-heading"
+              className="text-5xl sm:text-6xl font-black leading-none tracking-tight"
+            >
+              {displayVerdict ? LABELS[displayVerdict] : 'UNUSABLE'}
             </p>
-            <p className="mt-0.5 text-xl sm:text-2xl font-black tabular-nums leading-tight">
-              {unusable ? 'No trusted schedule' : hardStop ?? 'No hard stop scheduled'}
-            </p>
+          </div>
+          <div className="min-w-[12rem] flex-1 sm:text-right space-y-2">
+            <div>
+              <p className="text-[0.65rem] font-bold uppercase tracking-wide opacity-85">
+                Hard-stop window
+              </p>
+              <p className="mt-0.5 text-xl sm:text-2xl font-black tabular-nums leading-tight">
+                {unusable ? 'No trusted schedule' : hardStop ?? 'No hard stop scheduled'}
+              </p>
+            </div>
+            {bestWork && !unusable && (
+              <div>
+                <p className="text-[0.65rem] font-bold uppercase tracking-wide opacity-85">
+                  Best work window
+                </p>
+                <p className="mt-0.5 text-base font-bold tabular-nums leading-tight">{bestWork}</p>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -102,6 +128,19 @@ export function VerdictCard({
           <MetricChip label="Load" value={`${loadScore.toFixed(0)}/100`} />
         )}
       </div>
+
+      {interactions && interactions.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 border-b border-[var(--border)] px-4 py-2 sm:px-5">
+          {interactions.slice(0, 4).map((i) => (
+            <span
+              key={i}
+              className="rounded border border-[var(--border)] bg-[var(--panel)] px-2 py-0.5 text-[0.65rem] font-semibold text-[var(--muted)]"
+            >
+              {i.replace(/_/g, ' ')}
+            </span>
+          ))}
+        </div>
+      )}
 
       {drivers && drivers.length > 0 && (
         <div className="px-4 pt-3 sm:px-5" aria-label="Driver attribution">
