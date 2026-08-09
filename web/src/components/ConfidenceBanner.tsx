@@ -4,10 +4,10 @@ export function ConfidenceBanner({ confidence }: { confidence: DataConfidence | 
   if (!confidence || confidence.level === 'HIGH') return null
   const tone =
     confidence.level === 'UNUSABLE'
-      ? 'border-red-700 bg-red-50 text-red-950'
+      ? 'border-[var(--stop)] bg-[var(--stop-bg)] text-[var(--ink)]'
       : confidence.level === 'LOW'
-        ? 'border-orange-700 bg-orange-50 text-orange-950'
-        : 'border-amber-600 bg-amber-50 text-amber-950'
+        ? 'border-[var(--restrict)] bg-[var(--restrict-bg)] text-[var(--ink)]'
+        : 'border-[var(--caution)] bg-[var(--caution-bg)] text-[var(--ink)]'
 
   return (
     <aside

@@ -1,3 +1,4 @@
+import { verdictPalette, type VerdictKey } from '../design/tokens'
 import type { ConfidenceLevel, Driver, Verdict } from '../types'
 
 const LABELS: Record<Verdict, string> = {
@@ -59,82 +60,92 @@ export function VerdictCard({
   interactions?: string[]
 }) {
   const displayVerdict = unusable || verdict == null ? null : verdict
-  const headerClass = displayVerdict ? CLASS[displayVerdict] : 'bg-zinc-700 text-white'
+  const headerClass = displayVerdict
+    ? CLASS[displayVerdict]
+    : 'bg-[var(--muted)] text-[var(--bg)]'
+  const key: VerdictKey = displayVerdict ?? 'UNUSABLE'
+  const palette = verdictPalette[key]
 
   return (
-    <section aria-labelledby="verdict-heading" className="dash-panel overflow-hidden verdict-enter">
+    <section
+      aria-labelledby="verdict-heading"
+      className="dash-panel dash-panel-elev-3 overflow-hidden verdict-enter"
+    >
       <div
-        className={`${headerClass} px-5 py-4 sm:px-6 sm:py-5`}
+        className={`${headerClass} px-5 py-5 sm:px-7 sm:py-7`}
         role="status"
         aria-live="polite"
         aria-atomic="true"
+        style={{ boxShadow: `inset 0 0 0 1px ${palette.border}33` }}
       >
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-[0.7rem] font-bold tracking-[0.08em] uppercase opacity-90">
-            Crew verdict
-          </p>
+          <p className="type-micro opacity-90">Crew verdict</p>
           {confidence && (
             <span
-              className="rounded border border-black/20 bg-black/20 px-2.5 py-0.5 text-[0.65rem] font-bold uppercase tracking-wide"
+              className="rounded border border-black/25 bg-black/25 px-2.5 py-1 type-micro"
               title={`Data confidence ${confidence}`}
             >
-              Conf {confidence}
+              Confidence {confidence}
             </span>
           )}
         </div>
-        <div className="mt-2 flex flex-wrap items-end justify-between gap-4">
-          <div className="flex items-center gap-3">
+
+        <div className="mt-4 grid gap-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] lg:items-end">
+          <div className="flex flex-wrap items-end gap-4">
             <span
               aria-hidden="true"
-              className="flex h-12 w-12 items-center justify-center rounded-full bg-black/20 text-xl font-black"
+              className="flex h-14 w-14 items-center justify-center rounded-full bg-black/25 text-2xl font-black"
             >
               {displayVerdict ? ICONS[displayVerdict] : '?'}
             </span>
-            <p
-              id="verdict-heading"
-              className="text-5xl sm:text-6xl font-black leading-none tracking-tight"
-            >
-              {displayVerdict ? LABELS[displayVerdict] : 'UNUSABLE'}
-            </p>
-          </div>
-          <div className="min-w-[12rem] flex-1 sm:text-right space-y-2">
             <div>
-              <p className="text-[0.65rem] font-bold uppercase tracking-wide opacity-85">
-                Hard-stop window
-              </p>
-              <p className="mt-0.5 text-xl sm:text-2xl font-black tabular-nums leading-tight">
-                {unusable ? 'No trusted schedule' : hardStop ?? 'No hard stop scheduled'}
+              <p id="verdict-heading" className="type-display tracking-tight">
+                {displayVerdict ? LABELS[displayVerdict] : 'UNUSABLE'}
               </p>
             </div>
-            {bestWork && !unusable && (
-              <div>
-                <p className="text-[0.65rem] font-bold uppercase tracking-wide opacity-85">
-                  Best work window
+          </div>
+
+          <div className="flex flex-wrap items-end justify-between gap-4 lg:justify-end">
+            {loadScore != null && !unusable && (
+              <div className="text-left lg:text-right">
+                <p className="type-micro opacity-85">Load score</p>
+                <p className="type-display tabular-nums" style={{ fontSize: 'clamp(3rem, 8vw, 4.5rem)' }}>
+                  {loadScore.toFixed(0)}
                 </p>
-                <p className="mt-0.5 text-base font-bold tabular-nums leading-tight">{bestWork}</p>
               </div>
             )}
+            <div className="min-w-[10rem] space-y-3">
+              <div>
+                <p className="type-micro opacity-85">Hard-stop</p>
+                <p className="mt-0.5 text-xl sm:text-2xl font-black tabular-nums leading-tight">
+                  {unusable ? 'No trusted schedule' : hardStop ?? 'None'}
+                </p>
+              </div>
+              {bestWork && !unusable && (
+                <div>
+                  <p className="type-micro opacity-85">Best work</p>
+                  <p className="mt-0.5 text-lg font-bold tabular-nums leading-tight">{bestWork}</p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-2 border-b border-[var(--border)] bg-[var(--panel)] px-4 py-3 sm:px-5">
+      <div className="flex flex-wrap gap-2 border-b border-[var(--border)] bg-[var(--panel)] px-4 py-3 sm:px-6">
         <MetricChip
           label="Heat index"
           value={heatIndex != null ? `${heatIndex.toFixed(0)}°F` : 'n/a'}
         />
         <MetricChip label="Smoke" value={`${smokePressure.toFixed(0)}/100`} />
-        {loadScore != null && (
-          <MetricChip label="Load" value={`${loadScore.toFixed(0)}/100`} />
-        )}
       </div>
 
       {interactions && interactions.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 border-b border-[var(--border)] px-4 py-2 sm:px-5">
+        <div className="flex flex-wrap gap-1.5 border-b border-[var(--border)] px-4 py-2 sm:px-6">
           {interactions.slice(0, 4).map((i) => (
             <span
               key={i}
-              className="rounded border border-[var(--border)] bg-[var(--panel)] px-2 py-0.5 text-[0.65rem] font-semibold text-[var(--muted)]"
+              className="rounded border border-[var(--border)] bg-[var(--chip-bg)] px-2 py-0.5 type-micro text-[var(--muted)] normal-case tracking-normal"
             >
               {i.replace(/_/g, ' ')}
             </span>
@@ -143,7 +154,7 @@ export function VerdictCard({
       )}
 
       {drivers && drivers.length > 0 && (
-        <div className="px-4 pt-3 sm:px-5" aria-label="Driver attribution">
+        <div className="px-4 pt-3 sm:px-6" aria-label="Driver attribution">
           <p className="dash-section-label">Drivers</p>
           <div
             className="mt-1.5 flex h-2.5 w-full overflow-hidden rounded-sm border border-[var(--border)]"
@@ -161,7 +172,7 @@ export function VerdictCard({
               />
             ))}
           </div>
-          <ul className="mt-1.5 mb-3 flex flex-wrap gap-x-3 gap-y-0.5 text-[0.7rem] text-[var(--muted)]">
+          <ul className="mt-1.5 mb-3 flex flex-wrap gap-x-3 gap-y-0.5 type-caption text-[var(--muted)] font-normal">
             {drivers.map((d) => (
               <li key={d.name} className="flex items-center gap-1">
                 <span
@@ -177,8 +188,8 @@ export function VerdictCard({
       )}
 
       {(explainText || ceilingReason) && (
-        <details className="border-t border-[var(--border)] px-4 py-2.5 sm:px-5">
-          <summary className="cursor-pointer text-xs font-semibold touch-target list-none">
+        <details className="border-t border-[var(--border)] px-4 py-2.5 sm:px-6">
+          <summary className="cursor-pointer type-caption font-semibold touch-target list-none">
             Why this verdict
           </summary>
           {explainText && <p className="mt-2 text-sm leading-relaxed">{explainText}</p>}
@@ -196,8 +207,8 @@ export function VerdictCard({
 
 function MetricChip({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded border border-[var(--border)] bg-white px-2.5 py-1.5 min-w-[5.5rem]">
-      <p className="text-[0.6rem] font-bold uppercase tracking-wide text-[var(--muted)]">{label}</p>
+    <div className="rounded border border-[var(--border)] bg-[var(--chip-bg)] px-2.5 py-1.5 min-w-[5.5rem]">
+      <p className="type-micro text-[var(--muted)]">{label}</p>
       <p className="text-sm font-bold tabular-nums leading-tight">{value}</p>
     </div>
   )

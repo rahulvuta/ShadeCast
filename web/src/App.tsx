@@ -13,6 +13,8 @@ import { StaleBanner } from './components/StaleBanner'
 import { TimelinePanel } from './components/TimelinePanel'
 import { UVPanel } from './components/UVPanel'
 import { VerdictCard } from './components/VerdictCard'
+import { verdictPalette, type VerdictKey } from './design/tokens'
+import { useThemeMode } from './design/useThemeMode'
 import {
   DEMO_LOCATIONS,
   type AssessResponse,
@@ -20,6 +22,7 @@ import {
   type FirePoint,
   type Lang,
   type SensitivityProfile,
+  type Verdict,
   type Workload,
 } from './types'
 
@@ -93,6 +96,7 @@ function useCorruptDemo(): boolean {
 export default function App() {
   const textMode = useTextMode()
   const corruptDemo = useCorruptDemo()
+  const { theme, toggleTheme } = useThemeMode()
   const [loc, setLoc] = useState<ActiveLocation>(() => ({
     lat: BOOT_LOC.lat,
     lon: BOOT_LOC.lon,
@@ -124,9 +128,6 @@ export default function App() {
   const [briefError, setBriefError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [online, setOnline] = useState(() => navigator.onLine)
-  const [mapDefaultOpen] = useState(
-    () => typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches,
-  )
 
   const applyLocation = useCallback((next: ActiveLocation) => {
     setActiveEventId(null)
@@ -252,6 +253,18 @@ export default function App() {
   }, [textMode])
 
   useEffect(() => {
+    const v: VerdictKey =
+      assess?.data_confidence?.level === 'UNUSABLE' || assess?.current.verdict == null
+        ? 'UNUSABLE'
+        : ((assess?.current.verdict as Verdict) ?? 'UNUSABLE')
+    const palette = verdictPalette[v]
+    const root = document.documentElement
+    root.style.setProperty('--verdict-accent', palette.base)
+    root.style.setProperty('--verdict-glow', palette.glow)
+    root.style.setProperty('--verdict-wash', palette.bg)
+  }, [assess?.current.verdict, assess?.data_confidence?.level])
+
+  useEffect(() => {
     const onOnline = () => setOnline(true)
     const onOffline = () => setOnline(false)
     window.addEventListener('online', onOnline)
@@ -372,46 +385,60 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen">
+    <div className="app-shell min-h-screen">
       <a
         href="#main"
-        className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:bg-white focus:p-2 focus:border focus:border-[var(--border)]"
+        className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:bg-[var(--card)] focus:p-2 focus:border focus:border-[var(--border)]"
       >
         Skip to content
       </a>
 
       <header className="sticky top-0 z-40 border-b border-[var(--border)] bg-[var(--topbar)]/95 backdrop-blur-sm">
-        <div className="mx-auto flex max-w-[1600px] flex-wrap items-baseline gap-x-4 gap-y-1 px-4 py-3 sm:px-5">
+        <div className="mx-auto flex max-w-[1600px] flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 sm:px-5">
           <p className="text-sm font-bold tracking-[0.12em] uppercase text-[var(--ink)]">
             ShadeCast
           </p>
-          <h1 className="text-base sm:text-lg font-semibold tracking-tight text-[var(--ink)]">
+          <h1 className="type-h2 tracking-tight text-[var(--ink)]">
             Is it safe to work outside today?
           </h1>
-          <p className="hidden md:block text-xs text-[var(--muted)] ml-auto">
-            Environmental load — heat, smoke, UV, air quality
-          </p>
+          <div className="ml-auto flex items-center gap-2">
+            <p className="hidden md:block type-caption text-[var(--muted)] font-normal">
+              Environmental load — heat, smoke, UV, air
+            </p>
+            <button
+              type="button"
+              className="theme-toggle touch-target"
+              onClick={toggleTheme}
+              aria-pressed={theme === 'sunlight'}
+              title={
+                theme === 'ops'
+                  ? 'Switch to Sunlight mode (high contrast for outdoor glare)'
+                  : 'Switch to Ops dark theme'
+              }
+            >
+              {theme === 'ops' ? 'Sunlight' : 'Ops dark'}
+            </button>
+          </div>
         </div>
       </header>
 
-      <div className="mx-auto max-w-[1600px] px-4 py-4 sm:px-5 pb-12">
-        {/* Mobile: controls accordion near top */}
-        <details className="dash-panel mb-4 lg:hidden">
+      <div className="mx-auto max-w-[1600px] px-4 py-5 sm:px-5 pb-12 layout-stack">
+        <details className="dash-panel lg:hidden">
           <summary className="touch-target cursor-pointer list-none px-3.5 py-3 flex items-center justify-between gap-2">
             <span className="dash-section-label">Controls & settings</span>
-            <span className="text-xs text-[var(--muted)]">{loc.label}</span>
+            <span className="type-caption text-[var(--muted)] font-normal">{loc.label}</span>
           </summary>
           <div className="border-t border-[var(--border)] px-3.5 py-3">
             <SidebarControls {...controlsProps} />
           </div>
         </details>
 
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,4fr)_minmax(280px,1fr)] lg:items-start">
-          <main id="main" className="min-w-0 space-y-3">
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,4fr)_minmax(280px,1fr)] lg:items-start">
+          <main id="main" className="min-w-0 layout-stack">
             {!online && (
               <aside
                 role="status"
-                className="rounded border-2 border-amber-700 bg-amber-50 px-3.5 py-2.5 text-sm text-amber-950"
+                className="rounded border-2 border-[var(--caution)] bg-[var(--caution-bg)] px-3.5 py-2.5 text-sm"
               >
                 You appear offline. Showing the last cached assessment if available.
               </aside>
@@ -419,9 +446,9 @@ export default function App() {
             {assess?.is_historical && assess.historical_event && (
               <aside
                 role="status"
-                className="rounded border-2 border-[var(--ink)] bg-[var(--panel)] px-3.5 py-3 text-sm"
+                className="rounded border-2 accent-border bg-[var(--panel)] px-3.5 py-3 text-sm"
               >
-                <p className="font-bold uppercase tracking-wide text-[0.7rem] text-[var(--muted)]">
+                <p className="type-micro text-[var(--muted)]">
                   Historical replay — not live data
                 </p>
                 <p className="mt-1 font-semibold text-[var(--ink)]">
@@ -452,7 +479,7 @@ export default function App() {
                   </p>
                 )}
                 {assess.historical_event.source_url && (
-                  <p className="mt-1 text-xs text-[var(--muted)]">
+                  <p className="mt-1 type-micro text-[var(--muted)] normal-case tracking-normal font-normal">
                     <a
                       className="underline"
                       href={assess.historical_event.source_url}
@@ -473,7 +500,7 @@ export default function App() {
             {loading && assess && (
               <div
                 role="status"
-                className="rounded border border-[var(--border)] bg-[var(--panel)] px-3.5 py-2 text-xs font-semibold text-[var(--muted)]"
+                className="rounded border border-[var(--border)] bg-[var(--panel)] px-3.5 py-2 type-caption text-[var(--muted)]"
               >
                 Updating assessment…
               </div>
@@ -487,7 +514,7 @@ export default function App() {
                 </p>
                 <button
                   type="button"
-                  className="touch-target mt-3 rounded bg-[var(--ink)] px-4 py-2 text-sm text-white"
+                  className="touch-target mt-3 rounded bg-[var(--ink)] px-4 py-2 text-sm text-[var(--bg)]"
                   onClick={() => void load()}
                 >
                   Retry
@@ -497,34 +524,39 @@ export default function App() {
 
             {assess && (
               <>
-                <StaleBanner
-                  freshness={assess.data_freshness}
-                  servedFromCache={assess.served_from_cache}
-                />
-                <ConfidenceBanner confidence={assess.data_confidence} />
-                <DiffStrip summary={assess.diff_summary} />
+                {/* Row 1 — Hero */}
+                <div className="layout-hero-band">
+                  <StaleBanner
+                    freshness={assess.data_freshness}
+                    servedFromCache={assess.served_from_cache}
+                  />
+                  <div className="mt-2 space-y-2">
+                    <ConfidenceBanner confidence={assess.data_confidence} />
+                    <DiffStrip summary={assess.diff_summary} />
+                    <VerdictCard
+                      verdict={assess.current.verdict}
+                      hardStop={assess.schedule.hard_stop_window}
+                      bestWork={assess.schedule.best_work_window}
+                      heatIndex={assess.current.heat_index_f}
+                      smokePressure={assess.smoke.smoke_pressure}
+                      loadScore={assess.environmental_load?.load_score}
+                      drivers={assess.environmental_load?.drivers}
+                      explainText={assess.explain_text}
+                      ceilingReason={
+                        assess.ceiling_reason ?? assess.environmental_load?.ceiling_reason
+                      }
+                      confidence={assess.data_confidence?.level}
+                      unusable={
+                        assess.data_confidence?.level === 'UNUSABLE' ||
+                        assess.current.verdict == null
+                      }
+                      interactions={assess.environmental_load?.interactions}
+                    />
+                  </div>
+                </div>
 
-                <VerdictCard
-                  verdict={assess.current.verdict}
-                  hardStop={assess.schedule.hard_stop_window}
-                  bestWork={assess.schedule.best_work_window}
-                  heatIndex={assess.current.heat_index_f}
-                  smokePressure={assess.smoke.smoke_pressure}
-                  loadScore={assess.environmental_load?.load_score}
-                  drivers={assess.environmental_load?.drivers}
-                  explainText={assess.explain_text}
-                  ceilingReason={
-                    assess.ceiling_reason ?? assess.environmental_load?.ceiling_reason
-                  }
-                  confidence={assess.data_confidence?.level}
-                  unusable={
-                    assess.data_confidence?.level === 'UNUSABLE' ||
-                    assess.current.verdict == null
-                  }
-                  interactions={assess.environmental_load?.interactions}
-                />
-
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[1fr_1fr_1.2fr]">
+                {/* Row 2 — Context chips (Phase 4 will expand drivers/clock here) */}
+                <div className="grid gap-4 sm:grid-cols-2">
                   <ConcordanceBadge
                     concordance={
                       assess.air?.concordance ?? assess.environmental_load?.concordance
@@ -532,13 +564,26 @@ export default function App() {
                     usAqi={assess.air?.us_aqi ?? assess.current.us_aqi}
                   />
                   {assess.uv && <UVPanel uv={assess.uv} />}
-                  {assess.actions && assess.actions.length > 0 && (
-                    <div className="sm:col-span-2 xl:col-span-1">
-                      <ActionCards actions={assess.actions} />
-                    </div>
+                </div>
+
+                {/* Row 3 — Map dominant */}
+                <div className="map-stage dash-panel overflow-hidden accent-border">
+                  <FireMap
+                    lat={assess.lat}
+                    lon={assess.lon}
+                    windFromDeg={assess.current.wind_direction_deg}
+                    fires={fires}
+                    textMode={textMode}
+                    defaultOpen={true}
+                  />
+                  {firesError && (
+                    <p className="px-3 py-2 type-micro text-[var(--muted)] normal-case tracking-normal font-normal">
+                      Fire detections unavailable
+                    </p>
                   )}
                 </div>
 
+                {/* Row 4 — Timeline */}
                 <TimelinePanel
                   hourly={assess.hourly}
                   days={assess.days}
@@ -548,24 +593,12 @@ export default function App() {
                   todayIso={assess.days?.[0]?.day ?? null}
                 />
 
+                {/* Row 5 — Actions / briefing / climatology */}
                 <div className="dash-panel lg:hidden">{renderBriefingShift()}</div>
-
-                <div className="grid gap-3 lg:grid-cols-2 lg:items-stretch">
-                  <div className="min-w-0">
-                    <FireMap
-                      lat={assess.lat}
-                      lon={assess.lon}
-                      windFromDeg={assess.current.wind_direction_deg}
-                      fires={fires}
-                      textMode={textMode}
-                      defaultOpen={mapDefaultOpen}
-                    />
-                    {firesError && (
-                      <p className="mt-1.5 text-[0.7rem] text-[var(--muted)]">
-                        Fire detections unavailable
-                      </p>
-                    )}
-                  </div>
+                <div className="grid gap-4 lg:grid-cols-2">
+                  {assess.actions && assess.actions.length > 0 && (
+                    <ActionCards actions={assess.actions} />
+                  )}
                   <ClimatologyLine
                     message={assess.climatology.message}
                     note={assess.climatology.note}
@@ -575,8 +608,10 @@ export default function App() {
                   />
                 </div>
 
-                <p className="text-[0.7rem] text-[var(--muted)]">{assess.current.disclaimer}</p>
-                <p className="text-[0.7rem] text-[var(--muted)]">{assess.smoke.note}</p>
+                <p className="type-micro text-[var(--muted)] normal-case tracking-normal font-normal">
+                  {assess.current.disclaimer}
+                  {assess.smoke.note ? ` ${assess.smoke.note}` : ''}
+                </p>
               </>
             )}
           </main>
@@ -598,7 +633,7 @@ export default function App() {
           </aside>
         </div>
 
-        <footer className="mt-8 border-t border-[var(--border)] pt-4 text-xs text-[var(--muted)] space-y-2">
+        <footer className="border-t border-[var(--border)] pt-4 footer-micro space-y-2 font-normal normal-case tracking-normal">
           <p>
             Data sources:{' '}
             {(assess?.sources ?? []).map((s, i) => (

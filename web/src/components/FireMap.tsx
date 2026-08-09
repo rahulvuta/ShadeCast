@@ -132,7 +132,7 @@ export function FireMap({
     windFromDeg == null ? 'Wind n/a' : `Wind from ${Math.round(windFromDeg)}° (met. convention)`
 
   return (
-    <section aria-labelledby="map-heading" className="dash-panel flex h-full flex-col p-3.5 sm:p-4">
+    <section aria-labelledby="map-heading" className="flex h-full min-h-[inherit] flex-col p-3.5 sm:p-4">
       <div className="flex items-start justify-between gap-2">
         <div>
           <p className="dash-section-label">Environmental context</p>
@@ -163,7 +163,7 @@ export function FireMap({
       </p>
       <div
         ref={containerRef}
-        className={`mt-2 min-h-[16rem] flex-1 w-full overflow-hidden rounded border border-[var(--border)] ${
+        className={`mt-2 min-h-[20rem] lg:min-h-[24rem] flex-1 w-full overflow-hidden rounded border border-[var(--border)] ${
           open && !textMode ? '' : 'hidden'
         }`}
         role="img"

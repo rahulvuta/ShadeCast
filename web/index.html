@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="theme-ops">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="ShadeCast — crew-level work/rest scheduler for compound heat and wildfire-smoke risk." />
-    <meta name="theme-color" content="#eef1f4" />
+    <meta name="theme-color" content="#0e1116" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -12,6 +12,17 @@
       rel="stylesheet"
     />
     <title>ShadeCast</title>
+    <script>
+      try {
+        var t = localStorage.getItem('shadecast_theme_v1')
+        if (t === 'sunlight') {
+          document.documentElement.classList.remove('theme-ops')
+          document.documentElement.classList.add('theme-sunlight')
+          var meta = document.querySelector('meta[name="theme-color"]')
+          if (meta) meta.setAttribute('content', '#f4f6f8')
+        }
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

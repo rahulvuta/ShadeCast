@@ -78,7 +78,7 @@ export function SidebarControls({
   onGoLatLon: (e?: FormEvent) => void
 }) {
   const field =
-    'touch-target mt-1 w-full rounded border border-[var(--border)] bg-white px-2.5 text-sm'
+    'touch-target mt-1 w-full rounded border border-[var(--border)] bg-[var(--input-bg)] px-2.5 text-sm'
 
   return (
     <nav aria-label="Location and settings" className="space-y-3">
@@ -96,8 +96,8 @@ export function SidebarControls({
                 type="button"
                 className={`touch-target rounded border px-2.5 py-1.5 text-xs font-semibold ${
                   active
-                    ? 'border-[var(--ink)] bg-[var(--ink)] text-white'
-                    : 'border-[var(--border)] bg-white hover:border-[var(--ink)]'
+                    ? 'border-[var(--ink)] bg-[var(--ink)] text-[var(--bg)]'
+                    : 'border-[var(--border)] bg-[var(--chip-bg)] hover:border-[var(--ink)]'
                 }`}
                 onClick={() => onApplyLocation({ lat: d.lat, lon: d.lon, label: d.label })}
               >
@@ -147,7 +147,7 @@ export function SidebarControls({
           />
           <button
             type="submit"
-            className="touch-target shrink-0 rounded bg-[var(--ink)] px-3 text-xs font-semibold text-white disabled:opacity-50"
+            className="touch-target shrink-0 rounded bg-[var(--ink)] px-3 text-xs font-semibold text-[var(--bg)] disabled:opacity-50"
             disabled={searchBusy}
           >
             {searchBusy ? '…' : 'Go'}

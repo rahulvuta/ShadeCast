@@ -53,9 +53,9 @@ function windowQuality(meanRank: number): { label: string; tone: 'go' | 'caution
 }
 
 const QUALITY_CLASS: Record<ReturnType<typeof windowQuality>['tone'], string> = {
-  go: 'border-[var(--go)]/35 bg-[var(--go)]/10 text-[#006b50]',
-  caution: 'border-[var(--caution)]/40 bg-[var(--caution)]/12 text-[#7a4a00]',
-  restrict: 'border-[var(--restrict)]/35 bg-[var(--restrict)]/10 text-[#8a2800]',
+  go: 'border-[var(--go)]/35 bg-[var(--go-bg)] text-[var(--go)]',
+  caution: 'border-[var(--caution)]/40 bg-[var(--caution-bg)] text-[var(--caution)]',
+  restrict: 'border-[var(--restrict)]/35 bg-[var(--restrict-bg)] text-[var(--restrict)]',
   marginal: 'border-[var(--border)] bg-[var(--panel)] text-[var(--muted)]',
 }
 
@@ -104,7 +104,7 @@ export function FiveDayStrip({
               aria-pressed={active}
               className={`touch-target min-w-[5.5rem] shrink-0 rounded border px-2.5 py-2 text-left ${
                 active
-                  ? 'border-[var(--ink)] bg-[var(--ink)] text-white'
+                  ? 'border-[var(--ink)] bg-[var(--ink)] text-[var(--bg)]'
                   : 'border-[var(--border)] bg-[var(--panel)] hover:border-[var(--ink)]'
               }`}
             >
@@ -153,7 +153,7 @@ export function ShiftPlanner({
             Best block per time of day when conditions allow.
           </p>
         </div>
-        <div className="flex items-center gap-1 rounded border border-[var(--border)] bg-white p-0.5">
+        <div className="flex items-center gap-1 rounded border border-[var(--border)] bg-[var(--chip-bg)] p-0.5">
           <span className="px-2 text-[0.65rem] font-semibold uppercase tracking-wide text-[var(--muted)]">
             Block
           </span>
@@ -197,7 +197,7 @@ export function ShiftPlanner({
               >
                 <div className="flex items-start gap-2.5">
                   <span
-                    className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--ink)] text-[0.65rem] font-bold text-white"
+                    className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--ink)] text-[0.65rem] font-bold text-[var(--bg)]"
                     aria-hidden
                   >
                     {index + 1}
@@ -206,10 +206,10 @@ export function ShiftPlanner({
                     <p className="text-xs font-semibold text-[var(--muted)]">{dayLabel}</p>
                     <p className="mt-0.5 text-sm font-bold tracking-tight text-[var(--ink)]">{timeRange}</p>
                     <div className="mt-2 flex flex-wrap items-center gap-2">
-                      <span className="rounded border border-[var(--border)] bg-white px-2 py-0.5 text-[0.65rem] font-semibold text-[var(--muted)]">
+                      <span className="rounded border border-[var(--border)] bg-[var(--chip-bg)] px-2 py-0.5 text-[0.65rem] font-semibold text-[var(--muted)]">
                         {daypartLabel(w)}
                       </span>
-                      <span className="rounded border border-[var(--border)] bg-white px-2 py-0.5 text-[0.65rem] font-semibold text-[var(--muted)]">
+                      <span className="rounded border border-[var(--border)] bg-[var(--chip-bg)] px-2 py-0.5 text-[0.65rem] font-semibold text-[var(--muted)]">
                         {w.required_hours}h block
                       </span>
                       <span
