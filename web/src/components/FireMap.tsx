@@ -56,12 +56,12 @@ function firesToGeoJSON(annotated: AnnotatedDetection[]): FeatureCollection {
           distanceKm: d.distanceKm,
           bearingDeg: d.bearingDeg,
           freshness,
-          radiusPx: d.upwind
-            ? 11 + freshness * 8 + sizeBoost
+          emojiSize: d.upwind
+            ? 22 + freshness * 6 + sizeBoost * 0.8
             : d.withinRadius
-              ? 8 + freshness * 4 + sizeBoost * 0.5
-              : 6 + freshness * 2,
-          opacity: d.withinRadius ? (d.upwind ? 0.95 : 0.75) : 0.45,
+              ? 18 + freshness * 4 + sizeBoost * 0.5
+              : 14 + freshness * 2,
+          opacity: d.withinRadius ? (d.upwind ? 0.95 : 0.85) : 0.55,
           label: [
             `FRP ${d.frp ?? 'n/a'}`,
             `${d.distanceKm.toFixed(0)} km`,
@@ -75,7 +75,7 @@ function firesToGeoJSON(annotated: AnnotatedDetection[]): FeatureCollection {
   }
 }
 
-/** Lightweight wind particle overlay — no third-party wind package. */
+/** Slow wind streamlines — elongated dashes drifting downwind, not rain-like streaks. */
 function createWindParticleLayer(
   windFromDeg: number,
   windSpeedKmh: number | null,
@@ -85,8 +85,9 @@ function createWindParticleLayer(
   let map: maplibregl.Map | null = null
   let canvas: HTMLCanvasElement | null = null
   let raf = 0
-  const particles: { x: number; y: number; life: number }[] = []
-  const COUNT = 140
+  let lastTs = 0
+  const particles: { x: number; y: number; offset: number }[] = []
+  const COUNT = 36
 
   function spawn() {
     if (!canvas) return
@@ -95,50 +96,59 @@ function createWindParticleLayer(
       particles.push({
         x: Math.random() * canvas.width,
         y: Math.random() * canvas.height,
-        life: Math.random(),
+        offset: Math.random() * Math.PI * 2,
       })
     }
   }
 
-  function colorForSpeed(s: number): string {
-    const t = Math.min(1, Math.max(0, s / 40))
-    const r = Math.round(86 + t * (213 - 86))
-    const g = Math.round(180 + t * (94 - 180))
-    const b = Math.round(233 + t * (0 - 233))
-    return `rgba(${r},${g},${b},0.85)`
-  }
-
-  function frame() {
+  function frame(ts: number) {
     if (!map || !canvas) return
     const ctx = canvas.getContext('2d')
     if (!ctx) return
     const w = canvas.width
     const h = canvas.height
+    const dt = lastTs ? Math.min(32, ts - lastTs) / 16.67 : 1
+    lastTs = ts
+
     ctx.clearRect(0, 0, w, h)
 
     // Meteorological from → toward travel direction (+180)
     const toward = ((windFrom + 180) % 360) * (Math.PI / 180)
-    const pxPerFrame = 0.55 + Math.min(3.2, (speed / 40) * 3.2)
-    const dx = Math.sin(toward) * pxPerFrame
-    const dy = -Math.cos(toward) * pxPerFrame
-    ctx.strokeStyle = colorForSpeed(speed)
-    ctx.lineWidth = 2.4
-    ctx.lineCap = 'round'
+    const drift = 0.06 + Math.min(0.22, (speed / 40) * 0.22)
+    const dx = Math.sin(toward) * drift * dt
+    const dy = -Math.cos(toward) * drift * dt
+    const streakLen = 36 + Math.min(44, speed * 1.1)
+    const perpX = Math.cos(toward)
+    const perpY = Math.sin(toward)
 
     for (const p of particles) {
-      const x0 = p.x
-      const y0 = p.y
       p.x += dx
       p.y += dy
-      p.life -= 0.0035
-      if (p.x < 0 || p.x > w || p.y < 0 || p.y > h || p.life <= 0) {
+      p.offset += 0.02 * dt
+
+      if (p.x < -streakLen || p.x > w + streakLen || p.y < -streakLen || p.y > h + streakLen) {
         p.x = Math.random() * w
         p.y = Math.random() * h
-        p.life = 1
       }
+
+      // Slight wobble so parallel lines feel like air, not vertical rain
+      const wobble = Math.sin(p.offset) * 2.5
+      const tailX = p.x - Math.sin(toward) * streakLen + perpX * wobble
+      const tailY = p.y + Math.cos(toward) * streakLen + perpY * wobble
+      const headX = p.x + Math.sin(toward) * 10 + perpX * wobble * 0.5
+      const headY = p.y - Math.cos(toward) * 10 + perpY * wobble * 0.5
+
+      const grad = ctx.createLinearGradient(tailX, tailY, headX, headY)
+      grad.addColorStop(0, 'rgba(120, 170, 210, 0)')
+      grad.addColorStop(0.45, 'rgba(140, 190, 230, 0.18)')
+      grad.addColorStop(1, 'rgba(200, 225, 245, 0.42)')
+
+      ctx.strokeStyle = grad
+      ctx.lineWidth = 1.6
+      ctx.lineCap = 'round'
       ctx.beginPath()
-      ctx.moveTo(x0, y0)
-      ctx.lineTo(p.x + dx * 2.5, p.y + dy * 2.5)
+      ctx.moveTo(tailX, tailY)
+      ctx.lineTo(headX, headY)
       ctx.stroke()
     }
     raf = requestAnimationFrame(frame)
@@ -230,64 +240,18 @@ function ensureGeometryLayers(map: maplibregl.Map) {
       data: { type: 'FeatureCollection', features: [] },
     })
     map.addLayer({
-      id: 'fire-heatmap',
-      type: 'heatmap',
-      source: SRC_FIRES,
-      maxzoom: 14,
-      paint: {
-        'heatmap-weight': [
-          'interpolate',
-          ['linear'],
-          ['get', 'frp'],
-          0,
-          0.2,
-          20,
-          0.5,
-          80,
-          0.85,
-          200,
-          1,
-        ],
-        'heatmap-intensity': ['interpolate', ['linear'], ['zoom'], 4, 0.9, 10, 2.2],
-        'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 4, 22, 10, 42],
-        'heatmap-opacity': 0.75,
-        'heatmap-color': [
-          'interpolate',
-          ['linear'],
-          ['heatmap-density'],
-          0,
-          'rgba(0,0,0,0)',
-          0.15,
-          'rgba(255,200,0,0.45)',
-          0.35,
-          'rgba(255,140,0,0.7)',
-          0.55,
-          'rgba(213,94,0,0.85)',
-          0.8,
-          'rgba(180,20,0,0.95)',
-          1,
-          'rgba(80,0,0,1)',
-        ],
-      },
-    })
-    map.addLayer({
       id: 'fire-points',
-      type: 'circle',
+      type: 'symbol',
       source: SRC_FIRES,
+      layout: {
+        'text-field': '🔥',
+        'text-size': ['get', 'emojiSize'],
+        'text-allow-overlap': true,
+        'text-ignore-placement': true,
+        'text-anchor': 'center',
+      },
       paint: {
-        'circle-radius': ['get', 'radiusPx'],
-        'circle-color': [
-          'case',
-          ['==', ['get', 'upwind'], 1],
-          '#FF6A00',
-          ['==', ['get', 'within'], 1],
-          '#FFB000',
-          '#8896A3',
-        ],
-        'circle-opacity': ['get', 'opacity'],
-        'circle-stroke-width': ['case', ['==', ['get', 'upwind'], 1], 3, 2],
-        'circle-stroke-color': '#ffffff',
-        'circle-stroke-opacity': 0.95,
+        'text-opacity': ['get', 'opacity'],
       },
     })
   }
