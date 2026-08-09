@@ -20,6 +20,20 @@ FIRE_BBOX_DEG = SEARCH_RADIUS_KM / 111.0
 def fire_deg_for_radius(radius_km: float = SEARCH_RADIUS_KM) -> float:
     """Degrees of lat/lon covering the smoke search radius."""
     return radius_km / 111.0
+
+
+def fire_bbox(
+    lat: float,
+    lon: float,
+    radius_km: float = SEARCH_RADIUS_KM,
+) -> tuple[float, float, float, float]:
+    """Axis-aligned bbox (west, south, east, north) enclosing a radius_km circle."""
+    lat_deg = radius_km / 111.0
+    cos_lat = max(0.15, abs(math.cos(math.radians(lat))))
+    lon_deg = radius_km / (111.0 * cos_lat)
+    return (lon - lon_deg, lat - lat_deg, lon + lon_deg, lat + lat_deg)
+
+
 DECAY_SCALE_KM = 25.0
 UPWIND_HALF_ANGLE_DEG = 45.0
 

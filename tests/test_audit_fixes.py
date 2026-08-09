@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from api.engine.smoke import FIRE_BBOX_DEG, SEARCH_RADIUS_KM, fire_deg_for_radius
+from api.engine.smoke import FIRE_BBOX_DEG, SEARCH_RADIUS_KM, fire_bbox, fire_deg_for_radius
 from api.integrity.checks import HourlyInputs, check_relative_humidity, run_all_checks
 from api.integrity.checks import IntegrityBundle
 from api.integrity.confidence import aggregate, collapse_findings
@@ -38,6 +38,13 @@ def test_impossible_rh_is_unusable():
 def test_fire_deg_matches_search_radius():
     assert abs(fire_deg_for_radius(SEARCH_RADIUS_KM) - FIRE_BBOX_DEG) < 1e-9
     assert abs(FIRE_BBOX_DEG - SEARCH_RADIUS_KM / 111.0) < 1e-9
+
+
+def test_fire_bbox_widens_longitude_at_mid_latitudes():
+    west, south, east, north = fire_bbox(47.0, -122.0, SEARCH_RADIUS_KM)
+    lat_span = north - south
+    lon_span = east - west
+    assert lon_span > lat_span * 1.2
 
 
 def test_firms_missing_timestamp_is_info_not_warning():

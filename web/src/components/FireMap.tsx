@@ -4,8 +4,10 @@ import * as maplibregl from 'maplibre-gl'
 import type { FirePoint } from '../types'
 import {
   SEARCH_RADIUS_KM,
+  MAP_FIRE_FETCH_RADIUS_KM,
   annotateDetections,
   circlePolygon,
+  destinationPoint,
   smokeLegendLine,
   upwindConePolygon,
   type AnnotatedDetection,
@@ -44,7 +46,11 @@ function firesToGeoJSON(annotated: AnnotatedDetection[]): FeatureCollection {
       const age = d.ageHours
       const freshness = age == null ? 0.75 : Math.max(0.4, 1 - Math.min(age, 48) / 48)
       const frp = d.frp != null && d.frp > 0 ? d.frp : 1
-      const sizeBoost = Math.min(10, Math.sqrt(frp) * 0.9)
+      const frpBoost = Math.min(14, Math.sqrt(frp) * 1.1)
+      const distant = !d.withinRadius
+      const distFade = distant
+        ? Math.max(0.55, 1 - (d.distanceKm - SEARCH_RADIUS_KM) / 220)
+        : 1
       return {
         type: 'Feature' as const,
         id: i,
@@ -56,12 +62,11 @@ function firesToGeoJSON(annotated: AnnotatedDetection[]): FeatureCollection {
           distanceKm: d.distanceKm,
           bearingDeg: d.bearingDeg,
           freshness,
-          emojiSize: d.upwind
-            ? 22 + freshness * 6 + sizeBoost * 0.8
-            : d.withinRadius
-              ? 18 + freshness * 4 + sizeBoost * 0.5
-              : 14 + freshness * 2,
-          opacity: d.withinRadius ? (d.upwind ? 0.95 : 0.85) : 0.55,
+          emojiSize:
+            (d.upwind ? 24 : d.withinRadius ? 20 : 16) * distFade +
+            freshness * 4 +
+            frpBoost * (distant ? 1.4 : 1),
+          opacity: distant ? 0.7 + frpBoost * 0.02 : d.upwind ? 0.98 : 0.9,
           label: [
             `FRP ${d.frp ?? 'n/a'}`,
             `${d.distanceKm.toFixed(0)} km`,
@@ -282,6 +287,28 @@ function setGeometryData(
   if (fireSrc) fireSrc.setData(firesToGeoJSON(annotated))
 }
 
+function fitMapToScene(
+  map: maplibregl.Map,
+  lat: number,
+  lon: number,
+  annotated: AnnotatedDetection[],
+) {
+  const bounds = new maplibregl.LngLatBounds()
+  bounds.extend([lon, lat])
+  for (const bearing of [0, 90, 180, 270]) {
+    const [pLat, pLon] = destinationPoint(lat, lon, bearing, SEARCH_RADIUS_KM)
+    bounds.extend([pLon, pLat])
+  }
+  for (const d of annotated) {
+    bounds.extend([d.longitude, d.latitude])
+  }
+  if (annotated.length === 0) {
+    map.jumpTo({ center: [lon, lat], zoom: 6 })
+    return
+  }
+  map.fitBounds(bounds, { padding: 48, maxZoom: 7.25, duration: 0 })
+}
+
 export function FireMap({
   lat,
   lon,
@@ -348,6 +375,7 @@ export function FireMap({
     const onLoad = () => {
       ensureGeometryLayers(map)
       setGeometryData(map, lat, lon, wind, annotated)
+      fitMapToScene(map, lat, lon, annotated)
       userMarkerRef.current?.remove()
       userMarkerRef.current = new maplibregl.Marker({ color: '#0072B2' }).setLngLat([lon, lat]).addTo(map)
 
@@ -407,9 +435,9 @@ export function FireMap({
     const apply = () => {
       ensureGeometryLayers(map)
       setGeometryData(map, lat, lon, wind, annotated)
+      fitMapToScene(map, lat, lon, annotated)
       userMarkerRef.current?.setLngLat([lon, lat])
       windLayerRef.current?.updateWind(wind, windSpeedKmh)
-      map.jumpTo({ center: [lon, lat] })
       map.resize()
     }
     if (map.loaded()) apply()
@@ -422,6 +450,7 @@ export function FireMap({
       : `Wind from ${Math.round(windFromDeg)}° · ${windSpeedKmh != null ? `${Math.round(windSpeedKmh)} km/h` : 'speed n/a'}`
   const withinCount = annotated.filter((d) => d.withinRadius).length
   const upwindCount = annotated.filter((d) => d.upwind).length
+  const distantCount = annotated.filter((d) => !d.withinRadius).length
 
   return (
     <section aria-labelledby="map-heading" className="flex h-full min-h-[inherit] flex-col p-3.5 sm:p-4">
@@ -445,11 +474,13 @@ export function FireMap({
       <p className="mt-1 text-sm font-semibold text-[var(--ink)]">
         {fires.length === 0
           ? 'No FIRMS fire detections in this area right now'
-          : `${fires.length} fire detections · ${upwindCount} upwind · ${withinCount} in ${SEARCH_RADIUS_KM} km`}
+          : `${fires.length} fire detections · ${upwindCount} upwind · ${withinCount} in ${SEARCH_RADIUS_KM} km${
+              distantCount > 0 ? ` · ${distantCount} farther out` : ''
+            }`}
       </p>
       <p className="type-micro text-[var(--muted)] mt-1 normal-case tracking-normal font-normal">
-        Soft circle = {SEARCH_RADIUS_KM} km search · filled wedge = ±45° upwind of wind-from ·{' '}
-        {windLabel}
+        Map shows fires up to {MAP_FIRE_FETCH_RADIUS_KM} km away (large fires stay visible). Soft circle ={' '}
+        {SEARCH_RADIUS_KM} km smoke search · filled wedge = ±45° upwind · {windLabel}
       </p>
       <div className={`relative mt-2 ${open && !textMode ? '' : 'hidden'}`}>
         <div

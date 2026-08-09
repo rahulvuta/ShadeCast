@@ -17,7 +17,7 @@ from api.clients import firms as firms_client
 from api.clients import forecast as forecast_client
 from api.clients import power as power_client
 from api.config import get_settings
-from api.engine.smoke import SEARCH_RADIUS_KM, fire_deg_for_radius
+from api.engine.smoke import SEARCH_RADIUS_KM, fire_bbox, fire_deg_for_radius
 from api.integrity.checks import (
     STALE_AIR_QUALITY,
     STALE_CLIMATOLOGY,
@@ -26,7 +26,6 @@ from api.integrity.checks import (
 )
 from api.models import AirQualityHour, ClimatologyPoint, FireDetection, ForecastHour
 from ingest.job import (
-    bbox_around,
     upsert_air_quality,
     upsert_climatology,
     upsert_fires,
@@ -76,24 +75,25 @@ def _is_stale(fetched_at: datetime | None, tol: timedelta, now: datetime) -> boo
 
 def _ensure_fires(session: Session, lat: float, lon: float, *, fire_deg: float) -> None:
     now = datetime.now(timezone.utc)
+    radius_km = fire_deg * 111.0
+    west, south, east, north = fire_bbox(lat, lon, radius_km)
     newest = session.scalar(
         select(func.max(FireDetection.fetched_at)).where(
-            FireDetection.latitude.between(lat - fire_deg, lat + fire_deg),
-            FireDetection.longitude.between(lon - fire_deg, lon + fire_deg),
+            FireDetection.latitude.between(south, north),
+            FireDetection.longitude.between(west, east),
         )
     )
     count = session.scalar(
         select(func.count())
         .select_from(FireDetection)
         .where(
-            FireDetection.latitude.between(lat - fire_deg, lat + fire_deg),
-            FireDetection.longitude.between(lon - fire_deg, lon + fire_deg),
+            FireDetection.latitude.between(south, north),
+            FireDetection.longitude.between(west, east),
         )
     )
     if count and count > 0 and not _is_stale(newest, STALE_FIRMS, now):
         return
 
-    west, south, east, north = bbox_around(lat, lon, fire_deg)
     try:
         rows = firms_client.fetch_firms_area(west, south, east, north, day_range=2)
         n = upsert_fires(session, rows)

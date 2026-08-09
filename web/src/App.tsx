@@ -20,6 +20,7 @@ import { UVPanel } from './components/UVPanel'
 import { VerdictCard } from './components/VerdictCard'
 import { verdictPalette, type VerdictKey } from './design/tokens'
 import { useThemeMode } from './design/useThemeMode'
+import { MAP_FIRE_FETCH_RADIUS_KM } from './lib/smokeGeometry'
 import {
   INTEGRITY_TAB_ID,
   isUnusable,
@@ -231,10 +232,8 @@ export default function App() {
         let nextFires: FirePoint[] = []
         let nextFiresError: string | null = null
         if (!a.is_historical) {
-          const half = 2.7
-          const bbox = `${lon - half},${lat - half},${lon + half},${lat + half}`
           try {
-            const f = await fetchFires(bbox)
+            const f = await fetchFires(lat, lon, MAP_FIRE_FETCH_RADIUS_KM)
             nextFires = f.fires
           } catch (e) {
             nextFiresError = e instanceof Error ? e.message : 'Fire detections unavailable'
@@ -331,10 +330,8 @@ export default function App() {
         let nextFires: FirePoint[] = []
         let nextFiresError: string | null = null
         if (!a.is_historical) {
-          const half = 2.7
-          const bbox = `${lon - half},${lat - half},${lon + half},${lat + half}`
           try {
-            const f = await fetchFires(bbox)
+            const f = await fetchFires(lat, lon, MAP_FIRE_FETCH_RADIUS_KM)
             nextFires = f.fires
           } catch (e) {
             nextFiresError = e instanceof Error ? e.message : 'Fire detections unavailable'

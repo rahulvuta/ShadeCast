@@ -1,4 +1,5 @@
 import type { AssessResponse, BriefResponse, FirePoint, Lang, SensitivityProfile, Workload } from './types'
+import { firesBboxString } from './lib/smokeGeometry'
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? ''
 
@@ -78,8 +79,15 @@ export function fetchEvents(): Promise<{ events: HistoricalEventSummary[] }> {
   return getJson('/api/events')
 }
 
-export function fetchFires(bbox: string): Promise<{ fires: FirePoint[]; count: number }> {
-  return getJson(`/api/fires?bbox=${encodeURIComponent(bbox)}`)
+export function fetchFires(
+  lat: number,
+  lon: number,
+  radiusKm: number,
+): Promise<{ fires: FirePoint[]; count: number }> {
+  const bbox = firesBboxString(lat, lon, radiusKm)
+  return getJson(
+    `/api/fires?bbox=${encodeURIComponent(bbox)}&lat=${lat}&lon=${lon}&radius_km=${radiusKm}`,
+  )
 }
 
 export type GeocodeHit = {

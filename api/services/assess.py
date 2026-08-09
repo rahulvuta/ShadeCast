@@ -127,14 +127,17 @@ def _label_for(lat: float, lon: float) -> str | None:
 
 
 def _fires_near(session: Session, lat: float, lon: float, deg: float | None = None) -> list[FireDetection]:
-    from api.engine.smoke import FIRE_BBOX_DEG
+    from api.engine.smoke import SEARCH_RADIUS_KM, fire_bbox
 
-    d = deg if deg is not None else FIRE_BBOX_DEG
+    if deg is not None:
+        west, south, east, north = lon - deg, lat - deg, lon + deg, lat + deg
+    else:
+        west, south, east, north = fire_bbox(lat, lon, SEARCH_RADIUS_KM)
     return list(
         session.scalars(
             select(FireDetection).where(
-                FireDetection.latitude.between(lat - d, lat + d),
-                FireDetection.longitude.between(lon - d, lon + d),
+                FireDetection.latitude.between(south, north),
+                FireDetection.longitude.between(west, east),
             )
         ).all()
     )

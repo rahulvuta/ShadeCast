@@ -94,6 +94,11 @@ def assess(
 @router.get("/fires", response_model=FiresResponse)
 def fires(
     bbox: str = Query(..., description="west,south,east,north"),
+    lat: float | None = Query(None, ge=-90, le=90, description="Center lat for distance sort"),
+    lon: float | None = Query(None, ge=-180, le=180, description="Center lon for distance sort"),
+    radius_km: float | None = Query(
+        None, ge=50, le=800, description="Keep fires within this haversine radius when lat/lon set"
+    ),
     limit: int = Query(_MAX_FIRES, ge=1, le=_MAX_FIRES),
     db: Session = Depends(get_db),
 ) -> FiresResponse:
@@ -115,14 +120,33 @@ def fires(
             detail=f"bbox span must be <= {_MAX_BBOX_SPAN_DEG} degrees on each axis",
         )
 
-    rows = db.scalars(
-        select(FireDetection)
-        .where(
-            FireDetection.longitude.between(west, east),
-            FireDetection.latitude.between(south, north),
-        )
-        .limit(limit)
-    ).all()
+    rows = list(
+        db.scalars(
+            select(FireDetection)
+            .where(
+                FireDetection.longitude.between(west, east),
+                FireDetection.latitude.between(south, north),
+            )
+        ).all()
+    )
+
+    if lat is not None and lon is not None:
+        from api.engine.smoke import haversine_km
+
+        max_km = radius_km if radius_km is not None else 800.0
+        scored: list[tuple[float, float, FireDetection]] = []
+        for r in rows:
+            d = haversine_km(lat, lon, r.latitude, r.longitude)
+            if d <= max_km:
+                frp = r.frp if r.frp is not None and r.frp > 0 else 1.0
+                # Prefer nearer fires, but keep large distant detections visible on the map.
+                rank = d - min(120.0, frp * 0.35)
+                scored.append((rank, d, r))
+        scored.sort(key=lambda t: t[0])
+        rows = [r for _, _, r in scored[:limit]]
+    else:
+        rows = rows[:limit]
+
     fetched = max((r.fetched_at for r in rows), default=None)
     points = [
         FirePoint(

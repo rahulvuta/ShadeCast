@@ -7,6 +7,8 @@ import type { Feature, Polygon } from 'geojson'
 
 export const EARTH_RADIUS_KM = 6371
 export const SEARCH_RADIUS_KM = 300
+/** Wider fetch for map display — includes large fires beyond the 300 km smoke radius. */
+export const MAP_FIRE_FETCH_RADIUS_KM = 500
 export const DECAY_SCALE_KM = 25
 export const UPWIND_HALF_ANGLE_DEG = 45
 
@@ -33,6 +35,27 @@ function toRad(d: number) {
 }
 function toDeg(r: number) {
   return (r * 180) / Math.PI
+}
+
+export function bboxForRadiusKm(
+  lat: number,
+  lon: number,
+  radiusKm: number,
+): { west: number; south: number; east: number; north: number } {
+  const latDeg = radiusKm / 111
+  const cosLat = Math.max(0.15, Math.abs(Math.cos(toRad(lat))))
+  const lonDeg = radiusKm / (111 * cosLat)
+  return {
+    west: lon - lonDeg,
+    south: lat - latDeg,
+    east: lon + lonDeg,
+    north: lat + latDeg,
+  }
+}
+
+export function firesBboxString(lat: number, lon: number, radiusKm: number): string {
+  const { west, south, east, north } = bboxForRadiusKm(lat, lon, radiusKm)
+  return `${west},${south},${east},${north}`
 }
 
 export function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
