@@ -22,7 +22,6 @@ export type LocationTab = {
   fires: FirePoint[]
   firesError: string | null
   selectedDay: string | null
-  scrubIndex: number
 }
 
 export function shortTabLabel(label: string): string {

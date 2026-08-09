@@ -42,9 +42,9 @@ function firesToGeoJSON(annotated: AnnotatedDetection[]): FeatureCollection {
     type: 'FeatureCollection',
     features: annotated.map((d, i) => {
       const age = d.ageHours
-      // Newer = brighter/larger. Cap age influence at 48h.
-      const freshness = age == null ? 0.65 : Math.max(0.25, 1 - Math.min(age, 48) / 48)
+      const freshness = age == null ? 0.75 : Math.max(0.4, 1 - Math.min(age, 48) / 48)
       const frp = d.frp != null && d.frp > 0 ? d.frp : 1
+      const sizeBoost = Math.min(10, Math.sqrt(frp) * 0.9)
       return {
         type: 'Feature' as const,
         id: i,
@@ -56,8 +56,12 @@ function firesToGeoJSON(annotated: AnnotatedDetection[]): FeatureCollection {
           distanceKm: d.distanceKm,
           bearingDeg: d.bearingDeg,
           freshness,
-          radiusPx: d.upwind ? 5 + freshness * 7 + Math.min(6, Math.sqrt(frp) * 0.4) : 3 + freshness * 2,
-          opacity: d.withinRadius ? (d.upwind ? 0.55 + freshness * 0.4 : 0.22 + freshness * 0.15) : 0.12,
+          radiusPx: d.upwind
+            ? 11 + freshness * 8 + sizeBoost
+            : d.withinRadius
+              ? 8 + freshness * 4 + sizeBoost * 0.5
+              : 6 + freshness * 2,
+          opacity: d.withinRadius ? (d.upwind ? 0.95 : 0.75) : 0.45,
           label: [
             `FRP ${d.frp ?? 'n/a'}`,
             `${d.distanceKm.toFixed(0)} km`,
@@ -82,7 +86,7 @@ function createWindParticleLayer(
   let canvas: HTMLCanvasElement | null = null
   let raf = 0
   const particles: { x: number; y: number; life: number }[] = []
-  const COUNT = 90
+  const COUNT = 140
 
   function spawn() {
     if (!canvas) return
@@ -97,12 +101,11 @@ function createWindParticleLayer(
   }
 
   function colorForSpeed(s: number): string {
-    // Calm → sky blue; stronger → vermillion (Okabe–Ito-ish)
     const t = Math.min(1, Math.max(0, s / 40))
     const r = Math.round(86 + t * (213 - 86))
     const g = Math.round(180 + t * (94 - 180))
     const b = Math.round(233 + t * (0 - 233))
-    return `rgba(${r},${g},${b},0.55)`
+    return `rgba(${r},${g},${b},0.85)`
   }
 
   function frame() {
@@ -115,18 +118,19 @@ function createWindParticleLayer(
 
     // Meteorological from → toward travel direction (+180)
     const toward = ((windFrom + 180) % 360) * (Math.PI / 180)
-    const pxPerFrame = 0.35 + Math.min(2.2, (speed / 40) * 2.2)
+    const pxPerFrame = 0.55 + Math.min(3.2, (speed / 40) * 3.2)
     const dx = Math.sin(toward) * pxPerFrame
     const dy = -Math.cos(toward) * pxPerFrame
     ctx.strokeStyle = colorForSpeed(speed)
-    ctx.lineWidth = 1.25
+    ctx.lineWidth = 2.4
+    ctx.lineCap = 'round'
 
     for (const p of particles) {
       const x0 = p.x
       const y0 = p.y
       p.x += dx
       p.y += dy
-      p.life -= 0.004
+      p.life -= 0.0035
       if (p.x < 0 || p.x > w || p.y < 0 || p.y > h || p.life <= 0) {
         p.x = Math.random() * w
         p.y = Math.random() * h
@@ -134,7 +138,7 @@ function createWindParticleLayer(
       }
       ctx.beginPath()
       ctx.moveTo(x0, y0)
-      ctx.lineTo(p.x, p.y)
+      ctx.lineTo(p.x + dx * 2.5, p.y + dy * 2.5)
       ctx.stroke()
     }
     raf = requestAnimationFrame(frame)
@@ -193,13 +197,13 @@ function ensureGeometryLayers(map: maplibregl.Map) {
       id: 'smoke-radius-fill',
       type: 'fill',
       source: SRC_RADIUS,
-      paint: { 'fill-color': '#56B4E9', 'fill-opacity': 0.06 },
+      paint: { 'fill-color': '#56B4E9', 'fill-opacity': 0.1 },
     })
     map.addLayer({
       id: 'smoke-radius-line',
       type: 'line',
       source: SRC_RADIUS,
-      paint: { 'line-color': '#56B4E9', 'line-width': 1.5, 'line-opacity': 0.55 },
+      paint: { 'line-color': '#0072B2', 'line-width': 2.5, 'line-opacity': 0.8 },
     })
   }
   if (!map.getSource(SRC_CONE)) {
@@ -211,13 +215,13 @@ function ensureGeometryLayers(map: maplibregl.Map) {
       id: 'smoke-cone-fill',
       type: 'fill',
       source: SRC_CONE,
-      paint: { 'fill-color': '#D55E00', 'fill-opacity': 0.18 },
+      paint: { 'fill-color': '#D55E00', 'fill-opacity': 0.32 },
     })
     map.addLayer({
       id: 'smoke-cone-line',
       type: 'line',
       source: SRC_CONE,
-      paint: { 'line-color': '#D55E00', 'line-width': 2, 'line-opacity': 0.75 },
+      paint: { 'line-color': '#D55E00', 'line-width': 3, 'line-opacity': 0.95 },
     })
   }
   if (!map.getSource(SRC_FIRES)) {
@@ -225,43 +229,44 @@ function ensureGeometryLayers(map: maplibregl.Map) {
       type: 'geojson',
       data: { type: 'FeatureCollection', features: [] },
     })
-    // Explicit weight domain via heatmap-weight — avoid default max-normalization pitfall
     map.addLayer({
       id: 'fire-heatmap',
       type: 'heatmap',
       source: SRC_FIRES,
-      maxzoom: 12,
+      maxzoom: 14,
       paint: {
         'heatmap-weight': [
           'interpolate',
           ['linear'],
           ['get', 'frp'],
           0,
-          0,
+          0.2,
           20,
-          0.35,
+          0.5,
           80,
-          0.75,
+          0.85,
           200,
           1,
         ],
-        'heatmap-intensity': ['interpolate', ['linear'], ['zoom'], 4, 0.5, 10, 1.4],
-        'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 4, 12, 10, 28],
-        'heatmap-opacity': 0.55,
+        'heatmap-intensity': ['interpolate', ['linear'], ['zoom'], 4, 0.9, 10, 2.2],
+        'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 4, 22, 10, 42],
+        'heatmap-opacity': 0.75,
         'heatmap-color': [
           'interpolate',
           ['linear'],
           ['heatmap-density'],
           0,
           'rgba(0,0,0,0)',
-          0.2,
-          'rgba(230,159,0,0.35)',
-          0.45,
-          'rgba(213,94,0,0.55)',
-          0.75,
-          'rgba(0,114,178,0.7)',
+          0.15,
+          'rgba(255,200,0,0.45)',
+          0.35,
+          'rgba(255,140,0,0.7)',
+          0.55,
+          'rgba(213,94,0,0.85)',
+          0.8,
+          'rgba(180,20,0,0.95)',
           1,
-          'rgba(0,0,0,0.85)',
+          'rgba(80,0,0,1)',
         ],
       },
     })
@@ -274,14 +279,15 @@ function ensureGeometryLayers(map: maplibregl.Map) {
         'circle-color': [
           'case',
           ['==', ['get', 'upwind'], 1],
-          '#D55E00',
+          '#FF6A00',
           ['==', ['get', 'within'], 1],
-          '#56B4E9',
-          '#5A6570',
+          '#FFB000',
+          '#8896A3',
         ],
         'circle-opacity': ['get', 'opacity'],
-        'circle-stroke-width': ['case', ['==', ['get', 'upwind'], 1], 1.5, 0.5],
-        'circle-stroke-color': '#0e1116',
+        'circle-stroke-width': ['case', ['==', ['get', 'upwind'], 1], 3, 2],
+        'circle-stroke-color': '#ffffff',
+        'circle-stroke-opacity': 0.95,
       },
     })
   }
@@ -450,6 +456,8 @@ export function FireMap({
     windFromDeg == null
       ? 'Wind n/a'
       : `Wind from ${Math.round(windFromDeg)}° · ${windSpeedKmh != null ? `${Math.round(windSpeedKmh)} km/h` : 'speed n/a'}`
+  const withinCount = annotated.filter((d) => d.withinRadius).length
+  const upwindCount = annotated.filter((d) => d.upwind).length
 
   return (
     <section aria-labelledby="map-heading" className="flex h-full min-h-[inherit] flex-col p-3.5 sm:p-4">
@@ -470,19 +478,53 @@ export function FireMap({
         </button>
       </div>
       <p className="text-xs text-[var(--muted)] mt-1">{legend}</p>
+      <p className="mt-1 text-sm font-semibold text-[var(--ink)]">
+        {fires.length === 0
+          ? 'No FIRMS fire detections in this area right now'
+          : `${fires.length} fire detections · ${upwindCount} upwind · ${withinCount} in ${SEARCH_RADIUS_KM} km`}
+      </p>
       <p className="type-micro text-[var(--muted)] mt-1 normal-case tracking-normal font-normal">
         Soft circle = {SEARCH_RADIUS_KM} km search · filled wedge = ±45° upwind of wind-from ·{' '}
         {windLabel}
       </p>
-      <div
-        ref={containerRef}
-        className={`mt-2 min-h-[20rem] lg:min-h-[24rem] flex-1 w-full overflow-hidden rounded border border-[var(--border)] ${
-          open && !textMode ? '' : 'hidden'
-        }`}
-        role="img"
-        aria-label="Map of fire detections with upwind smoke cone"
-        aria-hidden={!open || textMode}
-      />
+      <div className={`relative mt-2 ${open && !textMode ? '' : 'hidden'}`}>
+        <div
+          ref={containerRef}
+          className="min-h-[22rem] lg:min-h-[28rem] w-full overflow-hidden rounded border border-[var(--border)]"
+          role="img"
+          aria-label="Map of fire detections with upwind smoke cone"
+          aria-hidden={!open || textMode}
+        />
+        {windFromDeg != null && (
+          <div
+            className="pointer-events-none absolute left-3 top-3 z-10 flex items-center gap-3 rounded-lg border-2 border-[var(--ink)] bg-[var(--card)]/95 px-3 py-2.5 shadow-md backdrop-blur-sm"
+            aria-hidden
+          >
+            <div
+              className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full border-2 border-[var(--ink)] bg-[var(--panel)]"
+              style={{ transform: `rotate(${windFromDeg}deg)` }}
+            >
+              <svg width="36" height="36" viewBox="0 0 36 36" fill="none" aria-hidden>
+                <path
+                  d="M18 4 L28 26 L18 21 L8 26 Z"
+                  fill="var(--ink)"
+                  stroke="var(--bg)"
+                  strokeWidth="1.5"
+                />
+              </svg>
+            </div>
+            <div className="min-w-0">
+              <p className="type-micro text-[var(--muted)]">Wind from</p>
+              <p className="text-xl font-bold leading-tight text-[var(--ink)]">
+                {Math.round(windFromDeg)}°
+              </p>
+              <p className="text-xs font-semibold text-[var(--muted)]">
+                {windSpeedKmh != null ? `${Math.round(windSpeedKmh)} km/h` : 'speed n/a'}
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
       {open && textMode && (
         <ul className="mt-2 max-h-64 overflow-auto text-xs space-y-1">
           {annotated.slice(0, 50).map((f, i) => (

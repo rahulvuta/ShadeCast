@@ -16,7 +16,6 @@ import { SidebarControls } from './components/SidebarControls'
 import { ShiftSheetExport } from './components/ShiftSheetExport'
 import { StaleBanner } from './components/StaleBanner'
 import { TimelinePanel } from './components/TimelinePanel'
-import { TimeScrubber } from './components/TimeScrubber'
 import { UVPanel } from './components/UVPanel'
 import { VerdictCard } from './components/VerdictCard'
 import { verdictPalette, type VerdictKey } from './design/tokens'
@@ -136,7 +135,6 @@ export default function App() {
     error: null,
     assess: null,
   })
-  const [scrubPlaying, setScrubPlaying] = useState(false)
   const [brief, setBrief] = useState<BriefResponse | null>(null)
   const [briefLoading, setBriefLoading] = useState(false)
   const [briefError, setBriefError] = useState<string | null>(null)
@@ -151,7 +149,6 @@ export default function App() {
   const fires = activeTab?.fires ?? []
   const firesError = activeTab?.firesError ?? null
   const selectedDay = activeTab?.selectedDay ?? null
-  const scrubIndex = activeTab?.scrubIndex ?? 0
   const locLabel = onIntegrityTab
     ? integrity.label || BOOT_LOC.label
     : activeTab?.label ?? BOOT_LOC.label
@@ -189,7 +186,6 @@ export default function App() {
         error: null,
         assess: null,
       })
-      setScrubPlaying(false)
       setLatInput(String(target.lat))
       setLonInput(String(target.lon))
       setSearchHits([])
@@ -246,7 +242,6 @@ export default function App() {
         }
         if (gen !== commitGen.current) return
 
-        const curIdx = a.hourly.findIndex((h) => h.is_current)
         const tab: LocationTab = {
           id: newTabId(),
           label,
@@ -257,7 +252,6 @@ export default function App() {
           fires: nextFires,
           firesError: nextFiresError,
           selectedDay: a.days?.[0]?.day ?? null,
-          scrubIndex: curIdx >= 0 ? curIdx : 0,
         }
 
         setTabs((prev) => {
@@ -348,7 +342,6 @@ export default function App() {
         }
         if (gen !== commitGen.current) return
 
-        const curIdx = a.hourly.findIndex((h) => h.is_current)
         setTabs((prev) =>
           prev.map((t) =>
             t.id === target.id
@@ -361,7 +354,6 @@ export default function App() {
                   fires: nextFires,
                   firesError: nextFiresError,
                   selectedDay: a.days?.[0]?.day ?? t.selectedDay,
-                  scrubIndex: curIdx >= 0 ? curIdx : t.scrubIndex,
                 }
               : t,
           ),
@@ -469,16 +461,13 @@ export default function App() {
     }
   }, [onIntegrityTab, assess, lang, workload, acclimatized, profile])
 
-  const scrubHour = assess?.hourly[scrubIndex] ?? null
-  const displayVerdict = (scrubHour?.verdict as Verdict | undefined) ?? assess?.current.verdict ?? null
-  const displayHeat = scrubHour?.heat_index_f ?? assess?.current.heat_index_f ?? null
-  const displaySmoke = scrubHour?.smoke_pressure ?? assess?.smoke.smoke_pressure ?? 0
-  const displayWind =
-    scrubHour?.wind_direction_deg ?? assess?.current.wind_direction_deg ?? null
-  const displayWindSpeed =
-    scrubHour?.wind_speed_kmh ?? assess?.current.wind_speed_kmh ?? null
-  const scrubbingAway =
-    scrubHour != null && !scrubHour.is_current && (assess?.hourly.length ?? 0) > 1
+  const displayVerdict = assess?.current.verdict ?? null
+  const displayHeat = assess?.current.heat_index_f ?? null
+  const displaySmoke = assess?.smoke.smoke_pressure ?? 0
+  const displayWind = assess?.current.wind_direction_deg ?? null
+  const displayWindSpeed = assess?.current.wind_speed_kmh ?? null
+  const currentHour =
+    assess?.hourly.find((h) => h.is_current)?.hour ?? assess?.hourly[0]?.hour ?? null
 
   useEffect(() => {
     document.body.classList.toggle('text-mode', textMode)
@@ -590,7 +579,6 @@ export default function App() {
 
   function selectTab(id: string) {
     setActiveTabId(id)
-    setScrubPlaying(false)
     if (id === INTEGRITY_TAB_ID) return
     const t = tabs.find((x) => x.id === id)
     if (t) {
@@ -615,13 +603,6 @@ export default function App() {
     if (onIntegrityTab || !activeTabId) return
     setTabs((prev) =>
       prev.map((t) => (t.id === activeTabId ? { ...t, selectedDay: day } : t)),
-    )
-  }
-
-  function setScrubIndex(index: number) {
-    if (onIntegrityTab || !activeTabId) return
-    setTabs((prev) =>
-      prev.map((t) => (t.id === activeTabId ? { ...t, scrubIndex: index } : t)),
     )
   }
 
@@ -883,11 +864,7 @@ export default function App() {
                       heatIndex={displayHeat}
                       smokePressure={displaySmoke}
                       loadScore={assess.environmental_load?.load_score}
-                      explainText={
-                        scrubbingAway
-                          ? `Scrubbed hour ${scrubHour?.valid_at ?? scrubHour?.hour} — schedule windows still reflect the full assessment.`
-                          : assess.explain_text
-                      }
+                      explainText={assess.explain_text}
                       ceilingReason={
                         assess.ceiling_reason ?? assess.environmental_load?.ceiling_reason
                       }
@@ -914,13 +891,6 @@ export default function App() {
                   </div>
                 </div>
 
-                <TimeScrubber
-                  hours={assess.hourly}
-                  index={scrubIndex}
-                  onIndex={setScrubIndex}
-                  playing={scrubPlaying}
-                  onPlaying={setScrubPlaying}
-                />
                 <div className="map-stage dash-panel overflow-hidden accent-border">
                   <FireMap
                     lat={assess.lat}
@@ -948,7 +918,7 @@ export default function App() {
                   todayIso={assess.days?.[0]?.day ?? null}
                   hardStop={assess.schedule.hard_stop_window}
                   bestWork={assess.schedule.best_work_window}
-                  scrubHour={scrubHour?.hour ?? null}
+                  scrubHour={currentHour}
                 />
 
                 <ComparePanel
