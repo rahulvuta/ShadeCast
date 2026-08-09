@@ -1,6 +1,6 @@
 import type { AssessResponse } from '../types'
 import { FiveDayStrip } from './DayStrip'
-import { HourlyChart } from './HourlyChart'
+import { RiskClock } from './RiskClock'
 import { ScheduleStrip } from './ScheduleStrip'
 
 export function TimelinePanel({
@@ -10,6 +10,9 @@ export function TimelinePanel({
   onSelectDay,
   textMode,
   todayIso,
+  hardStop,
+  bestWork,
+  scrubHour,
 }: {
   hourly: AssessResponse['hourly']
   days?: AssessResponse['days']
@@ -17,6 +20,9 @@ export function TimelinePanel({
   onSelectDay: (day: string) => void
   textMode: boolean
   todayIso: string | null
+  hardStop?: string | null
+  bestWork?: string | null
+  scrubHour?: number | null
 }) {
   const selected = days?.find((d) => d.day === selectedDay) ?? null
   const viewingToday = !selectedDay || !todayIso || selectedDay === todayIso
@@ -45,7 +51,13 @@ export function TimelinePanel({
           <ScheduleStrip hourly={hourly} embedded />
           {!textMode && (
             <div className="mt-4 border-t border-[var(--border)] pt-4">
-              <HourlyChart hourly={hourly} embedded />
+              <RiskClock
+                hourly={hourly}
+                hardStop={hardStop}
+                bestWork={bestWork}
+                currentHour={scrubHour}
+                embedded
+              />
             </div>
           )}
         </>
@@ -68,7 +80,7 @@ export function TimelinePanel({
             {selected.total_work_minutes} work minutes
           </p>
           <p className="text-xs text-[var(--muted)] pt-1">
-            Select today in the 5-day strip to see hour-by-hour pills and the severity chart.
+            Select today in the 5-day strip to see hour-by-hour pills and the risk clock.
           </p>
         </div>
       ) : null}

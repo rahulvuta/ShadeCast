@@ -3,9 +3,11 @@ import { fetchAssess, fetchBrief, fetchEvents, fetchFires, fetchGeocode, type Ge
 import { ActionCards } from './components/ActionCards'
 import { BriefingCard } from './components/BriefingCard'
 import { ClimatologyLine } from './components/ClimatologyLine'
+import { ComparePanel } from './components/ComparePanel'
 import { ConcordanceBadge } from './components/ConcordanceBadge'
 import { ConfidenceBanner } from './components/ConfidenceBanner'
 import { DiffStrip, ShiftPlanner } from './components/DayStrip'
+import { DriverWaterfall } from './components/DriverWaterfall'
 import { FireMap } from './components/FireMap'
 import { HowWeCalculate } from './components/HowWeCalculate'
 import { SidebarControls } from './components/SidebarControls'
@@ -557,7 +559,6 @@ export default function App() {
                       heatIndex={displayHeat}
                       smokePressure={displaySmoke}
                       loadScore={assess.environmental_load?.load_score}
-                      drivers={assess.environmental_load?.drivers}
                       explainText={
                         scrubbingAway
                           ? `Scrubbed hour ${scrubHour?.valid_at ?? scrubHour?.hour} — schedule windows still reflect the full assessment.`
@@ -576,15 +577,21 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Row 2 — Context chips (Phase 4 will expand drivers/clock here) */}
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <ConcordanceBadge
-                    concordance={
-                      assess.air?.concordance ?? assess.environmental_load?.concordance
-                    }
-                    usAqi={assess.air?.us_aqi ?? assess.current.us_aqi}
-                  />
-                  {assess.uv && <UVPanel uv={assess.uv} />}
+                {/* Row 2 — Reasoning charts */}
+                <div className="grid gap-4 lg:grid-cols-2">
+                  {assess.environmental_load?.waterfall &&
+                    assess.environmental_load.waterfall.length > 0 && (
+                      <DriverWaterfall steps={assess.environmental_load.waterfall} />
+                    )}
+                  <div className="grid gap-4 content-start">
+                    <ConcordanceBadge
+                      concordance={
+                        assess.air?.concordance ?? assess.environmental_load?.concordance
+                      }
+                      usAqi={assess.air?.us_aqi ?? assess.current.us_aqi}
+                    />
+                    {assess.uv && <UVPanel uv={assess.uv} />}
+                  </div>
                 </div>
 
                 {/* Row 3 — Map dominant + scrubber */}
@@ -621,6 +628,21 @@ export default function App() {
                   onSelectDay={setSelectedDay}
                   textMode={textMode}
                   todayIso={assess.days?.[0]?.day ?? null}
+                  hardStop={assess.schedule.hard_stop_window}
+                  bestWork={assess.schedule.best_work_window}
+                  scrubHour={scrubHour?.hour ?? null}
+                />
+
+                <ComparePanel
+                  lat={assess.lat}
+                  lon={assess.lon}
+                  primaryProfile={profile}
+                  primaryWorkload={workload}
+                  acclimatized={acclimatized}
+                  requiredHours={requiredHours}
+                  corrupt={corruptDemo && !activeEventId}
+                  event={activeEventId}
+                  hourOffset={hourOffset}
                 />
 
                 {/* Row 5 — Actions / briefing / climatology */}

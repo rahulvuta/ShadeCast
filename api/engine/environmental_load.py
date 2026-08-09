@@ -43,12 +43,42 @@ _VERDICT_ORDER = [Verdict.GO, Verdict.CAUTION, Verdict.RESTRICT, Verdict.STOP]
 
 DriverName = Literal["heat", "smoke", "air_quality", "uv", "wind", "confidence", "workload"]
 
+INTERACTION_MECHANISMS: dict[str, str] = {
+    "heat+smoke_superadditive": (
+        "Heat + smoke: cardiovascular and respiratory load exceed either stressor alone."
+    ),
+    "air_quality_elevated": "CAMS air quality is worse than FIRMS smoke alone — blending elevates the matrix.",
+    "air_quality_escalate": "Unhealthy+ US AQI escalates the verdict one level more conservative.",
+    "smoke+heavy_workload": (
+        "Smoke + heavy workload: elevated respiration multiplies particulate dose."
+    ),
+    "wind_gust_hard_stop": "Gusts above 40 km/h force a hard stop for elevated outdoor work.",
+    "low_confidence_escalate": "LOW confidence — verdict escalated one level more conservative.",
+    "unusable_confidence": "UNUSABLE inputs — refuse trust and treat as STOP sentinel.",
+    "heat+high_uv_shorten_exposure": (
+        "Heat + high UV shortens allowed exposure minutes without changing the verdict letter."
+    ),
+}
+
 
 @dataclass(frozen=True)
 class Driver:
     name: DriverName
     contribution: float  # 0–100 share of load_score attribution
     detail: str
+
+
+@dataclass(frozen=True)
+class WaterfallStep:
+    """Cumulative load_score construction for the driver waterfall chart."""
+
+    id: str
+    label: str
+    delta: float
+    running_total: float
+    raw_value: str | None = None
+    mechanism: str | None = None
+    kind: Literal["base", "driver", "interaction", "cap", "final"] = "driver"
 
 
 @dataclass(frozen=True)
@@ -64,6 +94,7 @@ class EnvironmentalLoadResult:
     exposure_minutes_cap: int | None = None  # set when heat+high UV shortens exposure
     base_verdict: Verdict = Verdict.GO
     profile: SensitivityProfile = "general"
+    waterfall: list[WaterfallStep] = field(default_factory=list)
 
 
 def _escalate(v: Verdict, steps: int = 1) -> Verdict:
@@ -227,6 +258,70 @@ def assess_environmental_load(
     if not drivers:
         drivers = [Driver(name="heat", contribution=100.0, detail="heat=0")]
 
+    # Waterfall: same compression as load_score (raw / 2.5), capped at 100.
+    raw_labels = {
+        "heat": f"heat band {heat_adj.value}",
+        "smoke": f"smoke pressure {smoke_pressure:.0f}",
+        "air_quality": (
+            f"US AQI {air.us_aqi:.0f}" if air.us_aqi is not None else f"AQI {aqi_adj.value if aqi_adj else 'n/a'}"
+        ),
+        "uv": f"UV {uv.band.value}" if uv is not None else "UV n/a",
+        "wind": f"gusts {wind_gusts_kmh:.0f} km/h" if wind_gusts_kmh is not None else "gusts n/a",
+    }
+    waterfall: list[WaterfallStep] = [
+        WaterfallStep(id="base", label="Base", delta=0.0, running_total=0.0, kind="base")
+    ]
+    running = 0.0
+    for key in ("heat", "smoke", "air_quality", "uv", "wind"):
+        scaled = round(raw[key] / 2.5, 2)
+        if scaled <= 0:
+            continue
+        running = round(running + scaled, 2)
+        waterfall.append(
+            WaterfallStep(
+                id=key,
+                label=f"+{key.replace('_', ' ')}",
+                delta=scaled,
+                running_total=min(100.0, running),
+                raw_value=raw_labels[key],
+                kind="driver",
+            )
+        )
+    if running > 100.0:
+        cap_delta = round(100.0 - running, 2)
+        waterfall.append(
+            WaterfallStep(
+                id="score_cap",
+                label="Score cap",
+                delta=cap_delta,
+                running_total=100.0,
+                raw_value="compressed score cannot exceed 100",
+                kind="cap",
+            )
+        )
+        running = 100.0
+    for ix in interactions:
+        waterfall.append(
+            WaterfallStep(
+                id=f"ix:{ix}",
+                label=ix.replace("_", " ").replace("+", " + "),
+                delta=0.0,
+                running_total=min(100.0, running),
+                mechanism=INTERACTION_MECHANISMS.get(ix),
+                kind="interaction",
+            )
+        )
+    waterfall.append(
+        WaterfallStep(
+            id="final",
+            label="Final load score",
+            delta=0.0,
+            running_total=load_score,
+            raw_value=f"{load_score}/100 → {verdict.value}",
+            kind="final",
+        )
+    )
+
     # Ceiling reason: what keeps us from going lower
     ceiling_parts: list[str] = []
     if heat_adj not in (HeatBand.SAFE,):
@@ -261,4 +356,5 @@ def assess_environmental_load(
         exposure_minutes_cap=exposure_cap,
         base_verdict=compound.verdict,
         profile=profile,
+        waterfall=waterfall,
     )

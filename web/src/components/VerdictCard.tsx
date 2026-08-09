@@ -1,5 +1,5 @@
 import { verdictPalette, type VerdictKey } from '../design/tokens'
-import type { ConfidenceLevel, Driver, Verdict } from '../types'
+import type { ConfidenceLevel, Verdict } from '../types'
 
 const LABELS: Record<Verdict, string> = {
   GO: 'GO',
@@ -22,16 +22,6 @@ const CLASS: Record<Verdict, string> = {
   STOP: 'verdict-stop',
 }
 
-const DRIVER_COLORS: Record<string, string> = {
-  heat: '#E69F00',
-  smoke: '#D55E00',
-  air_quality: '#CC79A7',
-  uv: '#F0E442',
-  wind: '#56B4E9',
-  confidence: '#0072B2',
-  workload: '#009E73',
-}
-
 export function VerdictCard({
   verdict,
   hardStop,
@@ -39,7 +29,6 @@ export function VerdictCard({
   heatIndex,
   smokePressure,
   loadScore,
-  drivers,
   explainText,
   ceilingReason,
   confidence,
@@ -52,7 +41,6 @@ export function VerdictCard({
   heatIndex: number | null
   smokePressure: number
   loadScore?: number | null
-  drivers?: Driver[]
   explainText?: string | null
   ceilingReason?: string | null
   confidence?: ConfidenceLevel | null
@@ -150,40 +138,6 @@ export function VerdictCard({
               {i.replace(/_/g, ' ')}
             </span>
           ))}
-        </div>
-      )}
-
-      {drivers && drivers.length > 0 && (
-        <div className="px-4 pt-3 sm:px-6" aria-label="Driver attribution">
-          <p className="dash-section-label">Drivers</p>
-          <div
-            className="mt-1.5 flex h-2.5 w-full overflow-hidden rounded-sm border border-[var(--border)]"
-            role="img"
-            aria-label="Driver contribution bar"
-          >
-            {drivers.map((d) => (
-              <div
-                key={d.name}
-                style={{
-                  width: `${Math.max(2, d.contribution)}%`,
-                  background: DRIVER_COLORS[d.name] ?? '#999',
-                }}
-                title={`${d.name}: ${d.contribution.toFixed(0)}%`}
-              />
-            ))}
-          </div>
-          <ul className="mt-1.5 mb-3 flex flex-wrap gap-x-3 gap-y-0.5 type-caption text-[var(--muted)] font-normal">
-            {drivers.map((d) => (
-              <li key={d.name} className="flex items-center gap-1">
-                <span
-                  className="inline-block h-2 w-2 rounded-sm"
-                  style={{ background: DRIVER_COLORS[d.name] ?? '#999' }}
-                  aria-hidden="true"
-                />
-                {d.name.replace('_', ' ')} {d.contribution.toFixed(0)}%
-              </li>
-            ))}
-          </ul>
         </div>
       )}
 

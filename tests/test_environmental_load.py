@@ -153,3 +153,21 @@ def test_all_sensitivity_profiles_exist_and_shift():
             assert heat != HeatBand.CAUTION or spec.heat_shift == 0
         if spec.aqi_sensitive_as_unhealthy:
             assert aqi == AQIBand.UNHEALTHY
+
+
+def test_waterfall_ends_at_load_score():
+    load = assess_environmental_load(
+        heat_band=HeatBand.EXTREME_CAUTION,
+        smoke_pressure=35.0,
+        smoke_label="high",
+        air=assess_air(smoke_pressure=35.0, us_aqi=120.0),
+        workload="heavy",
+        confidence=ConfidenceLevel.HIGH,
+    )
+    assert load.waterfall
+    assert load.waterfall[0].kind == "base"
+    assert load.waterfall[-1].kind == "final"
+    assert load.waterfall[-1].running_total == load.load_score
+    assert any(s.kind == "interaction" for s in load.waterfall)
+    smoke_heavy = next(s for s in load.waterfall if s.id == "ix:smoke+heavy_workload")
+    assert smoke_heavy.mechanism and "respiration" in smoke_heavy.mechanism.lower()

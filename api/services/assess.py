@@ -51,6 +51,7 @@ from api.schemas import (
     DataConfidence,
     DaySummaryOut,
     DriverOut,
+    WaterfallStepOut,
     EnvironmentalLoadOut,
     HistoricalEventMeta,
     HourlyAssessment,
@@ -912,6 +913,18 @@ def build_assessment(
             reason=load.reason,
             exposure_minutes_cap=load.exposure_minutes_cap,
             profile=load.profile,
+            waterfall=[
+                WaterfallStepOut(
+                    id=s.id,
+                    label=s.label,
+                    delta=s.delta,
+                    running_total=s.running_total,
+                    raw_value=s.raw_value,
+                    mechanism=s.mechanism,
+                    kind=s.kind,
+                )
+                for s in load.waterfall
+            ],
         ),
         explain_text=explain_text,
         ceiling_reason=load.ceiling_reason,

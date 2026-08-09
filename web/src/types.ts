@@ -16,6 +16,16 @@ export interface Driver {
   detail: string
 }
 
+export interface WaterfallStep {
+  id: string
+  label: string
+  delta: number
+  running_total: number
+  raw_value?: string | null
+  mechanism?: string | null
+  kind: string
+}
+
 export interface DataConfidence {
   level: ConfidenceLevel
   score: number
@@ -138,6 +148,7 @@ export interface AssessResponse {
     reason: string
     exposure_minutes_cap?: number | null
     profile?: string
+    waterfall?: WaterfallStep[]
   } | null
   explain_text?: string | null
   ceiling_reason?: string | null

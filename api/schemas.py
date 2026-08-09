@@ -75,6 +75,16 @@ class DriverOut(BaseModel):
     detail: str
 
 
+class WaterfallStepOut(BaseModel):
+    id: str
+    label: str
+    delta: float
+    running_total: float
+    raw_value: str | None = None
+    mechanism: str | None = None
+    kind: str = "driver"
+
+
 class UVDetail(BaseModel):
     daily_max: float
     band: str
@@ -103,6 +113,7 @@ class EnvironmentalLoadOut(BaseModel):
     reason: str
     exposure_minutes_cap: int | None = None
     profile: str = "general"
+    waterfall: list[WaterfallStepOut] = Field(default_factory=list)
 
 
 class DaySummaryOut(BaseModel):
