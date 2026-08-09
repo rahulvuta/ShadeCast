@@ -229,6 +229,8 @@ class AssessResponse(BaseModel):
     historical_event: HistoricalEventMeta | None = None
     expected_verdict: list[str] = Field(default_factory=list)
     actual_vs_expected: ActualVsExpected | None = None
+    # FIRMS detections used by the engine — historical replay fills this for the map.
+    fires: list[FirePoint] = Field(default_factory=list)
 
 
 class FirePoint(BaseModel):

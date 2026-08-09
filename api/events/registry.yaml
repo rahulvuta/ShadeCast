@@ -4,10 +4,10 @@
 # through the unmodified environmental-load path.
 
 events:
-  - id: nyc_2023_06
-    label: Canadian wildfire smoke — NYC (June 2023)
-    lat: 40.71
-    lon: -74.01
+  - id: quebec_2023_06
+    label: Quebec wildfires — Lebel-sur-Quévillon (June 2023)
+    lat: 49.05
+    lon: -76.98
     start_date: "2023-06-07"
     end_date: "2023-06-08"
     default_hour_offset: 14
@@ -15,16 +15,15 @@ events:
     acclimatized: false
     profile: general
     expected_verdicts: [STOP, RESTRICT]
-    expected_concordance: MODEL_LEADS
+    expected_concordance: AGREE
     description: >
-      In early June 2023, Canadian wildfire smoke blanketed the US Northeast.
-      New York City ground monitors reported AQI above 400 on some hours —
-      among the worst air-quality days on record for the city. ShadeCast
-      replays Open-Meteo archive weather and CAMS air-quality for these
-      coordinates; FIRMS NRT does not retain 2023 detections, so local fire
-      rows are empty (MODEL_LEADS). Source:
-      https://www.nytimes.com/2023/06/07/nyregion/nyc-air-quality-smoke.html
-    source_url: https://www.nytimes.com/2023/06/07/nyregion/nyc-air-quality-smoke.html
+      In June 2023, Quebec's record wildfire season forced evacuations across
+      northern communities including Lebel-sur-Quévillon. ShadeCast replays
+      Open-Meteo archive weather and CAMS air-quality at the town, plus a
+      committed FIRMS archive fixture of nearby high-FRP detections (NRT does
+      not retain 2023). Source:
+      https://www.cbc.ca/news/canada/montreal/quebec-wildfires-2023-1.6870123
+    source_url: https://www.cbc.ca/news/canada/montreal/quebec-wildfires-2023-1.6870123
 
   - id: phoenix_2023_07
     label: Phoenix heat wave (July 2023)

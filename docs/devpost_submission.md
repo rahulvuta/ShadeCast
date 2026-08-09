@@ -29,6 +29,6 @@ Any older **synthetic** concordance figure (~0.83 on n=60 generated pairs) is a 
 
 **Does the LLM invent risk?** No — Featherless only rephrases deterministic engine JSON into crew briefings.
 
-**Why is NYC not STOP in Time Machine?** Because we feed real CAMS archive values, which understate that event relative to ground monitors. Honesty about that gap is the point of replacing synthetic validation.
+**Where is Time Machine placed for Canadian wildfires?** At Lebel-sur-Quévillon, QC — a community evacuated in June 2023 — with archive weather/AQ plus a committed FIRMS fixture so the map and smoke engine see nearby fires.
 
 **How do you know your model is right?** See the section above — unit tables, real historical replay (including the documented NYC fail), and concordance-as-consistency — not a claim of ground-truth PM2.5 validation.

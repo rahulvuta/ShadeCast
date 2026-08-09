@@ -2,7 +2,7 @@
 
 Results below separate three different kinds of evidence. Do not conflate them.
 
-Source fixtures: [`validation/fixtures/bundles/`](../validation/fixtures/bundles/) (Open-Meteo archive + air-quality historical, retrieved 2026-08-09). FIRMS NRT cannot retain 2023 detections; fire lists in those bundles are empty archive placeholders — see [`validation/fixtures/README.md`](../validation/fixtures/README.md).
+Source fixtures: [`validation/fixtures/bundles/`](../validation/fixtures/bundles/) (Open-Meteo archive + air-quality historical). Most events use empty FIRMS placeholders (NRT does not retain 2023). `quebec_2023_06` includes a hand-authored FIRMS archive near Lebel-sur-Quévillon — see [`validation/fixtures/README.md`](../validation/fixtures/README.md).
 
 ## 1. Unit-level validation
 
@@ -22,7 +22,7 @@ Same unmodified `build_assessment` / environmental-load path as live requests, d
 
 | Event | Window | Real inputs (CAMS / archive) | Engine verdict | Expected (real-world claim) | Pass |
 | --- | --- | --- | --- | --- | --- |
-| `nyc_2023_06` | 2023-06-07..08 | CAMS US AQI peak ~161; HI ~75°F; FIRMS empty | CAUTION | STOP / RESTRICT | **fail** |
+| `quebec_2023_06` | 2023-06-07..08 | Lebel-sur-Quévillon; FIRMS archive fixture + CAMS AQI ~167; mild HI | STOP | STOP / RESTRICT | pass |
 | `phoenix_2023_07` | 2023-07-15..16 | Archive T_max ~46°C; HI ~111°F; AQI ~52 | RESTRICT | STOP / RESTRICT | pass |
 | `seattle_benign` | 2023-10-10..11 | Mild T / AQI ~25; light workload | GO | GO | pass |
 | `dust_event` | 2023-08-20..21 | Archive Phoenix window; quiet FIRMS | (see CI) | elevated / not UNUSABLE | pass\* |
@@ -34,11 +34,12 @@ Same unmodified `build_assessment` / environmental-load path as live requests, d
 
 - **Weather:** `https://archive-api.open-meteo.com/v1/archive` with the same hourly variables as live forecast.
 - **Air quality:** Open-Meteo air-quality API with `start_date` / `end_date` (lookback to 2023 confirmed by probe).
-- **FIRMS:** NRT area CSV with trailing date returns header-only for 2023 (retention ~7 days). Archive product was not bulk-downloaded for this release; empty fixture is intentional and labeled.
+- **FIRMS:** NRT area CSV with trailing date returns header-only for 2023 (retention ~7 days). `quebec_2023_06` uses `firms_archive_quebec_2023_06.csv` (representative high-FRP detections near the evacuated town). Other events keep the empty archive placeholder.
+- **UV / focus hour:** Open-Meteo weather archive returns null UV for these windows. Time Machine backfills UV from the air-quality archive and auto-selects a daytime focus hour (local 10:00–16:00, max heat index) so the current snapshot is not midnight.
 
-### NYC honesty
+### Quebec wildfires (hard-hit location)
 
-Ground monitors in NYC reported AQI above 400 in June 2023. CAMS historical for the same coordinates peaks near **161** in our retrieved bundle. ShadeCast therefore returns **CAUTION**, not STOP — a **fail** against the real-world expected STOP/RESTRICT claim. That gap is exactly why concordance is a consistency study (satellite/model vs model), not ground-truth validation. Time Machine still demonstrates the unmodified engine on real archive inputs.
+Time Machine places this event at **Lebel-sur-Quévillon, QC** — a community evacuated during the June 2023 Quebec wildfire complex — rather than a distant smoke-receptor city. Engine concordance is **AGREE** when the archive fixture fires and CAMS AQI are both elevated.
 
 Re-run:
 

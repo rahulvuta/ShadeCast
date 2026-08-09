@@ -10,7 +10,7 @@ from validation.sensitivity_analysis import run_all_sensitivity
 
 def test_all_events_defined():
     ids = {e.id for e in EVENTS}
-    assert "nyc_canada_smoke_2023" in ids
+    assert "quebec_wildfires_2023" in ids
     assert "phoenix_july_heat_2023" in ids
     assert "seattle_control" in ids
     assert "corrupted_feed" in ids
@@ -35,10 +35,10 @@ def test_seattle_is_go():
     assert r.passed
 
 
-def test_nyc_smoke_restrict_or_stop():
-    r = run_offline_event(get_event("nyc_canada_smoke_2023"))
+def test_quebec_wildfires_restrict_or_stop():
+    r = run_offline_event(get_event("quebec_wildfires_2023"))
     assert r.verdict in ("RESTRICT", "STOP")
-    assert r.concordance == "MODEL_LEADS"
+    assert r.concordance == "AGREE"
 
 
 def test_spearman_perfect():

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
@@ -53,6 +54,7 @@ from api.schemas import (
     DriverOut,
     WaterfallStepOut,
     EnvironmentalLoadOut,
+    FirePoint,
     HistoricalEventMeta,
     HourlyAssessment,
     IntegrityFindingOut,
@@ -124,6 +126,38 @@ def _label_for(lat: float, lon: float) -> str | None:
         if abs(loc["lat"] - lat) < 0.05 and abs(loc["lon"] - lon) < 0.05:
             return loc["label"]
     return None
+
+
+def _uv_for_hour(
+    forecast_row: object,
+    aq_row: object | None,
+) -> tuple[float | None, float | None]:
+    """Prefer weather UV; fall back to AQ UV (archive weather often has null UV)."""
+    uv = getattr(forecast_row, "uv_index", None)
+    cs = getattr(forecast_row, "uv_index_clear_sky", None)
+    if uv is None and aq_row is not None:
+        uv = getattr(aq_row, "uv_index", None)
+    if cs is None and aq_row is not None:
+        cs = getattr(aq_row, "uv_index_clear_sky", None)
+    return uv, cs
+
+
+@dataclass(frozen=True)
+class _UvHourView:
+    valid_at: datetime
+    uv_index: float | None
+    uv_index_clear_sky: float | None = None
+
+
+def _uv_hours_for_assess(
+    rows: list,
+    aq_for,
+) -> list[_UvHourView]:
+    out: list[_UvHourView] = []
+    for r in rows:
+        uv, cs = _uv_for_hour(r, aq_for(r.valid_at))
+        out.append(_UvHourView(valid_at=r.valid_at, uv_index=uv, uv_index_clear_sky=cs))
+    return out
 
 
 def _fires_near(session: Session, lat: float, lon: float, deg: float | None = None) -> list[FireDetection]:
@@ -452,6 +486,18 @@ def build_assessment(
         forecast_fetched = hist_injection.fetched_at
         aq_rows = hist_injection.aq_rows
         aq_fetched = hist_injection.fetched_at
+        fire_points_out = [
+            FirePoint(
+                latitude=f.latitude,
+                longitude=f.longitude,
+                frp=f.frp,
+                acq_date=f.acq_date.isoformat(),
+                acq_time=f.acq_time,
+                satellite=f.satellite,
+                confidence=f.confidence,
+            )
+            for f in hist_injection.fire_rows
+        ]
     else:
         fires = _fires_near(session, lat, lon)
         fire_inputs = [
@@ -459,6 +505,18 @@ def build_assessment(
             for f in fires
         ]
         fire_fetched = max((f.fetched_at for f in fires), default=None)
+        fire_points_out = [
+            FirePoint(
+                latitude=f.latitude,
+                longitude=f.longitude,
+                frp=f.frp,
+                acq_date=f.acq_date.isoformat(),
+                acq_time=f.acq_time,
+                satellite=f.satellite,
+                confidence=f.confidence,
+            )
+            for f in fires
+        ]
 
         forecast_rows = []
         forecast_fetched = None
@@ -632,8 +690,9 @@ def build_assessment(
             sensitivity_profile=sensitivity_profile,
         )
 
-    uv_today = assess_uv(today_rows, skin_type=3)
+    uv_today = assess_uv(_uv_hours_for_assess(today_rows, _aq_for), skin_type=3)
     cur_aq = _aq_for(current_row.valid_at)
+    cur_uv, _cur_uv_cs = _uv_for_hour(current_row, cur_aq)
 
     # Guard: do not feed physically impossible RH/PM/AQI into the engine.
     rh_raw = current_row.relative_humidity
@@ -684,7 +743,11 @@ def build_assessment(
     hourly_out: list[HourlyAssessment] = []
     for day in day_keys:
         rows = by_day[day]
-        day_uv = uv_today if day == today else assess_uv(rows, skin_type=3)
+        day_uv = (
+            uv_today
+            if day == today
+            else assess_uv(_uv_hours_for_assess(rows, _aq_for), skin_type=3)
+        )
         day_pairs: list[tuple[int, Verdict]] = []
         for r in rows:
             if r.temperature_c is None or r.relative_humidity is None:
@@ -709,6 +772,7 @@ def build_assessment(
                 wind_speed_kmh=r.wind_speed_kmh,
             )
             aq = _aq_for(r.valid_at)
+            hour_uv, _hour_cs = _uv_for_hour(r, aq)
             aq_u = aq.us_aqi if aq and aq.us_aqi is not None and 0.0 <= aq.us_aqi <= 500.0 else None
             aq_pm = aq.pm2_5 if aq and aq.pm2_5 is not None and 0.0 <= aq.pm2_5 <= 1000.0 else None
             air_h = assess_air(
@@ -737,7 +801,7 @@ def build_assessment(
                     heat_index_f=heat.heat_index_f,
                     heat_band=heat.effective_band.value,
                     smoke_pressure=hour_smoke.smoke_pressure,
-                    uv_index=r.uv_index,
+                    uv_index=hour_uv,
                     us_aqi=aq_u,
                     wind_direction_deg=r.wind_direction_deg,
                     wind_speed_kmh=r.wind_speed_kmh,
@@ -845,7 +909,7 @@ def build_assessment(
             wind_speed_kmh=current_row.wind_speed_kmh,
             wind_direction_deg=current_row.wind_direction_deg,
             wind_gusts_kmh=current_row.wind_gusts_kmh,
-            uv_index=current_row.uv_index,
+            uv_index=cur_uv,
             us_aqi=air_now.us_aqi,
             pm2_5=air_now.pm2_5,
             verdict=adj_current,
@@ -980,6 +1044,7 @@ def build_assessment(
             if hist_injection is not None
             else None
         ),
+        fires=fire_points_out,
     )
 
     if hist_injection is not None:

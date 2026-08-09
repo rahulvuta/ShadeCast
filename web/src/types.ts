@@ -188,6 +188,8 @@ export interface AssessResponse {
     actual?: string | null
     expected: string[]
   } | null
+  /** FIRMS detections used by the engine (historical bundles include these for the map). */
+  fires?: FirePoint[]
 }
 
 export interface BriefResponse {

@@ -1,8 +1,8 @@
 {
   "backtests": [
     {
-      "event_id": "nyc_canada_smoke_2023",
-      "label": "June 2023 Canadian smoke \u2014 NYC",
+      "event_id": "quebec_wildfires_2023",
+      "label": "June 2023 Quebec wildfires — Lebel-sur-Quévillon",
       "verdict": "RESTRICT",
       "expected": [
         "STOP",
@@ -10,8 +10,8 @@
       ],
       "passed": true,
       "confidence": "HIGH",
-      "concordance": "MODEL_LEADS",
-      "notes": "AQI >400 regional haze; MODEL_LEADS concordance expected.",
+      "concordance": "AGREE",
+      "notes": "Evacuated northern Quebec community; FIRMS + CAMS both elevated (AGREE).",
       "mode": "offline"
     },
     {

@@ -231,7 +231,9 @@ export default function App() {
 
         let nextFires: FirePoint[] = []
         let nextFiresError: string | null = null
-        if (!a.is_historical) {
+        if (a.is_historical) {
+          nextFires = a.fires ?? []
+        } else {
           try {
             const f = await fetchFires(lat, lon, MAP_FIRE_FETCH_RADIUS_KM)
             nextFires = f.fires
@@ -329,7 +331,9 @@ export default function App() {
 
         let nextFires: FirePoint[] = []
         let nextFiresError: string | null = null
-        if (!a.is_historical) {
+        if (a.is_historical) {
+          nextFires = a.fires ?? []
+        } else {
           try {
             const f = await fetchFires(lat, lon, MAP_FIRE_FETCH_RADIUS_KM)
             nextFires = f.fires

@@ -34,7 +34,7 @@ def test_parse_historical_aq_sample():
 def test_registry_has_five_seed_events():
     ids = {e.id for e in load_events()}
     assert ids >= {
-        "nyc_2023_06",
+        "quebec_2023_06",
         "phoenix_2023_07",
         "seattle_benign",
         "dust_event",
@@ -79,16 +79,61 @@ def test_phoenix_and_seattle_match_expected():
         )
 
 
-def test_nyc_documents_cams_understate():
-    """Honest fail: CAMS archive peak ~161 → CAUTION, not STOP."""
+def test_quebec_wildfires_match_expected_with_fires():
+    """Lebel-sur-Quévillon June 2023 — archive weather/AQ + FIRMS archive fixture."""
     db = MagicMock()
-    r = build_assessment(db, 0, 0, event_id="nyc_2023_06")
+    r = build_assessment(db, 0, 0, event_id="quebec_2023_06")
     assert r.is_historical
-    assert r.current.verdict in ("GO", "CAUTION", "RESTRICT", "STOP")
-    # Documented gap vs real-world STOP claim
+    assert r.historical_event is not None
+    assert abs(r.lat - 49.05) < 0.01
+    assert abs(r.lon - (-76.98)) < 0.01
+    assert len(r.fires) >= 5
+    assert r.smoke.smoke_pressure > 10.0
     assert r.actual_vs_expected is not None
-    if r.current.verdict not in ("STOP", "RESTRICT"):
-        assert r.actual_vs_expected.status == "fail"
+    assert r.actual_vs_expected.status == "pass"
+    assert r.current.verdict in ("STOP", "RESTRICT")
+    conc = r.air.concordance if r.air else None
+    assert conc == "AGREE"
+    # AQ UV backfill + daytime focus (weather archive UV is null)
+    assert r.current.uv_index is not None and r.current.uv_index > 0
+    assert r.uv is not None and r.uv.daily_max >= 2.0
+    inj = prepare_historical("quebec_2023_06")
+    assert 10 <= inj.focus_time.hour <= 16
+
+
+def test_phoenix_daytime_focus_and_uv_from_aq():
+    """Time Machine focuses 10–16 local and surfaces AQ UV (weather archive UV is null)."""
+    from api.services.historical_bundle import DAYTIME_HOURS, prepare_historical
+
+    inj = prepare_historical("phoenix_2023_07")
+    assert inj.focus_time.hour in DAYTIME_HOURS
+    assert 10 <= inj.focus_time.hour <= 16
+
+    db = MagicMock()
+    r = build_assessment(db, 0, 0, event_id="phoenix_2023_07")
+    assert r.is_historical
+    assert r.current.uv_index is not None
+    assert r.current.uv_index >= 3.0
+    assert r.uv is not None and r.uv.daily_max >= 3.0
+    # Full-day hourly series still present with UV filled from AQ where needed
+    assert len(r.hourly) >= 20
+    daytime_uv = [
+        h.uv_index
+        for h in r.hourly
+        if h.valid_at is not None and 10 <= h.valid_at.hour <= 16 and h.uv_index is not None
+    ]
+    assert daytime_uv
+    assert max(daytime_uv) >= 3.0
+
+
+def test_prepare_historical_daytime_for_all_events():
+    from api.services.historical_bundle import DAYTIME_HOURS, prepare_historical
+
+    for e in load_events():
+        inj = prepare_historical(e.id)
+        assert inj.focus_time.hour in DAYTIME_HOURS, (
+            f"{e.id}: focus hour {inj.focus_time.hour} not in daytime window"
+        )
 
 
 def test_hot_but_clean_smoke_not_elevated():
@@ -101,10 +146,9 @@ def test_real_concordance_spearman_from_bundles():
     """Spearman on real bundle hours — publish whatever number we get."""
     xs: list[float] = []
     ys: list[float] = []
-    db = MagicMock()
     for e in load_events():
-        inj = prepare_historical(e.id, hour_offset=e.default_hour_offset)
-        # Pair each forecast hour's smoke (empty FIRMS → 0) with AQ us_aqi
+        inj = prepare_historical(e.id)
+        # Pair each forecast hour's smoke with AQ us_aqi
         from api.engine.smoke import assess_smoke
 
         for i, fr in enumerate(inj.forecast_rows):

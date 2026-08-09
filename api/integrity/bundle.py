@@ -38,8 +38,13 @@ def build_hourly_inputs(
                 relative_humidity=r.relative_humidity,
                 wind_speed_kmh=r.wind_speed_kmh,
                 wind_gusts_kmh=r.wind_gusts_kmh,
-                uv_index=r.uv_index,
-                uv_index_clear_sky=r.uv_index_clear_sky,
+                # Weather archive often has null UV; fall back to AQ UV (diurnal).
+                uv_index=r.uv_index if r.uv_index is not None else (aq.uv_index if aq else None),
+                uv_index_clear_sky=(
+                    r.uv_index_clear_sky
+                    if r.uv_index_clear_sky is not None
+                    else (aq.uv_index_clear_sky if aq else None)
+                ),
                 apparent_temperature_c=r.apparent_temperature_c,
                 heat_index_f=hi,
                 temp_f=tf,

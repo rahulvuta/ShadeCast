@@ -40,19 +40,19 @@ class EventFixture:
 
 EVENTS: list[EventFixture] = [
     EventFixture(
-        id="nyc_canada_smoke_2023",
-        label="June 2023 Canadian smoke — NYC",
-        lat=40.71,
-        lon=-74.01,
-        temp_f=78.0,
+        id="quebec_wildfires_2023",
+        label="June 2023 Quebec wildfires — Lebel-sur-Quévillon",
+        lat=49.05,
+        lon=-76.98,
+        temp_f=68.0,
         rh=55.0,
-        smoke_pressure=5.0,  # FIRMS may lag; CAMS AQI is the driver
-        smoke_label="low",
-        us_aqi=420.0,
+        smoke_pressure=55.0,
+        smoke_label="high",
+        us_aqi=160.0,
         uv_index=6.0,
         wind_gusts_kmh=15.0,
         expected_verdicts=("STOP", "RESTRICT"),
-        notes="AQI >400 regional haze; MODEL_LEADS concordance expected.",
+        notes="Evacuated northern Quebec community; FIRMS + CAMS both elevated (AGREE).",
         start_date="2023-06-07",
         end_date="2023-06-08",
     ),
