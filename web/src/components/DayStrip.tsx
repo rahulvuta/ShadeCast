@@ -26,10 +26,10 @@ function formatWindow(w: ShiftWindow): { dayLabel: string; timeRange: string } {
 
 function daypartFromHour(hour: number): string {
   const h = hour % 24
-  if (h < 6) return 'overnight'
-  if (h < 12) return 'morning'
-  if (h < 18) return 'afternoon'
-  return 'evening'
+  if (h >= 6 && h <= 11) return 'morning'
+  if (h >= 12 && h <= 15) return 'afternoon'
+  if (h >= 16 && h <= 20) return 'evening'
+  return 'overnight'
 }
 
 const DAYPART_LABEL: Record<string, string> = {

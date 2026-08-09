@@ -98,15 +98,19 @@ class MultiDaySchedule:
 
 
 def _daypart_for_hour(hour: int) -> str:
-    """Bucket a local start hour into a daypart for shift variety."""
+    """Bucket a local start hour into a realistic daypart for shift variety.
+
+    morning 6–11, afternoon 12–15 (noon–3pm), evening 16–20 (4–8pm),
+    overnight 21–5 (9pm–5am).
+    """
     h = hour % 24
-    if h < 6:
-        return "overnight"
-    if h < 12:
+    if 6 <= h <= 11:
         return "morning"
-    if h < 18:
+    if 12 <= h <= 15:
         return "afternoon"
-    return "evening"
+    if 16 <= h <= 20:
+        return "evening"
+    return "overnight"
 
 
 def _fmt_window(hours: Sequence[int]) -> str | None:

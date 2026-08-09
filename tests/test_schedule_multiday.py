@@ -36,12 +36,15 @@ def test_multiday_five_day_horizon():
 def test_daypart_for_hour_buckets():
     assert _daypart_for_hour(0) == "overnight"
     assert _daypart_for_hour(5) == "overnight"
+    assert _daypart_for_hour(21) == "overnight"
+    assert _daypart_for_hour(23) == "overnight"
     assert _daypart_for_hour(6) == "morning"
     assert _daypart_for_hour(11) == "morning"
     assert _daypart_for_hour(12) == "afternoon"
-    assert _daypart_for_hour(17) == "afternoon"
-    assert _daypart_for_hour(18) == "evening"
-    assert _daypart_for_hour(23) == "evening"
+    assert _daypart_for_hour(15) == "afternoon"
+    assert _daypart_for_hour(16) == "evening"
+    assert _daypart_for_hour(17) == "evening"
+    assert _daypart_for_hour(20) == "evening"
 
 
 def test_shift_planner_ranks_best_window():
