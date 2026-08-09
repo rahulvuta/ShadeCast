@@ -7,7 +7,8 @@ MODERATE — verdict shown with a visible caveat banner naming the concern.
 LOW      — verdict shown, escalated one level more conservative, with a
            prominent warning. Escalating rather than refusing is the
            safety-correct choice: a cautious wrong call is better than a
-           confident under-call when inputs are degraded.
+           confident under-call when inputs are degraded. LOW requires at
+           least one ERROR finding; WARNING-only stacks stay MODERATE.
 UNUSABLE — no verdict. Show what's broken, when data was last good, and
            the cached prior assessment with its timestamp.
 
@@ -113,14 +114,14 @@ def _level_from(findings: list[IntegrityFinding], score: int) -> ConfidenceLevel
 
     Rules (any match wins the worse tier):
     - Any CRITICAL → UNUSABLE
-    - Any ERROR, or score < 50 → LOW
+    - Any ERROR → LOW (WARNING-only stacks never force LOW via score)
     - Any WARNING, or score < 80 → MODERATE
     - else HIGH
     """
     sevs = {f.severity for f in findings}
     if Severity.CRITICAL in sevs:
         return ConfidenceLevel.UNUSABLE
-    if Severity.ERROR in sevs or score < 50:
+    if Severity.ERROR in sevs:
         return ConfidenceLevel.LOW
     if Severity.WARNING in sevs or score < 80:
         return ConfidenceLevel.MODERATE

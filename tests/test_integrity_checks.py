@@ -179,7 +179,48 @@ def test_staleness_missing_forecast():
         climatology_fetched_at=now - timedelta(days=1),
         now=now,
     )
-    assert any(f.check_id == "stale_forecast" for f in findings)
+    assert any(
+        f.check_id == "stale_forecast" and f.severity == Severity.ERROR for f in findings
+    )
+
+
+def test_staleness_forecast_mild_vs_severe():
+    now = datetime(2024, 7, 1, 12, tzinfo=timezone.utc)
+    mild = check_staleness(
+        firms_fetched_at=now - timedelta(hours=1),
+        forecast_fetched_at=now - timedelta(hours=4),
+        air_quality_fetched_at=now - timedelta(hours=1),
+        climatology_fetched_at=now - timedelta(days=1),
+        now=now,
+    )
+    assert any(
+        f.check_id == "stale_forecast" and f.severity == Severity.WARNING for f in mild
+    )
+    assert not any(f.severity == Severity.ERROR and "forecast" in f.check_id for f in mild)
+
+    severe = check_staleness(
+        firms_fetched_at=now - timedelta(hours=1),
+        forecast_fetched_at=now - timedelta(hours=13),
+        air_quality_fetched_at=now - timedelta(hours=1),
+        climatology_fetched_at=now - timedelta(days=1),
+        now=now,
+    )
+    assert any(
+        f.check_id == "stale_forecast_severe" and f.severity == Severity.ERROR
+        for f in severe
+    )
+
+
+def test_temp_vs_climatology_current_hour_only():
+    """Night extremes vs a daytime POWER baseline must not spam findings."""
+    now = datetime(2024, 7, 1, 12, tzinfo=timezone.utc)
+    hours = [
+        _h(valid_at=now - timedelta(hours=12), temperature_c=5.0),  # night, far from clim
+        _h(valid_at=now, temperature_c=34.0),  # current, within ±15 of 33
+        _h(valid_at=now + timedelta(hours=6), temperature_c=55.0),  # afternoon spike
+    ]
+    findings = check_temp_vs_climatology(hours, 33.0, now=now)
+    assert findings == []
 
 
 def test_clean_bundle_has_no_errors():

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -25,7 +25,12 @@ from api.engine.smoke import FireDetectionInput, assess_smoke
 from api.engine.uv import assess_uv
 from api.freshness import SOURCES, build_freshness
 from api.integrity.bundle import make_bundle
-from api.integrity.checks import HourlyInputs, IntegrityBundle, run_all_checks
+from api.integrity.checks import (
+    STALE_AIR_QUALITY,
+    HourlyInputs,
+    IntegrityBundle,
+    run_all_checks,
+)
 from api.integrity.confidence import aggregate
 from api.integrity.types import ConfidenceLevel
 from api.llm.integrity_narration import findings_summary, narrate_findings
@@ -215,6 +220,23 @@ def _load_assessment_cache(
     data = AssessResponse.model_validate_json(row.payload_json)
     data.served_from_cache = True
     return data, row.fetched_at
+
+
+def _aware_dt(dt: datetime | None) -> datetime | None:
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def _is_fetched_stale(fetched_at: datetime | None, tol: timedelta) -> bool:
+    """True when missing or older than tol (aligned with integrity STALE_*)."""
+    if fetched_at is None:
+        return True
+    fa = _aware_dt(fetched_at)
+    assert fa is not None
+    return (datetime.now(timezone.utc) - fa) > tol
 
 
 def _aq_rows_from_db(
@@ -472,7 +494,8 @@ def build_assessment(
         )
 
     aq_rows, aq_fetched = _aq_rows_from_db(session, lat, lon)
-    if allow_network and not settings.demo_mode and not aq_rows:
+    aq_needs_refresh = not aq_rows or _is_fetched_stale(aq_fetched, STALE_AIR_QUALITY)
+    if allow_network and not settings.demo_mode and aq_needs_refresh:
         try:
             aq_rows = aq_client.fetch_air_quality(lat, lon)
             aq_fetched = datetime.now(timezone.utc)

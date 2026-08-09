@@ -38,6 +38,14 @@ def test_low_on_errors():
     assert result.level == ConfidenceLevel.LOW
 
 
+def test_warning_stacks_cap_at_moderate():
+    """Many WARNINGs can tank the numeric score but must not force LOW."""
+    findings = [_f(f"warn_{i}", Severity.WARNING, "x") for i in range(12)]
+    result = aggregate(findings)
+    assert result.score < 50
+    assert result.level == ConfidenceLevel.MODERATE
+
+
 def test_unusable_on_critical():
     result = aggregate([_f("power_sentinel", Severity.CRITICAL, "climatology_temp_c")])
     assert result.level == ConfidenceLevel.UNUSABLE

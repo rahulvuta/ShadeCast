@@ -67,6 +67,7 @@ TEMP_PHYSICAL_MAX_C = 60.0
 # Per-source age tolerances. CAMS air-quality updates ~daily, so 30h.
 STALE_FIRMS = timedelta(hours=6)
 STALE_FORECAST = timedelta(hours=3)
+STALE_FORECAST_SEVERE = timedelta(hours=12)  # beyond mild stale → ERROR
 STALE_AIR_QUALITY = timedelta(hours=30)
 STALE_CLIMATOLOGY = timedelta(days=14)
 
@@ -275,53 +276,61 @@ def check_temp_vs_climatology(
     margin_c: float = CLIMATOLOGY_MARGIN_C,
     error_c: float = CLIMATOLOGY_ERROR_C,
     critical_c: float = CLIMATOLOGY_CRITICAL_C,
+    *,
+    now: datetime | None = None,
 ) -> list[IntegrityFinding]:
-    """Flag temperatures far from POWER climatology mean.
+    """Flag current-hour temperature far from POWER climatology mean.
 
-    ±margin_c: WARNING. Beyond error_c: ERROR. Beyond critical_c: CRITICAL.
+    Compares only the hour nearest to ``now`` (POWER baseline is for the
+    current assess hour). ±margin_c: WARNING. Beyond error_c: ERROR.
+    Beyond critical_c: CRITICAL.
     """
     if climatology_temp_c is None:
         return []
-    out: list[IntegrityFinding] = []
-    for h in hours:
-        t = h.temperature_c
-        if t is None:
-            continue
-        beyond = abs(t - climatology_temp_c)
-        if beyond <= margin_c:
-            continue
-        if beyond > critical_c:
-            severity = Severity.CRITICAL
-            check_id = "cross_temp_power_critical"
-        elif beyond > error_c:
-            severity = Severity.ERROR
-            check_id = "cross_temp_power_large"
-        else:
-            severity = Severity.WARNING
-            check_id = "cross_temp_power"
-        out.append(
-            _finding(
-                check_id,
-                severity,
-                (
-                    f"Temperature {t}°C is outside POWER climatology "
-                    f"mean {climatology_temp_c}°C ± {margin_c}°C"
-                    + (
-                        " — physically implausible."
-                        if severity == Severity.CRITICAL
-                        else "."
-                    )
-                ),
-                "temperature_c",
-                {
-                    "temp_c": t,
-                    "climatology_c": climatology_temp_c,
-                    "delta_c": round(t - climatology_temp_c, 2),
-                },
-                f"±{margin_c}°C warn / ±{error_c}°C error / ±{critical_c}°C critical",
-            )
+    usable = [h for h in hours if h.temperature_c is not None]
+    if not usable:
+        return []
+    ref = _aware(now) or datetime.now(timezone.utc)
+    current = min(
+        usable,
+        key=lambda h: abs((_aware(h.valid_at) or ref) - ref),
+    )
+    t = current.temperature_c
+    assert t is not None
+    beyond = abs(t - climatology_temp_c)
+    if beyond <= margin_c:
+        return []
+    if beyond > critical_c:
+        severity = Severity.CRITICAL
+        check_id = "cross_temp_power_critical"
+    elif beyond > error_c:
+        severity = Severity.ERROR
+        check_id = "cross_temp_power_large"
+    else:
+        severity = Severity.WARNING
+        check_id = "cross_temp_power"
+    return [
+        _finding(
+            check_id,
+            severity,
+            (
+                f"Temperature {t}°C is outside POWER climatology "
+                f"mean {climatology_temp_c}°C ± {margin_c}°C"
+                + (
+                    " — physically implausible."
+                    if severity == Severity.CRITICAL
+                    else "."
+                )
+            ),
+            "temperature_c",
+            {
+                "temp_c": t,
+                "climatology_c": climatology_temp_c,
+                "delta_c": round(t - climatology_temp_c, 2),
+            },
+            f"±{margin_c}°C warn / ±{error_c}°C error / ±{critical_c}°C critical",
         )
-    return out
+    ]
 
 
 def check_temperature_physical_range(
@@ -812,7 +821,49 @@ def check_staleness(
         missing_severity=Severity.INFO,
         missing_check_id="firms_fetch_unknown",
     )
-    _stale("forecast", forecast_fetched_at, STALE_FORECAST, "stale_forecast", Severity.ERROR)
+    # Forecast: missing → ERROR; mild stale (3–12h) → WARNING; severe (>12h) → ERROR.
+    forecast_a = _aware(forecast_fetched_at)
+    if forecast_a is None:
+        out.append(
+            _finding(
+                "stale_forecast",
+                Severity.ERROR,
+                "forecast fetch timestamp missing.",
+                "forecast_fetched_at",
+                None,
+                f"age <= {STALE_FORECAST}",
+            )
+        )
+    else:
+        forecast_age = now - forecast_a
+        if forecast_age > STALE_FORECAST_SEVERE:
+            out.append(
+                _finding(
+                    "stale_forecast_severe",
+                    Severity.ERROR,
+                    f"forecast data is severely stale ({forecast_age} > {STALE_FORECAST_SEVERE}).",
+                    "forecast_fetched_at",
+                    {
+                        "fetched_at": forecast_a.isoformat(),
+                        "age_s": forecast_age.total_seconds(),
+                    },
+                    f"age <= {STALE_FORECAST_SEVERE}",
+                )
+            )
+        elif forecast_age > STALE_FORECAST:
+            out.append(
+                _finding(
+                    "stale_forecast",
+                    Severity.WARNING,
+                    f"forecast data is stale ({forecast_age} > {STALE_FORECAST}).",
+                    "forecast_fetched_at",
+                    {
+                        "fetched_at": forecast_a.isoformat(),
+                        "age_s": forecast_age.total_seconds(),
+                    },
+                    f"age <= {STALE_FORECAST}",
+                )
+            )
     _stale("air_quality", air_quality_fetched_at, STALE_AIR_QUALITY, "stale_air_quality")
     _stale(
         "climatology",
@@ -836,8 +887,10 @@ def run_all_checks(bundle: IntegrityBundle) -> list[IntegrityFinding]:
     findings.extend(check_pm25(hours))
     findings.extend(check_uv(hours))
     findings.extend(check_us_aqi(hours))
-    # Single climatology cross-check (cross_temp_power*) — no duplicate.
-    findings.extend(check_temp_vs_climatology(hours, bundle.climatology_temp_c))
+    # Single climatology cross-check (current hour vs POWER) — no duplicate.
+    findings.extend(
+        check_temp_vs_climatology(hours, bundle.climatology_temp_c, now=bundle.now)
+    )
     findings.extend(check_temperature_physical_range(hours, bundle.climatology_temp_c))
     findings.extend(check_power_sentinel(hours, bundle.climatology_temp_c))
     findings.extend(check_required_nulls(hours))

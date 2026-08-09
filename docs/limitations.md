@@ -56,7 +56,7 @@ The multi-day schedule and shift planner are capped at **5 days** because the Op
 
 ## 13. Integrity layer reduces — does not eliminate — input risk
 
-The data integrity layer catches range errors, cross-source disagreement, physical inconsistencies, and staleness before the engine trusts a bundle. It **reduces** the chance of confidently reporting garbage; it does **not** eliminate model error, sensor gaps, or FIRMS latency. LOW confidence escalates the verdict one level more conservative; UNUSABLE refuses a verdict and falls back to last-good cache.
+The data integrity layer catches range errors, cross-source disagreement, physical inconsistencies, and staleness before the engine trusts a bundle. It **reduces** the chance of confidently reporting garbage; it does **not** eliminate model error, sensor gaps, or FIRMS latency. LOW confidence escalates the verdict one level more conservative; UNUSABLE refuses a verdict and falls back to last-good cache. LOW requires at least one ERROR-class finding (WARNING-only stacks stay MODERATE). POWER climatology is checked against the **current hour** only. Mild forecast staleness (3–12h) is WARNING; missing or severe (>12h) forecast freshness is ERROR.
 
 Cross-derived checks use **magnitude-graduated** severity so minor, physically normal variance does not black out the assessment:
 
@@ -71,7 +71,7 @@ Cross-derived checks use **magnitude-graduated** severity so minor, physically n
 
 **Rothfusz low-RH note:** the NWS heat-index regression legitimately yields HI below air temperature in dry heat (gaps up to ~8–9°F at RH≈0%). That is a formula quirk, not corrupted data — those cases stay clean (no finding) so desert / arid locations remain usable.
 
-CRITICAL is reserved for physically impossible inputs (POWER −999 sentinels, out-of-Earth-range temperatures, extreme consistency gaps, impossible RH/PM/AQI). Small formula quirks and model rounding never refuse a verdict. Integrity findings are collapsed per `check_id` before scoring so hour-count alone cannot force LOW confidence.
+CRITICAL is reserved for physically impossible inputs (POWER −999 sentinels, out-of-Earth-range temperatures, extreme consistency gaps, impossible RH/PM/AQI). Small formula quirks and model rounding never refuse a verdict. Integrity findings are collapsed per `check_id` before scoring so hour-count alone cannot force LOW confidence. Assess live-refetches forecast every time and air quality when empty or stale; staleness findings mainly mean the refresh failed soft.
 
 ## 14. On-demand FIRMS and offline helper
 
