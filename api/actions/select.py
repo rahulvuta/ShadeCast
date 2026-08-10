@@ -90,9 +90,9 @@ def derive_triggers(
         triggers.append("high_uv")
     if wind_gusts_kmh is not None and wind_gusts_kmh > 40:
         triggers.append("high_wind")
-    if profile == "youth_athlete":
+    if profile == "athlete":
         triggers.append("youth")
-    if profile in ("asthma_respiratory", "cardiovascular", "pregnant", "over_65"):
+    if profile in ("asthma_respiratory", "cardiovascular", "children", "over_65"):
         triggers.append("sensitive")
     # Always offer at least heat hydration guidance on non-GO days
     if not triggers and verdict and verdict != "GO":

@@ -5,7 +5,7 @@
 actions:
   - id: heat_water_rest_shade
     trigger: heat
-    audience: [general, youth_athlete, pregnant, over_65, cardiovascular]
+    audience: [general, athlete, children, over_65, cardiovascular]
     priority: 10
     title: Water, rest, shade on a fixed cycle
     body: Drink cool water every 15–20 minutes, take rest breaks, and recover in shade as heat rises.
@@ -14,7 +14,7 @@ actions:
 
   - id: heat_slow_pace
     trigger: heat
-    audience: [general, youth_athlete, over_65]
+    audience: [general, athlete, over_65, children]
     priority: 20
     title: Slow the work pace
     body: Reduce manual handling speed and schedule heavier tasks for cooler morning hours.
@@ -23,7 +23,7 @@ actions:
 
   - id: heat_emergency_cool
     trigger: heat_emergency
-    audience: [general, youth_athlete, pregnant, over_65, cardiovascular, asthma_respiratory]
+    audience: [general, athlete, children, over_65, cardiovascular, asthma_respiratory]
     priority: 5
     title: Cool immediately and call for help
     body: If someone shows heat-stroke signs, call 911, move them to shade/cool area, and cool with water or ice while waiting.
@@ -32,7 +32,7 @@ actions:
 
   - id: heat_watch_symptoms
     trigger: heat
-    audience: [general, over_65, pregnant, cardiovascular]
+    audience: [general, over_65, children, cardiovascular, athlete]
     priority: 30
     title: Watch for heat-illness symptoms
     body: Stop work and cool down at the first signs of dizziness, nausea, confusion, or cessation of sweating.
@@ -41,7 +41,7 @@ actions:
 
   - id: smoke_reduce_exertion
     trigger: smoke
-    audience: [general, asthma_respiratory, cardiovascular, over_65, youth_athlete]
+    audience: [general, asthma_respiratory, cardiovascular, over_65, athlete, children]
     priority: 15
     title: Cut heavy outdoor exertion in smoke
     body: Reduce strenuous outdoor work when smoke pressure or AQI is elevated; move essential tasks indoors if possible.
@@ -59,16 +59,16 @@ actions:
 
   - id: aqi_sensitive_limit
     trigger: smoke
-    audience: [asthma_respiratory, cardiovascular, over_65, pregnant]
+    audience: [asthma_respiratory, cardiovascular, over_65, children, athlete]
     priority: 12
     title: Limit outdoor time for sensitive groups
-    body: At AQI 101–150 (Unhealthy for Sensitive Groups), people with lung or heart disease, older adults, and children should reduce prolonged outdoor exertion.
+    body: At AQI 101–150 (Unhealthy for Sensitive Groups), people with lung or heart disease, older adults, children, and people active outdoors should reduce prolonged outdoor exertion.
     source_url: https://www.airnow.gov/aqi/aqi-basics/
     source_name: EPA AirNow AQI Basics
 
   - id: uv_spf30
     trigger: high_uv
-    audience: [general, youth_athlete, pregnant]
+    audience: [general, athlete, children]
     priority: 18
     title: Apply SPF 30+ sunscreen
     body: Use broad-spectrum SPF 30+ 15 minutes before going out; reapply every 2 hours and after heavy sweating.
@@ -77,7 +77,7 @@ actions:
 
   - id: uv_shade_midday
     trigger: high_uv
-    audience: [general, youth_athlete]
+    audience: [general, athlete, children]
     priority: 22
     title: Seek shade 10am–4pm
     body: Limit unprotected skin exposure during peak UV hours; use shade, long sleeves, and a wide-brim hat.
@@ -93,14 +93,14 @@ actions:
     source_url: https://www.osha.gov/fall-protection
     source_name: OSHA Fall Protection
 
-  - id: youth_acclimatize
+  - id: athlete_acclimatize
     trigger: youth
-    audience: [youth_athlete]
+    audience: [athlete]
     priority: 16
-    title: Follow youth heat-acclimatization steps
-    body: Progress outdoor training intensity over 7–14 days; never skip rest/hydration rules for young athletes.
-    source_url: https://www.nata.org/sites/default/files/heat-acclimatization-guidelines.pdf
-    source_name: NATA Heat Acclimatization Guidelines
+    title: Follow heat-acclimatization steps
+    body: Progress outdoor training intensity over 7–14 days; never skip rest/hydration rules for athletes under heat stress.
+    source_url: https://pmc.ncbi.nlm.nih.gov/articles/PMC4639891/
+    source_name: NATA Exertional Heat Illnesses Position Statement
 
   - id: over65_extra_breaks
     trigger: sensitive
@@ -111,11 +111,11 @@ actions:
     source_url: https://www.cdc.gov/extreme-heat/risk-factors/extreme-heat-and-older-adults.html
     source_name: CDC Extreme Heat and Older Adults
 
-  - id: pregnant_heat_caution
+  - id: children_heat_caution
     trigger: sensitive
-    audience: [pregnant]
+    audience: [children]
     priority: 14
-    title: Extra heat caution in pregnancy
-    body: Pregnant workers should avoid prolonged heat exposure, hydrate early, and move to a cool area at the first symptom of overheating.
-    source_url: https://www.acog.org/womens-health/faqs/extreme-heat
-    source_name: ACOG Extreme Heat
+    title: Extra heat and air-quality caution for children
+    body: Keep children hydrated and cool on hot days; limit prolonged or heavy outdoor play when AQI is unhealthy for sensitive groups.
+    source_url: https://www.cdc.gov/heat-health/risk-factors/infants-and-children.html
+    source_name: CDC Infants and Children and Heat

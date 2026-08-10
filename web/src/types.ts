@@ -6,8 +6,8 @@ export type SensitivityProfile =
   | 'general'
   | 'asthma_respiratory'
   | 'cardiovascular'
-  | 'pregnant'
-  | 'youth_athlete'
+  | 'children'
+  | 'athlete'
   | 'over_65'
 
 export interface Driver {
@@ -226,10 +226,10 @@ export const CORRUPT_DEMO = {
 } as const
 
 export const SENSITIVITY_PROFILES: Array<{ key: SensitivityProfile; label: string }> = [
-  { key: 'general', label: 'General outdoor worker' },
-  { key: 'asthma_respiratory', label: 'Asthma / respiratory' },
-  { key: 'cardiovascular', label: 'Cardiovascular' },
-  { key: 'pregnant', label: 'Pregnant' },
-  { key: 'youth_athlete', label: 'Youth athlete' },
+  { key: 'general', label: 'Regular' },
+  { key: 'asthma_respiratory', label: 'Respiratory weakness' },
+  { key: 'cardiovascular', label: 'Cardiovascular weakness' },
+  { key: 'children', label: 'Children' },
+  { key: 'athlete', label: 'Athlete' },
   { key: 'over_65', label: 'Age 65+' },
 ]

@@ -48,7 +48,7 @@ Minutes-to-burn uses representative Fitzpatrick Minimal Erythemal Dose (MED) val
 
 ## 11. Sensitivity profiles are threshold shifts, not diagnoses
 
-Profiles (`asthma_respiratory`, `cardiovascular`, `pregnant`, `youth_athlete`, `over_65`) shift heat and/or AQI bands using published public-health guidance (EPA AirNow sensitive groups, ACOG extreme heat, NATA youth heat-acclimatization, AHA/CDC older-adult heat guidance). They do **not** diagnose individuals or replace medical advice.
+Profiles (`asthma_respiratory`, `cardiovascular`, `children`, `athlete`, `over_65`) shift heat and/or AQI bands using published public-health guidance (EPA AirNow sensitive groups, CDC infants/children heat, NATA exertional heat illness for athletes, EPA active-outdoors AQI guidance, AHA/CDC older-adult heat guidance). They do **not** diagnose individuals or replace medical advice.
 
 ## 12. Five-day horizon is bounded by air quality
 

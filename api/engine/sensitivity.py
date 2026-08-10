@@ -8,14 +8,15 @@ Profiles:
   general            — no shift (baseline outdoor worker)
   asthma_respiratory — treat AQI Unhealthy-Sensitive (101–150) as Unhealthy
   cardiovascular     — same AQI sensitive treatment + slight heat caution
-  pregnant           — heat band +1 (ACOG heat-in-pregnancy caution)
-  youth_athlete      — heat band +1 (NATA/NFHS heat-acclimatization)
+  children           — heat band +1 and AQI sensitive treatment (CDC/EPA)
+  athlete            — heat band +1 and AQI sensitive treatment (NATA/EPA)
   over_65            — heat band +1 and AQI sensitive treatment (CDC older adults)
 
 Sources:
   EPA AQI sensitive groups: https://www.airnow.gov/aqi/aqi-basics/
-  ACOG heat / pregnancy: https://www.acog.org/womens-health/faqs/extreme-heat
-  NATA/NFHS youth heat: https://www.nata.org/sites/default/files/heat-acclimatization-guidelines.pdf
+  EPA ozone / active outdoors: https://www.airnow.gov/sites/default/files/2020-02/ozone-c.pdf
+  CDC infants and children heat: https://www.cdc.gov/heat-health/risk-factors/infants-and-children.html
+  NATA exertional heat illness: https://pmc.ncbi.nlm.nih.gov/articles/PMC4639891/
   AHA cardiovascular heat: https://www.heart.org/en/news/2022/06/15/extreme-heat-can-be-dangerous-for-heart-patients
   CDC older adults heat: https://www.cdc.gov/extreme-heat/risk-factors/extreme-heat-and-older-adults.html
 """
@@ -32,8 +33,8 @@ SensitivityProfile = Literal[
     "general",
     "asthma_respiratory",
     "cardiovascular",
-    "pregnant",
-    "youth_athlete",
+    "children",
+    "athlete",
     "over_65",
 ]
 
@@ -68,7 +69,7 @@ class ProfileSpec:
 PROFILES: dict[SensitivityProfile, ProfileSpec] = {
     "general": ProfileSpec(
         key="general",
-        label="General outdoor worker",
+        label="Regular",
         heat_shift=0,
         aqi_sensitive_as_unhealthy=False,
         source_url="https://www.osha.gov/heat-exposure",
@@ -76,7 +77,7 @@ PROFILES: dict[SensitivityProfile, ProfileSpec] = {
     ),
     "asthma_respiratory": ProfileSpec(
         key="asthma_respiratory",
-        label="Asthma / respiratory sensitivity",
+        label="Respiratory weakness",
         heat_shift=0,
         aqi_sensitive_as_unhealthy=True,
         source_url="https://www.airnow.gov/aqi/aqi-basics/",
@@ -84,27 +85,33 @@ PROFILES: dict[SensitivityProfile, ProfileSpec] = {
     ),
     "cardiovascular": ProfileSpec(
         key="cardiovascular",
-        label="Cardiovascular sensitivity",
+        label="Cardiovascular weakness",
         heat_shift=1,
         aqi_sensitive_as_unhealthy=True,
         source_url="https://www.heart.org/en/news/2022/06/15/extreme-heat-can-be-dangerous-for-heart-patients",
         source_note="AHA: extreme heat raises cardiovascular strain; EPA sensitive-group AQI applies.",
     ),
-    "pregnant": ProfileSpec(
-        key="pregnant",
-        label="Pregnant",
+    "children": ProfileSpec(
+        key="children",
+        label="Children",
         heat_shift=1,
-        aqi_sensitive_as_unhealthy=False,
-        source_url="https://www.acog.org/womens-health/faqs/extreme-heat",
-        source_note="ACOG: pregnant people are more vulnerable to heat-related illness.",
+        aqi_sensitive_as_unhealthy=True,
+        source_url="https://www.cdc.gov/heat-health/risk-factors/infants-and-children.html",
+        source_note=(
+            "CDC: infants and children need extra heat protection; EPA lists children/teens "
+            "as an AQI sensitive group (developing lungs, higher ventilation per body weight)."
+        ),
     ),
-    "youth_athlete": ProfileSpec(
-        key="youth_athlete",
-        label="Youth athlete",
+    "athlete": ProfileSpec(
+        key="athlete",
+        label="Athlete",
         heat_shift=1,
-        aqi_sensitive_as_unhealthy=False,
-        source_url="https://www.nata.org/sites/default/files/heat-acclimatization-guidelines.pdf",
-        source_note="NATA/NFHS heat-acclimatization guidelines for young athletes.",
+        aqi_sensitive_as_unhealthy=True,
+        source_url="https://pmc.ncbi.nlm.nih.gov/articles/PMC4639891/",
+        source_note=(
+            "NATA: exertional heat illness risk for athletes of all ages under vigorous outdoor "
+            "exertion; EPA lists people active outdoors as an AQI sensitive group."
+        ),
     ),
     "over_65": ProfileSpec(
         key="over_65",

@@ -34,7 +34,7 @@ def assess(
     acclimatized: bool = False,
     profile: str = Query(
         "general",
-        pattern="^(general|asthma_respiratory|cardiovascular|pregnant|youth_athlete|over_65)$",
+        pattern="^(general|asthma_respiratory|cardiovascular|children|athlete|over_65)$",
     ),
     required_hours: float = Query(4.0, ge=1.0, le=12.0),
     corrupt: bool = Query(False, description="Inject a corrupted feed for integrity demos"),

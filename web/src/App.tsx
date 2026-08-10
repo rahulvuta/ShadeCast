@@ -46,8 +46,8 @@ const PROFILES: SensitivityProfile[] = [
   'general',
   'asthma_respiratory',
   'cardiovascular',
-  'pregnant',
-  'youth_athlete',
+  'children',
+  'athlete',
   'over_65',
 ]
 

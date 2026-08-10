@@ -135,8 +135,8 @@ def test_all_sensitivity_profiles_exist_and_shift():
         "general",
         "asthma_respiratory",
         "cardiovascular",
-        "pregnant",
-        "youth_athlete",
+        "children",
+        "athlete",
         "over_65",
     }
     from api.engine.air import AQIBand
@@ -153,6 +153,18 @@ def test_all_sensitivity_profiles_exist_and_shift():
             assert heat != HeatBand.CAUTION or spec.heat_shift == 0
         if spec.aqi_sensitive_as_unhealthy:
             assert aqi == AQIBand.UNHEALTHY
+
+    # Children and athletes: heat +1 and AQI sensitive-as-unhealthy (CDC/EPA/NATA)
+    for key in ("children", "athlete"):
+        heat, aqi, spec = apply_profile(
+            heat_band=HeatBand.CAUTION,
+            aqi_band=AQIBand.UNHEALTHY_SENSITIVE,
+            profile=key,
+        )
+        assert spec.heat_shift == 1
+        assert spec.aqi_sensitive_as_unhealthy is True
+        assert heat == HeatBand.EXTREME_CAUTION
+        assert aqi == AQIBand.UNHEALTHY
 
 
 def test_waterfall_ends_at_load_score():
