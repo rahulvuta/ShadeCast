@@ -85,85 +85,113 @@ export function SmokeScopeOverlay({
       >
         <title id={titleId}>Map of fire detections with upwind smoke cone</title>
 
-        {/* Fetch-radius ring */}
-        <circle
-          cx={cx}
-          cy={cy}
-          r={fetchR}
-          fill="#888888"
-          fillOpacity={0.05}
-          stroke="#666666"
-          strokeWidth={2}
-          strokeDasharray="8 6"
-          strokeOpacity={0.7}
-        />
+        {/* Keyed by location so the scan-in animation replays whenever the crew relocates */}
+        <g key={`${lat.toFixed(4)}-${lon.toFixed(4)}`}>
+          {/* Fetch-radius ring */}
+          <circle
+            className="scope-ring-outer"
+            cx={cx}
+            cy={cy}
+            r={fetchR}
+            fill="#888888"
+            fillOpacity={0.05}
+            stroke="#666666"
+            strokeWidth={2}
+            strokeDasharray="8 6"
+            strokeOpacity={0.7}
+          />
 
-        {/* Search-radius ring */}
-        <circle
-          cx={cx}
-          cy={cy}
-          r={searchR}
-          fill="#56B4E9"
-          fillOpacity={0.14}
-          stroke="#0072B2"
-          strokeWidth={2.5}
-          strokeOpacity={0.9}
-        />
+          {/* Search-radius ring */}
+          <circle
+            className="scope-ring-inner"
+            cx={cx}
+            cy={cy}
+            r={searchR}
+            fill="#56B4E9"
+            fillOpacity={0.14}
+            stroke="#0072B2"
+            strokeWidth={2.5}
+            strokeOpacity={0.9}
+          />
 
-        {/* Upwind wedge */}
-        <path
-          d={wedge}
-          fill="#D55E00"
-          fillOpacity={0.3}
-          stroke="#D55E00"
-          strokeWidth={3}
-          strokeOpacity={0.95}
-        />
+          {/* Upwind wedge */}
+          <path
+            className="scope-wedge"
+            d={wedge}
+            fill="#D55E00"
+            fillOpacity={0.3}
+            stroke="#D55E00"
+            strokeWidth={3}
+            strokeOpacity={0.95}
+          />
 
-        {/* Detections */}
-        {annotated.map((d, i) => {
-          const { x, y } = projectToViewport(d.latitude, d.longitude, lat, lon, zoom, width, height)
-          if (x < -40 || y < -40 || x > width + 40 || y > height + 40) return null
-          const r = markerRadiusPx(d)
-          const label = detectionLabel(d)
-          return (
-            <g
-              key={`${d.latitude}-${d.longitude}-${i}`}
-              role="button"
-              tabIndex={0}
-              style={{ pointerEvents: 'auto', cursor: 'pointer' }}
-              onClick={() => activate(d)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault()
-                  activate(d)
-                }
-              }}
-            >
-              <title>{label}</title>
-              {/* 48×48 touch target */}
-              <circle cx={x} cy={y} r={24} fill="transparent" />
-              <circle
-                cx={x}
-                cy={y}
-                r={r}
-                fill={markerFill(d)}
-                fillOpacity={markerOpacity(d)}
-                stroke="#FFFFFF"
-                strokeWidth={1}
-              />
-            </g>
-          )
-        })}
+          {/* Detections */}
+          {annotated.map((d, i) => {
+            const { x, y } = projectToViewport(d.latitude, d.longitude, lat, lon, zoom, width, height)
+            if (x < -40 || y < -40 || x > width + 40 || y > height + 40) return null
+            const r = markerRadiusPx(d)
+            const label = detectionLabel(d)
+            const delayMs = Math.min(i, 24) * 12
+            return (
+              <g
+                key={`${d.latitude}-${d.longitude}-${i}`}
+                role="button"
+                tabIndex={0}
+                style={{ pointerEvents: 'auto', cursor: 'pointer' }}
+                onClick={() => activate(d)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    activate(d)
+                  }
+                }}
+              >
+                <title>{label}</title>
+                {/* 48×48 touch target */}
+                <circle cx={x} cy={y} r={24} fill="transparent" />
+                {/* Upwind fires are the most actionable — draw attention with a radar pulse */}
+                {d.upwind && (
+                  <circle
+                    className="scope-pulse"
+                    cx={x}
+                    cy={y}
+                    r={r}
+                    fill="#D55E00"
+                    style={{ animationDelay: `${delayMs}ms` }}
+                  />
+                )}
+                <circle
+                  className="scope-marker"
+                  cx={x}
+                  cy={y}
+                  r={r}
+                  fill={markerFill(d)}
+                  fillOpacity={markerOpacity(d)}
+                  stroke="#FFFFFF"
+                  strokeWidth={1}
+                  style={{ animationDelay: `${delayMs}ms` }}
+                />
+              </g>
+            )
+          })}
 
-        {/* Centre / crew marker */}
-        <circle cx={cx} cy={cy} r={10} fill="none" stroke="#0072B2" strokeWidth={3} />
-        <circle cx={cx} cy={cy} r={4} fill="#0072B2" />
+          {/* Centre / crew marker — a slow breathing "you are here" pulse */}
+          <circle
+            className="scope-pulse"
+            cx={cx}
+            cy={cy}
+            r={10}
+            fill="#0072B2"
+            style={{ animationDuration: '2.8s' }}
+          />
+          <circle cx={cx} cy={cy} r={10} fill="none" stroke="#0072B2" strokeWidth={3} />
+          <circle className="scope-center-dot" cx={cx} cy={cy} r={4} fill="#0072B2" />
+        </g>
       </svg>
 
       {selected && (
         <div
-          className="absolute bottom-8 left-1/2 z-[3] max-w-[min(90%,20rem)] -translate-x-1/2 rounded border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-xs text-[var(--ink)] shadow-md"
+          className="verdict-enter absolute bottom-8 left-1/2 z-[3] max-w-[min(90%,20rem)] -translate-x-1/2 rounded border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-xs text-[var(--ink)] shadow-md"
           role="status"
         >
           <p>{selected}</p>
