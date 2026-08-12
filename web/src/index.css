@@ -19,16 +19,17 @@ html.theme-ops {
   --oi-blue: #0072b2;
   --oi-vermillion: #d55e00;
   --oi-purple: #cc79a7;
+  --oi-bruise: #5a2d52;
 
   --go: var(--oi-green);
   --caution: var(--oi-orange);
   --restrict: var(--oi-vermillion);
-  --stop: var(--oi-blue);
+  --stop: var(--oi-bruise);
 
   --go-bg: rgba(0, 158, 115, 0.18);
   --caution-bg: rgba(230, 159, 0, 0.22);
   --restrict-bg: rgba(213, 94, 0, 0.2);
-  --stop-bg: rgba(0, 114, 178, 0.22);
+  --stop-bg: rgba(90, 45, 82, 0.28);
 
   /* Dark ops surfaces */
   --bg: #0e1116;

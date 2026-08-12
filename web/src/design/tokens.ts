@@ -52,11 +52,11 @@ export const verdictPalette: Record<
     glow: 'rgba(213, 94, 0, 0.45)',
   },
   STOP: {
-    base: '#0072B2',
-    bg: 'rgba(0, 114, 178, 0.22)',
-    border: '#0072B2',
+    base: '#5A2D52',
+    bg: 'rgba(90, 45, 82, 0.28)',
+    border: '#5A2D52',
     text: '#FFFFFF',
-    glow: 'rgba(0, 114, 178, 0.45)',
+    glow: 'rgba(90, 45, 82, 0.5)',
   },
   UNUSABLE: {
     base: '#5A6570',

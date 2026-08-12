@@ -1,11 +1,13 @@
 import {
   Bar,
   BarChart,
+  Cell,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from 'recharts'
+import { verdictPalette } from '../design/tokens'
 import type { AssessResponse, Verdict } from '../types'
 
 const SEVERITY: Record<Verdict, number> = {
@@ -13,6 +15,13 @@ const SEVERITY: Record<Verdict, number> = {
   CAUTION: 2,
   RESTRICT: 3,
   STOP: 4,
+}
+
+const VERDICT_BAR_COLOR: Record<Verdict, string> = {
+  GO: verdictPalette.GO.base,
+  CAUTION: verdictPalette.CAUTION.base,
+  RESTRICT: verdictPalette.RESTRICT.base,
+  STOP: verdictPalette.STOP.base,
 }
 
 export function HourlyChart({
@@ -48,7 +57,11 @@ export function HourlyChart({
                 'Verdict',
               ]}
             />
-            <Bar dataKey="severity" fill="#0072B2" radius={[2, 2, 0, 0]} />
+            <Bar dataKey="severity" radius={[2, 2, 0, 0]}>
+              {data.map((entry) => (
+                <Cell key={entry.hour} fill={VERDICT_BAR_COLOR[entry.verdict]} />
+              ))}
+            </Bar>
           </BarChart>
         </ResponsiveContainer>
       </div>

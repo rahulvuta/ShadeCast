@@ -29,7 +29,7 @@ VERDICT_TEXT_ON_BASE = {
     "GO": ("#FFFFFF", "#009E73"),
     "CAUTION": ("#111111", "#E69F00"),
     "RESTRICT": ("#FFFFFF", "#D55E00"),
-    "STOP": ("#FFFFFF", "#0072B2"),
+    "STOP": ("#FFFFFF", "#5A2D52"),
     "UNUSABLE": ("#FFFFFF", "#5A6570"),
 }
 
