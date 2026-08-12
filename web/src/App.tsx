@@ -3,7 +3,6 @@ import { fetchAssess, fetchBrief, fetchEvents, fetchFires, fetchGeocode, type Ge
 import { ActionCards } from './components/ActionCards'
 import { BriefingCard } from './components/BriefingCard'
 import { ClimatologyLine } from './components/ClimatologyLine'
-import { ComparePanel } from './components/ComparePanel'
 import { ConcordanceBadge } from './components/ConcordanceBadge'
 import { ConfidenceBanner } from './components/ConfidenceBanner'
 import { DiffStrip, ShiftPlanner } from './components/DayStrip'
@@ -920,18 +919,6 @@ export default function App() {
                   hardStop={assess.schedule.hard_stop_window}
                   bestWork={assess.schedule.best_work_window}
                   scrubHour={currentHour}
-                />
-
-                <ComparePanel
-                  lat={assess.lat}
-                  lon={assess.lon}
-                  primaryProfile={profile}
-                  primaryWorkload={workload}
-                  acclimatized={acclimatized}
-                  requiredHours={requiredHours}
-                  corrupt={corruptDemo && !activeEventId}
-                  event={activeEventId}
-                  hourOffset={hourOffset}
                 />
 
                 <ShiftSheetExport
