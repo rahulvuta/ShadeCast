@@ -491,6 +491,24 @@ export function FireMap({
     map.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'top-right')
     mapRef.current = map
 
+    // #region agent log
+    let radiusSourceEventCount = 0
+    let radiusLoadedLogged = false
+    map.on('sourcedata', (event) => {
+      if (event.sourceId !== SRC_RADIUS) return
+      radiusSourceEventCount += 1
+      const firstLoadedTransition = Boolean(event.isSourceLoaded) && !radiusLoadedLogged
+      if (firstLoadedTransition) radiusLoadedLogged = true
+      if (radiusSourceEventCount > 3 && !firstLoadedTransition) return
+      fetch('http://127.0.0.1:7671/ingest/1ae2e689-c464-4b2f-ae77-a71986aceeb1',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'65d34c'},body:JSON.stringify({sessionId:'65d34c',location:'FireMap.tsx:radius-sourcedata',message:'smoke-radius GeoJSON source lifecycle event',data:{eventIndex:radiusSourceEventCount,sourceDataType:event.sourceDataType,isSourceLoaded:event.isSourceLoaded,mapReportsLoaded:map.isSourceLoaded(SRC_RADIUS)},hypothesisId:firstLoadedTransition?'H12-source-loads-late':'H13-source-invalidated',timestamp:Date.now()})}).catch(()=>{});
+    })
+    map.on('error', (event) => {
+      // #region agent log
+      fetch('http://127.0.0.1:7671/ingest/1ae2e689-c464-4b2f-ae77-a71986aceeb1',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'65d34c'},body:JSON.stringify({sessionId:'65d34c',location:'FireMap.tsx:map-error',message:'MapLibre emitted a runtime error',data:{errorMessage:event.error?.message ?? String(event.error),errorStack:event.error?.stack},hypothesisId:'H11-worker-error',timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+    })
+    // #endregion
+
     // Wind overlay needs only the canvas container — attach immediately, not in onLoad.
     if (!prefersReducedMotion()) {
       try {
@@ -505,11 +523,6 @@ export function FireMap({
         ensureGeometryLayers(map)
         setGeometryData(map, lat, lon, wind, annotated)
         fitMapToScene(map, lat, lon, annotated)
-        // #region agent log
-        const sorted = [...annotated].sort((a, b) => b.distanceKm - a.distanceKm)
-        const farthest3 = sorted.slice(0, 3).map((d) => ({ lat: d.latitude, lon: d.longitude, distanceKm: d.distanceKm }))
-        fetch('http://127.0.0.1:7671/ingest/1ae2e689-c464-4b2f-ae77-a71986aceeb1',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'65d34c'},body:JSON.stringify({sessionId:'65d34c',location:'FireMap.tsx:onLoad-fires-distance-check',message:'checking whether fires array matches the rendered lat/lon and requested radius',data:{renderLat:lat,renderLon:lon,fireCount:annotated.length,maxDistanceKm:sorted[0]?.distanceKm ?? null,beyondFetchRadiusCount:annotated.filter((d) => d.distanceKm > MAP_FIRE_FETCH_RADIUS_KM).length,farthest3,zoom:map.getZoom(),bounds:map.getBounds()},hypothesisId:'H10-fires-distance-mismatch',timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
         // #region agent log
         // Don't wait on 'idle' (raster basemap tiles can take a while); check after a
         // fixed number of real render frames instead, since vector/geojson layers paint
@@ -613,9 +626,6 @@ export function FireMap({
       windOverlayRef.current = null
       map.remove()
       mapRef.current = null
-      // #region agent log
-      fetch('http://127.0.0.1:7671/ingest/1ae2e689-c464-4b2f-ae77-a71986aceeb1',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'65d34c'},body:JSON.stringify({sessionId:'65d34c',location:'FireMap.tsx:effect-cleanup',message:'map-creation effect cleanup ran',data:{childCountAfterRemove:el.childElementCount,childTags:Array.from(el.children).map((c)=>c.tagName)},hypothesisId:'H6-stale-dom',timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
     }
     // Map instance only — data updates handled below
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -632,10 +642,6 @@ export function FireMap({
         userMarkerRef.current?.setLngLat([lon, lat])
         windOverlayRef.current?.updateWind(wind, windSpeedKmh)
         map.resize()
-        // #region agent log
-        const sorted = [...annotated].sort((a, b) => b.distanceKm - a.distanceKm)
-        fetch('http://127.0.0.1:7671/ingest/1ae2e689-c464-4b2f-ae77-a71986aceeb1',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'65d34c'},body:JSON.stringify({sessionId:'65d34c',location:'FireMap.tsx:apply-fires-distance-check',message:'checking fires-vs-location mismatch on prop update (tab switch/refresh path)',data:{renderLat:lat,renderLon:lon,fireCount:annotated.length,maxDistanceKm:sorted[0]?.distanceKm ?? null,beyondFetchRadiusCount:annotated.filter((d) => d.distanceKm > MAP_FIRE_FETCH_RADIUS_KM).length,zoom:map.getZoom(),bounds:map.getBounds()},hypothesisId:'H10-fires-distance-mismatch',timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
       } catch (err) {
         console.error('[FireMap] apply update failed', err)
       }
