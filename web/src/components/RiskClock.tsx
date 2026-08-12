@@ -112,7 +112,6 @@ export function RiskClock({
   const cy = size / 2
   const rOuter = 118
   const rInner = 78
-  const needleRotate = `${hourAngle(needleHour + 0.5) + 90}deg`
 
   const clock = (
     <div className="flex flex-col items-center gap-3 motion-panel-enter">
@@ -162,35 +161,34 @@ export function RiskClock({
             className={reducedMotion ? undefined : 'motion-clock-arc'}
           />
         )}
-        <g
-          transform={
-            reducedMotion
-              ? `translate(${cx} ${cy}) rotate(${hourAngle(needleHour + 0.5) + 90})`
-              : `translate(${cx} ${cy})`
-          }
-          className={reducedMotion ? undefined : 'motion-clock-needle'}
-          style={
-            reducedMotion
-              ? undefined
-              : ({ ['--needle-rotate' as string]: needleRotate } as CSSProperties)
-          }
-        >
-          <line
-            x1={0}
-            y1={0}
-            x2={0}
-            y2={-(rOuter - 8)}
-            stroke="var(--ink)"
-            strokeWidth={2.5}
-            strokeLinecap="round"
-          />
-          <circle
-            cx={0}
-            cy={0}
-            r={6}
-            fill="var(--ink)"
-            className={reducedMotion ? undefined : 'motion-clock-hub'}
-          />
+        <g transform={`translate(${cx} ${cy})`}>
+          <g
+            transform={
+              reducedMotion ? `rotate(${hourAngle(needleHour + 0.5) + 90})` : 'rotate(-90)'
+            }
+          >
+            {!reducedMotion && (
+              <animateTransform
+                attributeName="transform"
+                type="rotate"
+                from="-90"
+                to={String(hourAngle(needleHour + 0.5) + 90)}
+                dur="0.9s"
+                begin="0.35s"
+                fill="freeze"
+              />
+            )}
+            <line
+              x1={0}
+              y1={0}
+              x2={0}
+              y2={-(rOuter - 8)}
+              stroke="var(--ink)"
+              strokeWidth={2.5}
+              strokeLinecap="round"
+            />
+            <circle cx={0} cy={0} r={6} fill="var(--ink)" />
+          </g>
         </g>
         <text
           x={cx}
