@@ -13,10 +13,6 @@ import {
   type AnnotatedDetection,
 } from '../lib/smokeGeometry'
 
-// #region agent log
-fetch('http://127.0.0.1:7671/ingest/1ae2e689-c464-4b2f-ae77-a71986aceeb1',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'65d34c'},body:JSON.stringify({sessionId:'65d34c',location:'FireMap.tsx:module',message:'FireMap module evaluated (bundle freshness check)',data:{},hypothesisId:'H1-stale-deploy',timestamp:Date.now()})}).catch(()=>{});
-// #endregion
-
 /** OSM raster basemap — demotiles.maplibre.org often never fires 'load' (blank box). */
 const OSM_STYLE: maplibregl.StyleSpecification = {
   version: 8,
@@ -468,9 +464,6 @@ export function FireMap({
   const legend = smokeLegendLine(annotated, smokePressure)
 
   useEffect(() => {
-    // #region agent log
-    fetch('http://127.0.0.1:7671/ingest/1ae2e689-c464-4b2f-ae77-a71986aceeb1',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'65d34c'},body:JSON.stringify({sessionId:'65d34c',location:'FireMap.tsx:map-effect-start',message:'map-creation effect ran',data:{open,textMode,hasContainer:!!containerRef.current,lat,lon},hypothesisId:'H2-not-mounted',timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     if (!open || textMode) {
       if (mapRef.current) {
         userMarkerRef.current?.remove()
@@ -487,6 +480,11 @@ export function FireMap({
 
     const el = containerRef.current
     if (!el) return
+
+    // #region agent log
+    const rectAtConstruct = el.getBoundingClientRect()
+    fetch('http://127.0.0.1:7671/ingest/1ae2e689-c464-4b2f-ae77-a71986aceeb1',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'65d34c'},body:JSON.stringify({sessionId:'65d34c',location:'FireMap.tsx:before-construct',message:'container state right before new maplibregl.Map()',data:{width:rectAtConstruct.width,height:rectAtConstruct.height,childCount:el.childElementCount,childTags:Array.from(el.children).map((c)=>c.tagName)},hypothesisId:'H8-zero-size-container',timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
 
     const map = new maplibregl.Map({
       container: el,
@@ -509,20 +507,29 @@ export function FireMap({
 
     const onLoad = () => {
       // #region agent log
-      fetch('http://127.0.0.1:7671/ingest/1ae2e689-c464-4b2f-ae77-a71986aceeb1',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'65d34c'},body:JSON.stringify({sessionId:'65d34c',location:'FireMap.tsx:onLoad-entered',message:"map 'load' event fired",data:{loaded:map.loaded()},hypothesisId:'H3-load-never-fires',timestamp:Date.now()})}).catch(()=>{});
+      const canvasEl = map.getCanvas()
+      fetch('http://127.0.0.1:7671/ingest/1ae2e689-c464-4b2f-ae77-a71986aceeb1',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'65d34c'},body:JSON.stringify({sessionId:'65d34c',location:'FireMap.tsx:onLoad-entered',message:"map 'load' event fired - canvas/container size check",data:{canvasWidth:canvasEl.width,canvasHeight:canvasEl.height,canvasClientWidth:canvasEl.clientWidth,canvasClientHeight:canvasEl.clientHeight,containerChildCount:el.childElementCount},hypothesisId:'H8-zero-size-container',timestamp:Date.now()})}).catch(()=>{});
       // #endregion
       try {
         ensureGeometryLayers(map)
         setGeometryData(map, lat, lon, wind, annotated)
         fitMapToScene(map, lat, lon, annotated)
         // #region agent log
-        fetch('http://127.0.0.1:7671/ingest/1ae2e689-c464-4b2f-ae77-a71986aceeb1',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'65d34c'},body:JSON.stringify({sessionId:'65d34c',location:'FireMap.tsx:onLoad-geometry-ok',message:'geometry setup succeeded in onLoad',data:{hasRadiusSrc:!!map.getSource(SRC_RADIUS),hasFetchRadiusSrc:!!map.getSource(SRC_FETCH_RADIUS),hasConeSrc:!!map.getSource(SRC_CONE),hasFiresSrc:!!map.getSource(SRC_FIRES),annotatedCount:annotated.length},hypothesisId:'H4-geometry-throws',timestamp:Date.now()})}).catch(()=>{});
+        const sampleCircle = circlePolygon(lat, lon, SEARCH_RADIUS_KM)
+        const ring = (sampleCircle.geometry as { coordinates: number[][][] }).coordinates[0]!
+        fetch('http://127.0.0.1:7671/ingest/1ae2e689-c464-4b2f-ae77-a71986aceeb1',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'65d34c'},body:JSON.stringify({sessionId:'65d34c',location:'FireMap.tsx:onLoad-geometry-ok',message:'geometry set; sample ring + viewport after fitMapToScene',data:{ringPointCount:ring.length,firstPoint:ring[0],lastPoint:ring[ring.length-1],hasNaN:ring.some((p)=>p.some((n)=>Number.isNaN(n))),zoom:map.getZoom(),center:map.getCenter(),bounds:map.getBounds()},hypothesisId:'H7-degenerate-geometry',timestamp:Date.now()})}).catch(()=>{});
         // #endregion
+        map.once('idle', () => {
+          // #region agent log
+          const centerPx = map.project(map.getCenter())
+          const rendered = map.queryRenderedFeatures(undefined, { layers: ['smoke-radius-fill', 'smoke-radius-line', 'fire-fetch-radius-line'] })
+          const renderedAtCenter = map.queryRenderedFeatures([centerPx.x, centerPx.y], { layers: ['smoke-radius-fill'] })
+          const allLayerIds = map.getStyle().layers?.map((l) => l.id) ?? []
+          fetch('http://127.0.0.1:7671/ingest/1ae2e689-c464-4b2f-ae77-a71986aceeb1',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'65d34c'},body:JSON.stringify({sessionId:'65d34c',location:'FireMap.tsx:onLoad-idle-query',message:'queried rendered features after idle',data:{renderedAnywhereCount:rendered.length,renderedAtCenterCount:renderedAtCenter.length,styleLayerIds:allLayerIds,canvasWidth:map.getCanvas().width,canvasHeight:map.getCanvas().height},hypothesisId:'H9-paint-not-happening',timestamp:Date.now()})}).catch(()=>{});
+          // #endregion
+        })
       } catch (err) {
         console.error('[FireMap] geometry setup failed', err)
-        // #region agent log
-        fetch('http://127.0.0.1:7671/ingest/1ae2e689-c464-4b2f-ae77-a71986aceeb1',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'65d34c'},body:JSON.stringify({sessionId:'65d34c',location:'FireMap.tsx:onLoad-geometry-error',message:'geometry setup threw in onLoad',data:{errMessage:err instanceof Error?err.message:String(err),errStack:err instanceof Error?err.stack:undefined},hypothesisId:'H4-geometry-throws',timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
       }
 
       try {
@@ -573,6 +580,9 @@ export function FireMap({
       windOverlayRef.current = null
       map.remove()
       mapRef.current = null
+      // #region agent log
+      fetch('http://127.0.0.1:7671/ingest/1ae2e689-c464-4b2f-ae77-a71986aceeb1',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'65d34c'},body:JSON.stringify({sessionId:'65d34c',location:'FireMap.tsx:effect-cleanup',message:'map-creation effect cleanup ran',data:{childCountAfterRemove:el.childElementCount,childTags:Array.from(el.children).map((c)=>c.tagName)},hypothesisId:'H6-stale-dom',timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
     }
     // Map instance only — data updates handled below
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -589,19 +599,10 @@ export function FireMap({
         userMarkerRef.current?.setLngLat([lon, lat])
         windOverlayRef.current?.updateWind(wind, windSpeedKmh)
         map.resize()
-        // #region agent log
-        fetch('http://127.0.0.1:7671/ingest/1ae2e689-c464-4b2f-ae77-a71986aceeb1',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'65d34c'},body:JSON.stringify({sessionId:'65d34c',location:'FireMap.tsx:apply-ok',message:'geometry setup succeeded in apply',data:{viaImmediate:map.loaded(),hasFetchRadiusSrc:!!map.getSource(SRC_FETCH_RADIUS),annotatedCount:annotated.length},hypothesisId:'H5-apply-throws',timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
       } catch (err) {
         console.error('[FireMap] apply update failed', err)
-        // #region agent log
-        fetch('http://127.0.0.1:7671/ingest/1ae2e689-c464-4b2f-ae77-a71986aceeb1',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'65d34c'},body:JSON.stringify({sessionId:'65d34c',location:'FireMap.tsx:apply-error',message:'geometry setup threw in apply',data:{errMessage:err instanceof Error?err.message:String(err),errStack:err instanceof Error?err.stack:undefined},hypothesisId:'H5-apply-throws',timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
       }
     }
-    // #region agent log
-    fetch('http://127.0.0.1:7671/ingest/1ae2e689-c464-4b2f-ae77-a71986aceeb1',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'65d34c'},body:JSON.stringify({sessionId:'65d34c',location:'FireMap.tsx:apply-effect-run',message:'data-update effect ran',data:{mapLoaded:map.loaded(),open,textMode},hypothesisId:'H2-not-mounted',timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     if (map.loaded()) apply()
     else map.once('load', apply)
   }, [lat, lon, wind, windSpeedKmh, annotated, open, textMode])
