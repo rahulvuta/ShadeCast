@@ -32,6 +32,8 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - name: Install dependencies
         run: npm ci
+      - name: Unit tests
+        run: npm test
       - name: Typecheck
         run: npx tsc --noEmit
       - name: Build

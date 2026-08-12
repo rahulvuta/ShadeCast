@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@import "maplibre-gl/dist/maplibre-gl.css";
 
 /* -------------------------------------------------------------------------- */
 /* Design tokens — mirrored from web/src/design/tokens.ts                     */

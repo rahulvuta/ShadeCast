@@ -79,6 +79,10 @@ CRITICAL is reserved for physically impossible inputs (POWER −999 sentinels, o
 
 The web service worker caches the app shell and **per-URL** `/api/assess` responses for offline replay of a previously viewed location — not a full PWA product claim.
 
+## 14b. Basemap tiles (OpenStreetMap)
+
+The smoke-algorithm panel uses a static mosaic of [OpenStreetMap](https://www.openstreetmap.org/copyright) raster tiles (`tile.openstreetmap.org`) with an SVG geometry overlay — not a WebGL map library. We only request tiles for the viewport actually displayed (typically ~6–12 tiles), show visible attribution, and degrade to a neutral background with readable rings/markers if tiles fail. Bulk prefetch / regional tile warming is not done. **At real product scale a self-hosted or commercial tile provider would be required**; OSM's public tile servers are suitable for this demo only.
+
 ## 15. Time Machine historical replay
 
 `/api/assess?event=` replays committed Open-Meteo archive weather + CAMS air-quality bundles through the **same** engine as live assess (`is_historical=true`). 

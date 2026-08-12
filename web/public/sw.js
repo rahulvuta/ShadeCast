@@ -1,5 +1,5 @@
 /* ShadeCast offline cache — app shell + assess responses keyed by full URL. */
-const CACHE = 'shadecast-shell-v2'
+const CACHE = 'shadecast-shell-v4'
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
