@@ -6,10 +6,11 @@ const DRIVER_COLOR: Record<string, string> = {
   air_quality: '#CC79A7',
   uv: '#F0E442',
   wind: '#56B4E9',
-  base: '#5A6570',
   score_cap: '#5A6570',
   final: '#009E73',
 }
+
+const SCALE_MAX = 100
 
 function barColor(step: WaterfallStep): string {
   if (step.kind === 'interaction') return 'transparent'
@@ -19,6 +20,39 @@ function barColor(step: WaterfallStep): string {
   return '#0072B2'
 }
 
+type PositionedStep = {
+  step: WaterfallStep
+  left: number
+  width: number
+  end: number
+}
+
+function positionDriverSteps(steps: WaterfallStep[]): PositionedStep[] {
+  let cumulative = 0
+  const positioned: PositionedStep[] = []
+
+  for (const step of steps) {
+    if (step.kind !== 'driver' && step.kind !== 'cap') continue
+
+    const left = cumulative
+    if (step.kind === 'cap') {
+      const end = SCALE_MAX
+      const width = Math.max(0, end - left)
+      positioned.push({ step, left, width, end })
+      cumulative = end
+      continue
+    }
+
+    const delta = Math.max(step.delta, 0)
+    const end = Math.min(SCALE_MAX, cumulative + delta)
+    const width = Math.max(0, end - left)
+    positioned.push({ step, left, width, end })
+    cumulative = end
+  }
+
+  return positioned
+}
+
 /**
  * Visual waterfall of how load_score accumulates from engine steps.
  * Uses the API waterfall (same math as environmental_load.py) — not a UI invention.
@@ -26,9 +60,10 @@ function barColor(step: WaterfallStep): string {
 export function DriverWaterfall({ steps }: { steps: WaterfallStep[] }) {
   if (!steps.length) return null
 
-  const max = Math.max(100, ...steps.map((s) => s.running_total), 1)
-  const drivers = steps.filter((s) => s.kind === 'driver' || s.kind === 'base' || s.kind === 'cap' || s.kind === 'final')
   const interactions = steps.filter((s) => s.kind === 'interaction')
+  const finalStep = steps.find((s) => s.kind === 'final')
+  const positioned = positionDriverSteps(steps)
+  const finalScore = finalStep?.running_total ?? positioned.at(-1)?.end ?? 0
 
   return (
     <section aria-labelledby="waterfall-heading" className="dash-panel p-4 sm:p-5">
@@ -40,67 +75,75 @@ export function DriverWaterfall({ steps }: { steps: WaterfallStep[] }) {
       </p>
 
       <ol className="mt-4 space-y-2" aria-label="Load score accumulation steps">
-        {drivers.map((step) => {
-          const prior =
-            step.kind === 'final' || step.kind === 'base'
-              ? 0
-              : Math.max(0, step.running_total - Math.max(step.delta, 0))
-          const width =
-            step.kind === 'final'
-              ? step.running_total
-              : step.kind === 'cap'
-                ? Math.abs(step.delta)
-                : Math.max(step.delta, 0)
-          const left = step.kind === 'cap' ? step.running_total : prior
-          return (
-            <li key={step.id} className="grid gap-1 sm:grid-cols-[7.5rem_1fr_auto] sm:items-center">
-              <span className="type-caption text-[var(--muted)] font-semibold normal-case tracking-normal">
-                {step.label}
-              </span>
+        {positioned.map(({ step, left, width, end }) => (
+          <li key={step.id} className="grid gap-1 sm:grid-cols-[7.5rem_1fr_auto] sm:items-center">
+            <span className="type-caption text-[var(--muted)] font-semibold normal-case tracking-normal">
+              {step.label}
+            </span>
+            <div
+              className="relative h-7 w-full overflow-hidden rounded border border-[var(--border)] bg-[var(--panel)]"
+              role="img"
+              aria-label={`${step.label}: ${step.delta >= 0 ? '+' : ''}${step.delta.toFixed(1)}, running ${end.toFixed(1)}`}
+            >
               <div
-                className="relative h-7 w-full overflow-hidden rounded border border-[var(--border)] bg-[var(--panel)]"
-                role="img"
-                aria-label={`${step.label}: ${step.delta >= 0 ? '+' : ''}${step.delta.toFixed(1)}, running ${step.running_total.toFixed(1)}`}
-              >
-                {(step.kind === 'driver' || step.kind === 'cap') && width > 0 && (
-                  <div
-                    className="absolute inset-y-0"
-                    style={{
-                      left: `${(left / max) * 100}%`,
-                      width: `${(width / max) * 100}%`,
-                      background: barColor(step),
-                      opacity: step.kind === 'cap' ? 0.45 : 0.9,
-                    }}
-                  />
-                )}
-                {step.kind === 'final' && (
-                  <div
-                    className="absolute inset-y-0 left-0"
-                    style={{
-                      width: `${(step.running_total / max) * 100}%`,
-                      background: barColor(step),
-                      opacity: 0.95,
-                    }}
-                  />
-                )}
-              </div>
-              <div className="text-right tabular-nums text-xs">
-                <span className="font-bold">
-                  {step.kind === 'final'
-                    ? step.running_total.toFixed(1)
-                    : step.delta === 0
-                      ? '—'
-                      : `${step.delta > 0 ? '+' : ''}${step.delta.toFixed(1)}`}
-                </span>
-                {step.raw_value && (
-                  <p className="text-[0.65rem] text-[var(--muted)] font-normal max-w-[11rem] sm:max-w-none">
-                    {step.raw_value}
-                  </p>
-                )}
-              </div>
-            </li>
-          )
-        })}
+                className="absolute inset-y-0 rounded-sm bg-[var(--border)]/35"
+                style={{ left: 0, width: `${(end / SCALE_MAX) * 100}%` }}
+                aria-hidden
+              />
+              {width > 0 && (
+                <div
+                  className="absolute inset-y-0 rounded-sm"
+                  style={{
+                    left: `${(left / SCALE_MAX) * 100}%`,
+                    width: `${(width / SCALE_MAX) * 100}%`,
+                    background: barColor(step),
+                    opacity: step.kind === 'cap' ? 0.45 : 0.95,
+                  }}
+                />
+              )}
+            </div>
+            <div className="text-right tabular-nums text-xs">
+              <span className="font-bold">
+                {step.delta === 0 ? '—' : `${step.delta > 0 ? '+' : ''}${step.delta.toFixed(1)}`}
+              </span>
+              {step.raw_value && (
+                <p className="text-[0.65rem] text-[var(--muted)] font-normal max-w-[11rem] sm:max-w-none">
+                  {step.raw_value}
+                </p>
+              )}
+            </div>
+          </li>
+        ))}
+
+        {finalStep && (
+          <li key={finalStep.id} className="grid gap-1 sm:grid-cols-[7.5rem_1fr_auto] sm:items-center">
+            <span className="type-caption font-semibold normal-case tracking-normal">
+              {finalStep.label}
+            </span>
+            <div
+              className="relative h-7 w-full overflow-hidden rounded border border-[var(--border)] bg-[var(--panel)]"
+              role="img"
+              aria-label={`${finalStep.label}: ${finalScore.toFixed(1)} out of 100`}
+            >
+              <div
+                className="absolute inset-y-0 left-0 rounded-sm"
+                style={{
+                  width: `${(finalScore / SCALE_MAX) * 100}%`,
+                  background: barColor(finalStep),
+                  opacity: 0.95,
+                }}
+              />
+            </div>
+            <div className="text-right tabular-nums text-xs">
+              <span className="font-bold">{finalScore.toFixed(1)}</span>
+              {finalStep.raw_value && (
+                <p className="text-[0.65rem] text-[var(--muted)] font-normal max-w-[11rem] sm:max-w-none">
+                  {finalStep.raw_value}
+                </p>
+              )}
+            </div>
+          </li>
+        )}
       </ol>
 
       {interactions.length > 0 && (

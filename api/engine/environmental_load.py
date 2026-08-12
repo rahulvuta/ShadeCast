@@ -248,8 +248,6 @@ def assess_environmental_load(
         "wind": wind_contrib,
     }
     total = sum(raw.values()) or 1.0
-    load_score = round(min(100.0, total / 2.5), 1)  # compress into 0–100-ish
-
     drivers = [
         Driver(name=k, contribution=round(100.0 * v / total, 1), detail=f"{k}={v:.0f}")  # type: ignore[arg-type]
         for k, v in sorted(raw.items(), key=lambda kv: -kv[1])
@@ -268,9 +266,7 @@ def assess_environmental_load(
         "uv": f"UV {uv.band.value}" if uv is not None else "UV n/a",
         "wind": f"gusts {wind_gusts_kmh:.0f} km/h" if wind_gusts_kmh is not None else "gusts n/a",
     }
-    waterfall: list[WaterfallStep] = [
-        WaterfallStep(id="base", label="Base", delta=0.0, running_total=0.0, kind="base")
-    ]
+    waterfall: list[WaterfallStep] = []
     running = 0.0
     for key in ("heat", "smoke", "air_quality", "uv", "wind"):
         scaled = round(raw[key] / 2.5, 2)
@@ -300,6 +296,8 @@ def assess_environmental_load(
             )
         )
         running = 100.0
+    # Keep load_score identical to the cumulative waterfall total (avoids chart drift).
+    load_score = round(min(100.0, running), 1)
     for ix in interactions:
         waterfall.append(
             WaterfallStep(

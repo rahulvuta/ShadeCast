@@ -177,7 +177,7 @@ def test_waterfall_ends_at_load_score():
         confidence=ConfidenceLevel.HIGH,
     )
     assert load.waterfall
-    assert load.waterfall[0].kind == "base"
+    assert load.waterfall[0].kind == "driver"
     assert load.waterfall[-1].kind == "final"
     assert load.waterfall[-1].running_total == load.load_score
     assert any(s.kind == "interaction" for s in load.waterfall)
