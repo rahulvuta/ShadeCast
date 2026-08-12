@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type CSSProperties } from 'react'
 import type { AssessResponse, Verdict } from '../types'
 import { HourlyChart } from './HourlyChart'
 import { verdictPalette } from '../design/tokens'
+import { usePrefersReducedMotion } from '../design/usePrefersReducedMotion'
 
 const VERDICT_COLOR: Record<string, string> = {
   GO: verdictPalette.GO.base,
@@ -82,6 +83,7 @@ export function RiskClock({
   embedded?: boolean
 }) {
   const [mode, setMode] = useState<'clock' | 'bars'>('clock')
+  const reducedMotion = usePrefersReducedMotion()
 
   const todayHours = useMemo(() => {
     const byHour = new Map<number, Verdict>()
@@ -110,9 +112,10 @@ export function RiskClock({
   const cy = size / 2
   const rOuter = 118
   const rInner = 78
+  const needleRotate = `${hourAngle(needleHour + 0.5) + 90}deg`
 
   const clock = (
-    <div className="flex flex-col items-center gap-3">
+    <div className="flex flex-col items-center gap-3 motion-panel-enter">
       <svg
         width={size}
         height={size}
@@ -126,7 +129,13 @@ export function RiskClock({
             key={hour}
             d={sectorPath(cx, cy, rInner, rOuter, hour, hour + 1)}
             fill={VERDICT_COLOR[verdict] ?? '#5A6570'}
-            opacity={0.85}
+            opacity={reducedMotion ? 0.85 : undefined}
+            className={reducedMotion ? undefined : 'motion-clock-sector'}
+            style={
+              reducedMotion
+                ? undefined
+                : ({ ['--motion-delay' as string]: `${hour * 22}ms` } as CSSProperties)
+            }
           >
             <title>{`${String(hour).padStart(2, '0')}:00 — ${verdict}`}</title>
           </path>
@@ -138,7 +147,8 @@ export function RiskClock({
             stroke="#000"
             strokeWidth={3}
             strokeDasharray="4 3"
-            opacity={0.7}
+            opacity={reducedMotion ? 0.7 : undefined}
+            className={reducedMotion ? undefined : 'motion-clock-ring'}
           />
         )}
         {best && (
@@ -148,26 +158,40 @@ export function RiskClock({
             stroke="#009E73"
             strokeWidth={5}
             strokeLinecap="round"
+            pathLength={100}
+            className={reducedMotion ? undefined : 'motion-clock-arc'}
           />
         )}
-        {/* Needle */}
-        {(() => {
-          const [nx, ny] = polar(cx, cy, rOuter - 8, hourAngle(needleHour + 0.5))
-          return (
-            <g>
-              <line
-                x1={cx}
-                y1={cy}
-                x2={nx}
-                y2={ny}
-                stroke="var(--ink)"
-                strokeWidth={2.5}
-                strokeLinecap="round"
-              />
-              <circle cx={cx} cy={cy} r={6} fill="var(--ink)" />
-            </g>
-          )
-        })()}
+        <g
+          transform={
+            reducedMotion
+              ? `translate(${cx} ${cy}) rotate(${hourAngle(needleHour + 0.5) + 90})`
+              : `translate(${cx} ${cy})`
+          }
+          className={reducedMotion ? undefined : 'motion-clock-needle'}
+          style={
+            reducedMotion
+              ? undefined
+              : ({ ['--needle-rotate' as string]: needleRotate } as CSSProperties)
+          }
+        >
+          <line
+            x1={0}
+            y1={0}
+            x2={0}
+            y2={-(rOuter - 8)}
+            stroke="var(--ink)"
+            strokeWidth={2.5}
+            strokeLinecap="round"
+          />
+          <circle
+            cx={0}
+            cy={0}
+            r={6}
+            fill="var(--ink)"
+            className={reducedMotion ? undefined : 'motion-clock-hub'}
+          />
+        </g>
         <text
           x={cx}
           y={cy + 28}
@@ -238,7 +262,10 @@ export function RiskClock({
 
   if (embedded) return <div>{body}</div>
   return (
-    <section aria-labelledby="risk-clock-heading" className="dash-panel p-4 sm:p-5">
+    <section
+      aria-labelledby="risk-clock-heading"
+      className="dash-panel motion-panel-enter p-4 sm:p-5"
+    >
       {body}
     </section>
   )

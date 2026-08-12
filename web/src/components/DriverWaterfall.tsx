@@ -71,7 +71,10 @@ export function DriverWaterfall({ steps }: { steps: WaterfallStep[] }) {
   const finalPct = (finalScore / SCALE_MAX) * 100
 
   return (
-    <section aria-labelledby="waterfall-heading" className="dash-panel p-4 sm:p-5">
+    <section
+      aria-labelledby="waterfall-heading"
+      className="dash-panel motion-panel-enter p-4 sm:p-5"
+    >
       <h2 id="waterfall-heading" className="text-base font-bold tracking-tight">
         Load score waterfall
       </h2>
@@ -80,7 +83,7 @@ export function DriverWaterfall({ steps }: { steps: WaterfallStep[] }) {
       </p>
 
       <ol className="mt-4 space-y-2" aria-label="Load score accumulation steps">
-        {positioned.map(({ step, leftPct, widthPct, endPct }) => (
+        {positioned.map(({ step, leftPct, widthPct, endPct }, index) => (
           <li
             key={step.id}
             className="grid grid-cols-[7.5rem_minmax(0,1fr)_4.5rem] items-center gap-2"
@@ -96,19 +99,23 @@ export function DriverWaterfall({ steps }: { steps: WaterfallStep[] }) {
               {/* Prior cumulative (muted) so segments abut without gaps */}
               {leftPct > 0 && (
                 <div
-                  className="absolute inset-y-0 left-0 bg-[var(--border)]/40"
-                  style={{ width: `${leftPct}%` }}
+                  className="motion-waterfall-prior absolute inset-y-0 left-0 bg-[var(--border)]/40"
+                  style={{
+                    width: `${leftPct}%`,
+                    ['--motion-delay' as string]: `${index * 70}ms`,
+                  }}
                   aria-hidden
                 />
               )}
               {widthPct > 0 && (
                 <div
-                  className="absolute inset-y-0"
+                  className="motion-waterfall-bar absolute inset-y-0"
                   style={{
                     left: `${leftPct}%`,
                     width: `${widthPct}%`,
                     background: barColor(step),
                     opacity: step.kind === 'cap' ? 0.45 : 0.95,
+                    ['--motion-delay' as string]: `${index * 70 + 40}ms`,
                   }}
                 />
               )}
@@ -133,11 +140,12 @@ export function DriverWaterfall({ steps }: { steps: WaterfallStep[] }) {
               aria-label={`${finalStep.label}: ${finalScore.toFixed(1)} out of 100`}
             >
               <div
-                className="absolute inset-y-0 left-0"
+                className="motion-waterfall-final absolute inset-y-0 left-0"
                 style={{
                   width: `${finalPct}%`,
                   background: barColor(finalStep),
                   opacity: 0.95,
+                  ['--motion-delay' as string]: `${positioned.length * 70 + 120}ms`,
                 }}
               />
             </div>
@@ -150,10 +158,11 @@ export function DriverWaterfall({ steps }: { steps: WaterfallStep[] }) {
         <div className="mt-4 border-t border-[var(--border)] pt-3">
           <p className="dash-section-label">Interaction mechanisms</p>
           <ul className="mt-2 space-y-2">
-            {interactions.map((s) => (
+            {interactions.map((s, i) => (
               <li
                 key={s.id}
-                className="rounded border border-[var(--border)] bg-[var(--panel)] px-3 py-2 text-sm"
+                className="motion-panel-enter rounded border border-[var(--border)] bg-[var(--panel)] px-3 py-2 text-sm"
+                style={{ ['--motion-delay' as string]: `${i * 60}ms`, animationDelay: `${i * 60}ms` }}
               >
                 <p className="font-semibold">{s.label}</p>
                 {s.mechanism && (

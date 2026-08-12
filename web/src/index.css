@@ -99,17 +99,20 @@ html.theme-sunlight {
   .app-shell::before,
   .layout-hero-band,
   .verdict-enter,
-  .map-ready-in,
-  .scope-ring-outer,
-  .scope-ring-inner,
-  .scope-wedge,
-  .scope-marker,
-  .scope-pulse,
-  .scope-center-dot,
-  .tile-img,
+  .motion-panel-enter,
+  .motion-waterfall-prior,
+  .motion-waterfall-bar,
+  .motion-waterfall-final,
+  .motion-clock-sector,
+  .motion-clock-needle,
+  .motion-clock-arc,
+  .motion-clock-ring,
   body {
     transition: none !important;
     animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+    stroke-dashoffset: 0 !important;
   }
 }
 
@@ -276,10 +279,25 @@ body.text-mode {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Smoke-scope map: ring draw-in, marker pop-in, upwind pulse, tile fade-in    */
+/* Dashboard graphic motion (not map tiles / SVG fire scope)                    */
 /* -------------------------------------------------------------------------- */
 
-@keyframes scope-fade-in {
+@keyframes panel-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.motion-panel-enter {
+  animation: panel-enter 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes waterfall-prior-in {
   from {
     opacity: 0;
   }
@@ -288,107 +306,121 @@ body.text-mode {
   }
 }
 
-@keyframes scope-ring-in {
+.motion-waterfall-prior {
+  animation: waterfall-prior-in 0.35s ease-out both;
+  animation-delay: var(--motion-delay, 0ms);
+}
+
+@keyframes waterfall-bar-in {
   from {
-    opacity: 0;
-    transform: scale(0.82);
+    transform: scaleX(0);
+    opacity: 0.35;
   }
   to {
+    transform: scaleX(1);
     opacity: 1;
-    transform: scale(1);
   }
 }
 
-@keyframes scope-wedge-in {
+.motion-waterfall-bar {
+  transform-origin: left center;
+  animation: waterfall-bar-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--motion-delay, 0ms);
+}
+
+@keyframes waterfall-final-in {
   from {
-    opacity: 0;
-    transform: scale(0.65);
+    transform: scaleX(0);
+    opacity: 0.5;
   }
   to {
-    opacity: 1;
-    transform: scale(1);
+    transform: scaleX(1);
+    opacity: 0.95;
   }
 }
 
-@keyframes scope-marker-in {
+.motion-waterfall-final {
+  transform-origin: left center;
+  animation: waterfall-final-in 0.65s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--motion-delay, 0ms);
+}
+
+@keyframes clock-sector-in {
   from {
     opacity: 0;
-    transform: scale(0);
   }
   to {
-    opacity: 1;
-    transform: scale(1);
+    opacity: 0.85;
   }
 }
 
-@keyframes scope-pulse {
-  0% {
-    transform: scale(0.9);
-    opacity: 0.55;
+.motion-clock-sector {
+  animation: clock-sector-in 0.35s ease-out both;
+  animation-delay: var(--motion-delay, 0ms);
+}
+
+@keyframes clock-needle-sweep {
+  from {
+    transform: rotate(-90deg);
   }
-  70%,
-  100% {
-    transform: scale(2.1);
+  to {
+    transform: rotate(var(--needle-rotate, 0deg));
+  }
+}
+
+.motion-clock-needle {
+  transform-origin: center;
+  animation: clock-needle-sweep 0.9s cubic-bezier(0.22, 1, 0.36, 1) 0.35s both;
+}
+
+@keyframes clock-arc-draw {
+  from {
+    stroke-dashoffset: 100;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.motion-clock-arc {
+  stroke-dasharray: 100;
+  animation: clock-arc-draw 0.8s cubic-bezier(0.22, 1, 0.36, 1) 0.7s both;
+}
+
+@keyframes clock-ring-in {
+  from {
     opacity: 0;
+    stroke-dashoffset: 8;
+  }
+  to {
+    opacity: 0.7;
+    stroke-dashoffset: 0;
   }
 }
 
-@keyframes scope-breathe {
+.motion-clock-ring {
+  animation: clock-ring-in 0.6s ease-out 0.5s both;
+}
+
+@keyframes hub-pulse {
   0%,
   100% {
     transform: scale(1);
   }
   50% {
-    transform: scale(1.18);
+    transform: scale(1.12);
   }
 }
 
-.map-ready-in {
-  animation: scope-fade-in 0.35s ease-out both;
-}
-
-.scope-ring-outer,
-.scope-ring-inner,
-.scope-wedge,
-.scope-marker,
-.scope-pulse,
-.scope-center-dot {
-  transform-box: fill-box;
+.motion-clock-hub {
   transform-origin: center;
+  animation: hub-pulse 2.4s ease-in-out 1.2s infinite;
 }
 
-.scope-ring-outer {
-  animation: scope-ring-in 0.6s ease-out both;
-}
-
-.scope-ring-inner {
-  animation: scope-ring-in 0.6s 0.08s ease-out both;
-}
-
-.scope-wedge {
-  animation: scope-wedge-in 0.5s 0.15s ease-out both;
-}
-
-.scope-marker {
-  animation: scope-marker-in 0.35s ease-out both;
-}
-
-.scope-pulse {
-  opacity: 0;
-  animation: scope-pulse 2.4s ease-out infinite;
-}
-
-.scope-center-dot {
-  animation: scope-breathe 2.6s ease-in-out infinite;
-}
-
-.tile-img {
-  opacity: 0;
-  transition: opacity 0.35s ease-out;
-}
-
-.tile-img.tile-loaded {
-  opacity: 1;
+@media (prefers-reduced-motion: reduce) {
+  .motion-clock-hub {
+    animation: none !important;
+  }
 }
 
 input,

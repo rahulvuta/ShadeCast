@@ -153,7 +153,7 @@ export function IntegrityTheater({
           aria-label="Data confidence score"
         >
           <div
-            className="h-full transition-[width] duration-150"
+            className="motion-integrity-gauge h-full transition-[width] duration-500 ease-out"
             style={{ width: `${gauge}%`, background: gaugeTone }}
           />
         </div>
@@ -239,7 +239,7 @@ export function IntegrityTheater({
     return (
       <section
         aria-labelledby="integrity-theater-heading"
-        className="dash-panel border-2 border-[var(--verdict-accent)] p-4 sm:p-5"
+        className="dash-panel motion-panel-enter border-2 border-[var(--verdict-accent)] p-4 sm:p-5"
       >
         <h2 id="integrity-theater-heading" className="text-base font-bold tracking-tight">
           Integrity checks

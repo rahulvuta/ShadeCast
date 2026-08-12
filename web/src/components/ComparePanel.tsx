@@ -203,7 +203,7 @@ export function ComparePanel({
   }
 
   return (
-    <section aria-labelledby="compare-heading" className="dash-panel p-4 sm:p-5">
+    <section aria-labelledby="compare-heading" className="dash-panel motion-panel-enter p-4 sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 id="compare-heading" className="text-base font-bold tracking-tight">

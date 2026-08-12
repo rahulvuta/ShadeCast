@@ -57,7 +57,13 @@ export function HourlyChart({
                 'Verdict',
               ]}
             />
-            <Bar dataKey="severity" radius={[2, 2, 0, 0]}>
+            <Bar
+              dataKey="severity"
+              radius={[2, 2, 0, 0]}
+              isAnimationActive
+              animationDuration={700}
+              animationEasing="ease-out"
+            >
               {data.map((entry) => (
                 <Cell key={entry.hour} fill={VERDICT_BAR_COLOR[entry.verdict]} />
               ))}
@@ -71,7 +77,7 @@ export function HourlyChart({
   if (embedded) return <div>{body}</div>
 
   return (
-    <section aria-labelledby="chart-heading" className="dash-panel p-4">
+    <section aria-labelledby="chart-heading" className="dash-panel motion-panel-enter p-4">
       {body}
     </section>
   )

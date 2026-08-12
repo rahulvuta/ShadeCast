@@ -25,14 +25,12 @@ export function TileMosaic({
   )
 
   const [failedKeys, setFailedKeys] = useState<Set<string>>(() => new Set())
-  const [loadedKeys, setLoadedKeys] = useState<Set<string>>(() => new Set())
   const [tilesFailed, setTilesFailed] = useState(false)
   const loadedRef = useRef(0)
 
   useEffect(() => {
     loadedRef.current = 0
     setFailedKeys(new Set())
-    setLoadedKeys(new Set())
     setTilesFailed(false)
     const t = window.setTimeout(() => {
       if (loadedRef.current === 0) setTilesFailed(true)
@@ -77,16 +75,10 @@ export function TileMosaic({
                   decoding="async"
                   width={256}
                   height={256}
-                  className={`tile-img absolute select-none${loadedKeys.has(key) ? ' tile-loaded' : ''}`}
+                  className="absolute select-none"
                   style={{ left: tile.left, top: tile.top, width: 256, height: 256 }}
                   onLoad={() => {
                     loadedRef.current += 1
-                    setLoadedKeys((prev) => {
-                      if (prev.has(key)) return prev
-                      const next = new Set(prev)
-                      next.add(key)
-                      return next
-                    })
                   }}
                   onError={() => {
                     setFailedKeys((prev) => {

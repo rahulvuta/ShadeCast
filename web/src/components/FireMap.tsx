@@ -267,7 +267,7 @@ export function FireMap({
               />
             )}
             {ready && (
-              <div className="map-ready-in absolute inset-0">
+              <>
                 <TileMosaic
                   centerLat={lat}
                   centerLon={lon}
@@ -286,7 +286,7 @@ export function FireMap({
                   annotated={annotated}
                   legend={legend}
                 />
-              </div>
+              </>
             )}
           </div>
 
