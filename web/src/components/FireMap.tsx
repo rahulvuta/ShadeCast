@@ -32,6 +32,7 @@ const OSM_STYLE: maplibregl.StyleSpecification = {
 }
 
 const SRC_RADIUS = 'smoke-radius'
+const SRC_FETCH_RADIUS = 'fire-fetch-radius'
 const SRC_CONE = 'smoke-cone'
 const SRC_FIRES = 'smoke-fires'
 const FIRE_ICON_ID = 'fire-icon'
@@ -271,6 +272,29 @@ function attachWindOverlay(
 }
 
 function ensureGeometryLayers(map: maplibregl.Map) {
+  if (!map.getSource(SRC_FETCH_RADIUS)) {
+    map.addSource(SRC_FETCH_RADIUS, {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features: [] },
+    })
+    map.addLayer({
+      id: 'fire-fetch-radius-fill',
+      type: 'fill',
+      source: SRC_FETCH_RADIUS,
+      paint: { 'fill-color': '#888888', 'fill-opacity': 0.06 },
+    })
+    map.addLayer({
+      id: 'fire-fetch-radius-line',
+      type: 'line',
+      source: SRC_FETCH_RADIUS,
+      paint: {
+        'line-color': '#666666',
+        'line-width': 2,
+        'line-opacity': 0.55,
+        'line-dasharray': [3, 2],
+      },
+    })
+  }
   if (!map.getSource(SRC_RADIUS)) {
     map.addSource(SRC_RADIUS, {
       type: 'geojson',
@@ -359,8 +383,15 @@ function setGeometryData(
   annotated: AnnotatedDetection[],
 ) {
   const radiusSrc = map.getSource(SRC_RADIUS) as maplibregl.GeoJSONSource | undefined
+  const fetchRadiusSrc = map.getSource(SRC_FETCH_RADIUS) as maplibregl.GeoJSONSource | undefined
   const coneSrc = map.getSource(SRC_CONE) as maplibregl.GeoJSONSource | undefined
   const fireSrc = map.getSource(SRC_FIRES) as maplibregl.GeoJSONSource | undefined
+  if (fetchRadiusSrc) {
+    fetchRadiusSrc.setData({
+      type: 'FeatureCollection',
+      features: [circlePolygon(lat, lon, MAP_FIRE_FETCH_RADIUS_KM)],
+    })
+  }
   if (radiusSrc) {
     radiusSrc.setData({
       type: 'FeatureCollection',
@@ -386,8 +417,8 @@ function fitMapToScene(
   bounds.extend([lon, lat])
   for (const bearing of [0, 90, 180, 270]) {
     // destinationPoint returns GeoJSON [lon, lat]
-    const [pLon, pLat] = destinationPoint(lat, lon, bearing, SEARCH_RADIUS_KM)
-    bounds.extend([pLon, pLat])
+    const [fetchLon, fetchLat] = destinationPoint(lat, lon, bearing, MAP_FIRE_FETCH_RADIUS_KM)
+    bounds.extend([fetchLon, fetchLat])
   }
   for (const d of annotated) {
     bounds.extend([d.longitude, d.latitude])
@@ -585,7 +616,7 @@ export function FireMap({
             }`}
       </p>
       <p className="type-micro text-[var(--muted)] mt-1 normal-case tracking-normal font-normal">
-        Map shows fires up to {MAP_FIRE_FETCH_RADIUS_KM} km away (large fires stay visible). Soft circle ={' '}
+        Dashed outer ring = {MAP_FIRE_FETCH_RADIUS_KM} km fire visibility · solid inner ring ={' '}
         {SEARCH_RADIUS_KM} km smoke search · filled wedge = ±45° upwind · {windLabel}
       </p>
       <div className={`relative mt-2 ${open && !textMode ? '' : 'hidden'}`}>
