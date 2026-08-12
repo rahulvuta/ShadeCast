@@ -83,25 +83,75 @@ function firesToGeoJSON(annotated: AnnotatedDetection[]): FeatureCollection {
   }
 }
 
+function imageHasVisiblePixels(imageData: ImageData): boolean {
+  const { data } = imageData
+  for (let i = 3; i < data.length; i += 4) {
+    if (data[i]! > 24) return true
+  }
+  return false
+}
+
+/** Procedural flame — always renders without relying on emoji font support. */
+function drawProceduralFlame(ctx: CanvasRenderingContext2D, size: number) {
+  const cx = size / 2
+  const cy = size / 2 + size * 0.06
+  ctx.clearRect(0, 0, size, size)
+
+  const outer = ctx.createRadialGradient(cx, cy - size * 0.08, size * 0.04, cx, cy, size * 0.42)
+  outer.addColorStop(0, '#FFE566')
+  outer.addColorStop(0.45, '#FF8C00')
+  outer.addColorStop(1, 'rgba(213, 94, 0, 0)')
+
+  ctx.fillStyle = outer
+  ctx.beginPath()
+  ctx.ellipse(cx, cy, size * 0.22, size * 0.34, 0, 0, Math.PI * 2)
+  ctx.fill()
+
+  const inner = ctx.createRadialGradient(cx, cy + size * 0.04, 0, cx, cy + size * 0.04, size * 0.18)
+  inner.addColorStop(0, '#FFF4A8')
+  inner.addColorStop(0.55, '#FF6B00')
+  inner.addColorStop(1, 'rgba(180, 40, 0, 0)')
+
+  ctx.fillStyle = inner
+  ctx.beginPath()
+  ctx.ellipse(cx, cy + size * 0.02, size * 0.12, size * 0.2, 0, 0, Math.PI * 2)
+  ctx.fill()
+}
+
 /**
- * Draw a full-color fire emoji via Canvas2D (browser emoji fonts), then register
- * it with MapLibre. Avoids style `glyphs` SDF fonts which cannot render emoji.
+ * Register a fire marker image with MapLibre. Returns false on failure so callers
+ * can fall back to circle layers without blocking radius/cone geometry.
  */
-function ensureFireIcon(map: maplibregl.Map) {
-  if (map.hasImage(FIRE_ICON_ID)) return
+function registerFireIcon(map: maplibregl.Map): boolean {
+  if (map.hasImage(FIRE_ICON_ID)) return true
+
   const size = FIRE_ICON_BASE_PX
   const canvas = document.createElement('canvas')
   canvas.width = size
   canvas.height = size
   const ctx = canvas.getContext('2d')
-  if (!ctx) throw new Error('2d canvas context unavailable for fire icon')
+  if (!ctx) return false
+
   ctx.clearRect(0, 0, size, size)
   ctx.font = `${Math.round(size * 0.78)}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif`
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
   ctx.fillText('🔥', size / 2, size / 2 + 1)
-  const imageData = ctx.getImageData(0, 0, size, size)
-  map.addImage(FIRE_ICON_ID, imageData, { pixelRatio: 2 })
+
+  let imageData = ctx.getImageData(0, 0, size, size)
+  if (!imageHasVisiblePixels(imageData)) {
+    drawProceduralFlame(ctx, size)
+    imageData = ctx.getImageData(0, 0, size, size)
+  }
+
+  const payload = { width: size, height: size, data: imageData.data }
+  try {
+    map.addImage(FIRE_ICON_ID, payload)
+    return true
+  } catch (err) {
+    console.warn('[FireMap] fire icon registration failed, using circle markers', err)
+    return false
+  }
 }
 
 type WindOverlay = {
@@ -221,8 +271,6 @@ function attachWindOverlay(
 }
 
 function ensureGeometryLayers(map: maplibregl.Map) {
-  ensureFireIcon(map)
-
   if (!map.getSource(SRC_RADIUS)) {
     map.addSource(SRC_RADIUS, {
       type: 'geojson',
@@ -264,21 +312,42 @@ function ensureGeometryLayers(map: maplibregl.Map) {
       type: 'geojson',
       data: { type: 'FeatureCollection', features: [] },
     })
-    map.addLayer({
-      id: 'fire-points',
-      type: 'symbol',
-      source: SRC_FIRES,
-      layout: {
-        'icon-image': FIRE_ICON_ID,
-        'icon-size': ['/', ['get', 'emojiSize'], FIRE_ICON_BASE_PX / 2],
-        'icon-allow-overlap': true,
-        'icon-ignore-placement': true,
-        'icon-anchor': 'center',
-      },
-      paint: {
-        'icon-opacity': ['get', 'opacity'],
-      },
-    })
+    const hasIcon = registerFireIcon(map)
+    if (hasIcon) {
+      map.addLayer({
+        id: 'fire-points',
+        type: 'symbol',
+        source: SRC_FIRES,
+        layout: {
+          'icon-image': FIRE_ICON_ID,
+          'icon-size': ['/', ['get', 'emojiSize'], FIRE_ICON_BASE_PX / 2],
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true,
+          'icon-anchor': 'center',
+        },
+        paint: {
+          'icon-opacity': ['get', 'opacity'],
+        },
+      })
+    } else {
+      map.addLayer({
+        id: 'fire-points',
+        type: 'circle',
+        source: SRC_FIRES,
+        paint: {
+          'circle-radius': ['max', 4, ['/', ['get', 'emojiSize'], 2.5]],
+          'circle-color': [
+            'case',
+            ['==', ['get', 'upwind'], 1],
+            '#D55E00',
+            '#E69F00',
+          ],
+          'circle-opacity': ['get', 'opacity'],
+          'circle-stroke-width': 1,
+          'circle-stroke-color': '#FFFFFF',
+        },
+      })
+    }
   }
 }
 
@@ -438,10 +507,7 @@ export function FireMap({
         console.error('[FireMap] fire event handlers failed', err)
       }
 
-      requestAnimationFrame(() => {
-        map.resize()
-        map.setCenter([lon, lat])
-      })
+      requestAnimationFrame(() => map.resize())
     }
     map.on('load', onLoad)
 
