@@ -510,15 +510,44 @@ export function FireMap({
         const farthest3 = sorted.slice(0, 3).map((d) => ({ lat: d.latitude, lon: d.longitude, distanceKm: d.distanceKm }))
         fetch('http://127.0.0.1:7671/ingest/1ae2e689-c464-4b2f-ae77-a71986aceeb1',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'65d34c'},body:JSON.stringify({sessionId:'65d34c',location:'FireMap.tsx:onLoad-fires-distance-check',message:'checking whether fires array matches the rendered lat/lon and requested radius',data:{renderLat:lat,renderLon:lon,fireCount:annotated.length,maxDistanceKm:sorted[0]?.distanceKm ?? null,beyondFetchRadiusCount:annotated.filter((d) => d.distanceKm > MAP_FIRE_FETCH_RADIUS_KM).length,farthest3,zoom:map.getZoom(),bounds:map.getBounds()},hypothesisId:'H10-fires-distance-mismatch',timestamp:Date.now()})}).catch(()=>{});
         // #endregion
-        map.once('idle', () => {
-          // #region agent log
+        // #region agent log
+        // Don't wait on 'idle' (raster basemap tiles can take a while); check after a
+        // fixed number of real render frames instead, since vector/geojson layers paint
+        // independently of the raster layer's load state.
+        let frame = 0
+        const checkAfterFrames = () => {
+          frame += 1
+          if (frame < 20) {
+            requestAnimationFrame(checkAfterFrames)
+            return
+          }
           const centerPx = map.project(map.getCenter())
-          const rendered = map.queryRenderedFeatures(undefined, { layers: ['smoke-radius-fill', 'smoke-radius-line', 'fire-fetch-radius-line'] })
+          const renderedRadius = map.queryRenderedFeatures(undefined, { layers: ['smoke-radius-fill'] })
+          const renderedFetchRing = map.queryRenderedFeatures(undefined, { layers: ['fire-fetch-radius-line'] })
+          const renderedFires = map.queryRenderedFeatures(undefined, { layers: ['fire-points'] })
           const renderedAtCenter = map.queryRenderedFeatures([centerPx.x, centerPx.y], { layers: ['smoke-radius-fill'] })
           const allLayerIds = map.getStyle().layers?.map((l) => l.id) ?? []
-          fetch('http://127.0.0.1:7671/ingest/1ae2e689-c464-4b2f-ae77-a71986aceeb1',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'65d34c'},body:JSON.stringify({sessionId:'65d34c',location:'FireMap.tsx:onLoad-idle-query',message:'queried rendered features after idle',data:{renderedAnywhereCount:rendered.length,renderedAtCenterCount:renderedAtCenter.length,styleLayerIds:allLayerIds,canvasWidth:map.getCanvas().width,canvasHeight:map.getCanvas().height},hypothesisId:'H9-paint-not-happening',timestamp:Date.now()})}).catch(()=>{});
-          // #endregion
-        })
+          // Ground-truth pixel readback: sample the actual GPU framebuffer at a point on the
+          // search-radius circle's boundary, where the opaque blue line (#0072B2) should be.
+          let pixelAtRingEdge: number[] | null = null
+          try {
+            const edgeLngLat = destinationPoint(lat, lon, 0, SEARCH_RADIUS_KM)
+            const edgePx = map.project([edgeLngLat[0], edgeLngLat[1]])
+            const gl = map.getCanvas().getContext('webgl2') || map.getCanvas().getContext('webgl')
+            if (gl) {
+              const buf = new Uint8Array(4)
+              const dpr = window.devicePixelRatio || 1
+              const glY = gl.drawingBufferHeight - Math.round(edgePx.y * dpr)
+              gl.readPixels(Math.round(edgePx.x * dpr), glY, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, buf)
+              pixelAtRingEdge = Array.from(buf)
+            }
+          } catch (e) {
+            pixelAtRingEdge = null
+          }
+          fetch('http://127.0.0.1:7671/ingest/1ae2e689-c464-4b2f-ae77-a71986aceeb1',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'65d34c'},body:JSON.stringify({sessionId:'65d34c',location:'FireMap.tsx:onLoad-frame-check',message:'queried rendered features + sampled GPU pixel after 20 real render frames',data:{renderedRadiusCount:renderedRadius.length,renderedFetchRingCount:renderedFetchRing.length,renderedFiresCount:renderedFires.length,renderedAtCenterCount:renderedAtCenter.length,styleLayerIds:allLayerIds,canvasWidth:map.getCanvas().width,canvasHeight:map.getCanvas().height,pixelAtRingEdgeRGBA:pixelAtRingEdge},hypothesisId:'H9-paint-not-happening',timestamp:Date.now()})}).catch(()=>{});
+        }
+        requestAnimationFrame(checkAfterFrames)
+        // #endregion
       } catch (err) {
         console.error('[FireMap] geometry setup failed', err)
       }
