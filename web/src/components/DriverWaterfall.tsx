@@ -10,8 +10,6 @@ const DRIVER_COLOR: Record<string, string> = {
   final: '#009E73',
 }
 
-const SCALE_MAX = 100
-
 function barColor(step: WaterfallStep): string {
   if (step.kind === 'interaction') return 'transparent'
   if (step.kind === 'final') return DRIVER_COLOR.final
@@ -20,50 +18,111 @@ function barColor(step: WaterfallStep): string {
   return '#0072B2'
 }
 
-type PositionedStep = {
-  step: WaterfallStep
+type Segment = {
+  id: string
   left: number
   width: number
-  end: number
+  color: string
+  opacity: number
 }
 
-function positionDriverSteps(steps: WaterfallStep[]): PositionedStep[] {
+type DriverLayer = {
+  step: WaterfallStep
+  segments: Segment[]
+  total: number
+}
+
+function buildDriverLayers(steps: WaterfallStep[]): DriverLayer[] {
+  const layers: DriverLayer[] = []
+  const prior: Segment[] = []
   let cumulative = 0
-  const positioned: PositionedStep[] = []
 
   for (const step of steps) {
     if (step.kind !== 'driver' && step.kind !== 'cap') continue
 
     const left = cumulative
+    let width: number
+    let end: number
+
     if (step.kind === 'cap') {
-      const end = SCALE_MAX
-      const width = Math.max(0, end - left)
-      positioned.push({ step, left, width, end })
-      cumulative = end
-      continue
+      end = 100
+      width = Math.max(0, end - left)
+    } else {
+      const delta = Math.max(step.delta, 0)
+      end = Math.min(100, cumulative + delta)
+      width = Math.max(0, end - left)
     }
 
-    const delta = Math.max(step.delta, 0)
-    const end = Math.min(SCALE_MAX, cumulative + delta)
-    const width = Math.max(0, end - left)
-    positioned.push({ step, left, width, end })
+    const current: Segment = {
+      id: step.id,
+      left,
+      width,
+      color: barColor(step),
+      opacity: step.kind === 'cap' ? 0.45 : 1,
+    }
+
+    layers.push({
+      step,
+      segments: [...prior, current],
+      total: end,
+    })
+
+    prior.push({ ...current, opacity: 0.28 })
     cumulative = end
   }
 
-  return positioned
+  return layers
+}
+
+function pct(value: number, scaleMax: number): string {
+  if (scaleMax <= 0) return '0%'
+  return `${(value / scaleMax) * 100}%`
+}
+
+function BarTrack({
+  segments,
+  scaleMax,
+  ariaLabel,
+}: {
+  segments: Segment[]
+  scaleMax: number
+  ariaLabel: string
+}) {
+  return (
+    <div
+      className="relative h-7 w-full overflow-hidden rounded border border-[var(--border)] bg-[var(--panel)]"
+      role="img"
+      aria-label={ariaLabel}
+    >
+      {segments.map((seg) => (
+        <div
+          key={seg.id}
+          className="absolute inset-y-0"
+          style={{
+            left: pct(seg.left, scaleMax),
+            width: pct(seg.width, scaleMax),
+            background: seg.color,
+            opacity: seg.opacity,
+          }}
+        />
+      ))}
+    </div>
+  )
 }
 
 /**
  * Visual waterfall of how load_score accumulates from engine steps.
- * Uses the API waterfall (same math as environmental_load.py) — not a UI invention.
+ * Bars scale to the final score so the last driver row and final row share the same right edge.
  */
 export function DriverWaterfall({ steps }: { steps: WaterfallStep[] }) {
   if (!steps.length) return null
 
   const interactions = steps.filter((s) => s.kind === 'interaction')
   const finalStep = steps.find((s) => s.kind === 'final')
-  const positioned = positionDriverSteps(steps)
-  const finalScore = finalStep?.running_total ?? positioned.at(-1)?.end ?? 0
+  const layers = buildDriverLayers(steps)
+  const driverTotal = layers.at(-1)?.total ?? 0
+  const finalScore = finalStep?.running_total ?? driverTotal
+  const scaleMax = Math.max(driverTotal, finalScore, 1)
 
   return (
     <section aria-labelledby="waterfall-heading" className="dash-panel p-4 sm:p-5">
@@ -75,33 +134,16 @@ export function DriverWaterfall({ steps }: { steps: WaterfallStep[] }) {
       </p>
 
       <ol className="mt-4 space-y-2" aria-label="Load score accumulation steps">
-        {positioned.map(({ step, left, width, end }) => (
+        {layers.map(({ step, segments, total }) => (
           <li key={step.id} className="grid gap-1 sm:grid-cols-[7.5rem_1fr_auto] sm:items-center">
             <span className="type-caption text-[var(--muted)] font-semibold normal-case tracking-normal">
               {step.label}
             </span>
-            <div
-              className="relative h-7 w-full overflow-hidden rounded border border-[var(--border)] bg-[var(--panel)]"
-              role="img"
-              aria-label={`${step.label}: ${step.delta >= 0 ? '+' : ''}${step.delta.toFixed(1)}, running ${end.toFixed(1)}`}
-            >
-              <div
-                className="absolute inset-y-0 rounded-sm bg-[var(--border)]/35"
-                style={{ left: 0, width: `${(end / SCALE_MAX) * 100}%` }}
-                aria-hidden
-              />
-              {width > 0 && (
-                <div
-                  className="absolute inset-y-0 rounded-sm"
-                  style={{
-                    left: `${(left / SCALE_MAX) * 100}%`,
-                    width: `${(width / SCALE_MAX) * 100}%`,
-                    background: barColor(step),
-                    opacity: step.kind === 'cap' ? 0.45 : 0.95,
-                  }}
-                />
-              )}
-            </div>
+            <BarTrack
+              segments={segments}
+              scaleMax={scaleMax}
+              ariaLabel={`${step.label}: ${step.delta >= 0 ? '+' : ''}${step.delta.toFixed(1)}, running ${total.toFixed(1)}`}
+            />
             <div className="text-right tabular-nums text-xs">
               <span className="font-bold">
                 {step.delta === 0 ? '—' : `${step.delta > 0 ? '+' : ''}${step.delta.toFixed(1)}`}
@@ -120,20 +162,19 @@ export function DriverWaterfall({ steps }: { steps: WaterfallStep[] }) {
             <span className="type-caption font-semibold normal-case tracking-normal">
               {finalStep.label}
             </span>
-            <div
-              className="relative h-7 w-full overflow-hidden rounded border border-[var(--border)] bg-[var(--panel)]"
-              role="img"
-              aria-label={`${finalStep.label}: ${finalScore.toFixed(1)} out of 100`}
-            >
-              <div
-                className="absolute inset-y-0 left-0 rounded-sm"
-                style={{
-                  width: `${(finalScore / SCALE_MAX) * 100}%`,
-                  background: barColor(finalStep),
+            <BarTrack
+              segments={[
+                {
+                  id: 'final',
+                  left: 0,
+                  width: driverTotal,
+                  color: barColor(finalStep),
                   opacity: 0.95,
-                }}
-              />
-            </div>
+                },
+              ]}
+              scaleMax={scaleMax}
+              ariaLabel={`${finalStep.label}: ${finalScore.toFixed(1)} out of 100`}
+            />
             <div className="text-right tabular-nums text-xs">
               <span className="font-bold">{finalScore.toFixed(1)}</span>
               {finalStep.raw_value && (

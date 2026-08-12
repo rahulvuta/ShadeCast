@@ -297,7 +297,7 @@ def assess_environmental_load(
         )
         running = 100.0
     # Keep load_score identical to the cumulative waterfall total (avoids chart drift).
-    load_score = round(min(100.0, running), 1)
+    load_score = round(min(100.0, running), 2)
     for ix in interactions:
         waterfall.append(
             WaterfallStep(
