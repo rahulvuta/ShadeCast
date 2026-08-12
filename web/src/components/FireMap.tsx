@@ -544,7 +544,20 @@ export function FireMap({
           } catch (e) {
             pixelAtRingEdge = null
           }
-          fetch('http://127.0.0.1:7671/ingest/1ae2e689-c464-4b2f-ae77-a71986aceeb1',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'65d34c'},body:JSON.stringify({sessionId:'65d34c',location:'FireMap.tsx:onLoad-frame-check',message:'queried rendered features + sampled GPU pixel after 20 real render frames',data:{renderedRadiusCount:renderedRadius.length,renderedFetchRingCount:renderedFetchRing.length,renderedFiresCount:renderedFires.length,renderedAtCenterCount:renderedAtCenter.length,styleLayerIds:allLayerIds,canvasWidth:map.getCanvas().width,canvasHeight:map.getCanvas().height,pixelAtRingEdgeRGBA:pixelAtRingEdge},hypothesisId:'H9-paint-not-happening',timestamp:Date.now()})}).catch(()=>{});
+          // Inspect the source's actual held data + layer visibility/paint state directly,
+          // to distinguish "data never made it to the source" from "data is there but not painted".
+          const radiusSource = map.getSource(SRC_RADIUS) as maplibregl.GeoJSONSource | undefined
+          let sourceDataSummary: unknown = 'no-source'
+          try {
+            const serialized = radiusSource?.serialize() as { data?: FeatureCollection } | undefined
+            const data = serialized?.data
+            sourceDataSummary = data
+              ? { featureCount: data.features?.length ?? 0, firstGeomType: data.features?.[0]?.geometry?.type }
+              : 'no-data'
+          } catch (e) {
+            sourceDataSummary = `serialize-threw:${e instanceof Error ? e.message : String(e)}`
+          }
+          fetch('http://127.0.0.1:7671/ingest/1ae2e689-c464-4b2f-ae77-a71986aceeb1',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'65d34c'},body:JSON.stringify({sessionId:'65d34c',location:'FireMap.tsx:onLoad-frame-check',message:'queried rendered features + sampled GPU pixel after 20 real render frames',data:{renderedRadiusCount:renderedRadius.length,renderedFetchRingCount:renderedFetchRing.length,renderedFiresCount:renderedFires.length,renderedAtCenterCount:renderedAtCenter.length,styleLayerIds:allLayerIds,canvasWidth:map.getCanvas().width,canvasHeight:map.getCanvas().height,pixelAtRingEdgeRGBA:pixelAtRingEdge,isSourceLoaded:map.isSourceLoaded(SRC_RADIUS),sourceDataSummary,fillOpacity:map.getPaintProperty('smoke-radius-fill','fill-opacity'),lineOpacity:map.getPaintProperty('smoke-radius-line','line-opacity'),fillVisibility:map.getLayoutProperty('smoke-radius-fill','visibility'),lineVisibility:map.getLayoutProperty('smoke-radius-line','visibility')},hypothesisId:'H9-paint-not-happening',timestamp:Date.now()})}).catch(()=>{});
         }
         requestAnimationFrame(checkAfterFrames)
         // #endregion
