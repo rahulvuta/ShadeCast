@@ -481,11 +481,6 @@ export function FireMap({
     const el = containerRef.current
     if (!el) return
 
-    // #region agent log
-    const rectAtConstruct = el.getBoundingClientRect()
-    fetch('http://127.0.0.1:7671/ingest/1ae2e689-c464-4b2f-ae77-a71986aceeb1',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'65d34c'},body:JSON.stringify({sessionId:'65d34c',location:'FireMap.tsx:before-construct',message:'container state right before new maplibregl.Map()',data:{width:rectAtConstruct.width,height:rectAtConstruct.height,childCount:el.childElementCount,childTags:Array.from(el.children).map((c)=>c.tagName)},hypothesisId:'H8-zero-size-container',timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
-
     const map = new maplibregl.Map({
       container: el,
       style: OSM_STYLE,
@@ -506,18 +501,14 @@ export function FireMap({
     }
 
     const onLoad = () => {
-      // #region agent log
-      const canvasEl = map.getCanvas()
-      fetch('http://127.0.0.1:7671/ingest/1ae2e689-c464-4b2f-ae77-a71986aceeb1',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'65d34c'},body:JSON.stringify({sessionId:'65d34c',location:'FireMap.tsx:onLoad-entered',message:"map 'load' event fired - canvas/container size check",data:{canvasWidth:canvasEl.width,canvasHeight:canvasEl.height,canvasClientWidth:canvasEl.clientWidth,canvasClientHeight:canvasEl.clientHeight,containerChildCount:el.childElementCount},hypothesisId:'H8-zero-size-container',timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       try {
         ensureGeometryLayers(map)
         setGeometryData(map, lat, lon, wind, annotated)
         fitMapToScene(map, lat, lon, annotated)
         // #region agent log
-        const sampleCircle = circlePolygon(lat, lon, SEARCH_RADIUS_KM)
-        const ring = (sampleCircle.geometry as { coordinates: number[][][] }).coordinates[0]!
-        fetch('http://127.0.0.1:7671/ingest/1ae2e689-c464-4b2f-ae77-a71986aceeb1',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'65d34c'},body:JSON.stringify({sessionId:'65d34c',location:'FireMap.tsx:onLoad-geometry-ok',message:'geometry set; sample ring + viewport after fitMapToScene',data:{ringPointCount:ring.length,firstPoint:ring[0],lastPoint:ring[ring.length-1],hasNaN:ring.some((p)=>p.some((n)=>Number.isNaN(n))),zoom:map.getZoom(),center:map.getCenter(),bounds:map.getBounds()},hypothesisId:'H7-degenerate-geometry',timestamp:Date.now()})}).catch(()=>{});
+        const sorted = [...annotated].sort((a, b) => b.distanceKm - a.distanceKm)
+        const farthest3 = sorted.slice(0, 3).map((d) => ({ lat: d.latitude, lon: d.longitude, distanceKm: d.distanceKm }))
+        fetch('http://127.0.0.1:7671/ingest/1ae2e689-c464-4b2f-ae77-a71986aceeb1',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'65d34c'},body:JSON.stringify({sessionId:'65d34c',location:'FireMap.tsx:onLoad-fires-distance-check',message:'checking whether fires array matches the rendered lat/lon and requested radius',data:{renderLat:lat,renderLon:lon,fireCount:annotated.length,maxDistanceKm:sorted[0]?.distanceKm ?? null,beyondFetchRadiusCount:annotated.filter((d) => d.distanceKm > MAP_FIRE_FETCH_RADIUS_KM).length,farthest3,zoom:map.getZoom(),bounds:map.getBounds()},hypothesisId:'H10-fires-distance-mismatch',timestamp:Date.now()})}).catch(()=>{});
         // #endregion
         map.once('idle', () => {
           // #region agent log
@@ -599,6 +590,10 @@ export function FireMap({
         userMarkerRef.current?.setLngLat([lon, lat])
         windOverlayRef.current?.updateWind(wind, windSpeedKmh)
         map.resize()
+        // #region agent log
+        const sorted = [...annotated].sort((a, b) => b.distanceKm - a.distanceKm)
+        fetch('http://127.0.0.1:7671/ingest/1ae2e689-c464-4b2f-ae77-a71986aceeb1',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'65d34c'},body:JSON.stringify({sessionId:'65d34c',location:'FireMap.tsx:apply-fires-distance-check',message:'checking fires-vs-location mismatch on prop update (tab switch/refresh path)',data:{renderLat:lat,renderLon:lon,fireCount:annotated.length,maxDistanceKm:sorted[0]?.distanceKm ?? null,beyondFetchRadiusCount:annotated.filter((d) => d.distanceKm > MAP_FIRE_FETCH_RADIUS_KM).length,zoom:map.getZoom(),bounds:map.getBounds()},hypothesisId:'H10-fires-distance-mismatch',timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
       } catch (err) {
         console.error('[FireMap] apply update failed', err)
       }
