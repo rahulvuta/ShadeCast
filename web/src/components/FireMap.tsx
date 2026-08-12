@@ -34,6 +34,9 @@ const OSM_STYLE: maplibregl.StyleSpecification = {
 const SRC_RADIUS = 'smoke-radius'
 const SRC_CONE = 'smoke-cone'
 const SRC_FIRES = 'smoke-fires'
+const FIRE_ICON_ID = 'fire-icon'
+/** Pixel size of the canvas-rendered fire icon; icon-size = emojiSize / this. */
+const FIRE_ICON_BASE_PX = 64
 
 function prefersReducedMotion(): boolean {
   return typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -80,19 +83,51 @@ function firesToGeoJSON(annotated: AnnotatedDetection[]): FeatureCollection {
   }
 }
 
-/** Slow wind streamlines — elongated dashes drifting downwind, not rain-like streaks. */
-function createWindParticleLayer(
+/**
+ * Draw a full-color fire emoji via Canvas2D (browser emoji fonts), then register
+ * it with MapLibre. Avoids style `glyphs` SDF fonts which cannot render emoji.
+ */
+function ensureFireIcon(map: maplibregl.Map) {
+  if (map.hasImage(FIRE_ICON_ID)) return
+  const size = FIRE_ICON_BASE_PX
+  const canvas = document.createElement('canvas')
+  canvas.width = size
+  canvas.height = size
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('2d canvas context unavailable for fire icon')
+  ctx.clearRect(0, 0, size, size)
+  ctx.font = `${Math.round(size * 0.78)}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif`
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText('🔥', size / 2, size / 2 + 1)
+  const imageData = ctx.getImageData(0, 0, size, size)
+  map.addImage(FIRE_ICON_ID, imageData, { pixelRatio: 2 })
+}
+
+type WindOverlay = {
+  updateWind: (from: number, speed: number | null) => void
+  destroy: () => void
+}
+
+/** Slow wind streamlines as a plain canvas overlay — no MapLibre custom GL layer. */
+function attachWindOverlay(
+  map: maplibregl.Map,
   windFromDeg: number,
   windSpeedKmh: number | null,
-): maplibregl.CustomLayerInterface & { updateWind: (from: number, speed: number | null) => void } {
+): WindOverlay {
   let windFrom = windFromDeg
   let speed = windSpeedKmh ?? 12
-  let map: maplibregl.Map | null = null
-  let canvas: HTMLCanvasElement | null = null
+  let canvas: HTMLCanvasElement | null = document.createElement('canvas')
   let raf = 0
   let lastTs = 0
   const particles: { x: number; y: number; offset: number }[] = []
   const COUNT = 36
+
+  canvas.style.position = 'absolute'
+  canvas.style.inset = '0'
+  canvas.style.pointerEvents = 'none'
+  canvas.style.zIndex = '1'
+  map.getCanvasContainer().appendChild(canvas)
 
   function spawn() {
     if (!canvas) return
@@ -106,8 +141,16 @@ function createWindParticleLayer(
     }
   }
 
+  function resize() {
+    if (!canvas) return
+    const c = map.getCanvas()
+    canvas.width = c.clientWidth
+    canvas.height = c.clientHeight
+    spawn()
+  }
+
   function frame(ts: number) {
-    if (!map || !canvas) return
+    if (!canvas) return
     const ctx = canvas.getContext('2d')
     if (!ctx) return
     const w = canvas.width
@@ -159,50 +202,27 @@ function createWindParticleLayer(
     raf = requestAnimationFrame(frame)
   }
 
-  const layer: maplibregl.CustomLayerInterface & {
-    updateWind: (from: number, spd: number | null) => void
-  } = {
-    id: 'wind-particles',
-    type: 'custom',
-    onAdd(m) {
-      map = m
-      canvas = document.createElement('canvas')
-      canvas.style.position = 'absolute'
-      canvas.style.inset = '0'
-      canvas.style.pointerEvents = 'none'
-      canvas.style.zIndex = '1'
-      const container = m.getCanvasContainer()
-      container.appendChild(canvas)
-      const resize = () => {
-        if (!canvas || !map) return
-        const c = map.getCanvas()
-        canvas.width = c.clientWidth
-        canvas.height = c.clientHeight
-        spawn()
-      }
-      resize()
-      m.on('resize', resize)
-      ;(layer as unknown as { _resize: () => void })._resize = resize
-      raf = requestAnimationFrame(frame)
-    },
-    render() {
-      /* animated via rAF */
-    },
-    onRemove() {
-      cancelAnimationFrame(raf)
-      if (canvas?.parentNode) canvas.parentNode.removeChild(canvas)
-      canvas = null
-      map = null
-    },
+  resize()
+  map.on('resize', resize)
+  raf = requestAnimationFrame(frame)
+
+  return {
     updateWind(from, spd) {
       windFrom = from
       speed = spd ?? 12
     },
+    destroy() {
+      cancelAnimationFrame(raf)
+      map.off('resize', resize)
+      if (canvas?.parentNode) canvas.parentNode.removeChild(canvas)
+      canvas = null
+    },
   }
-  return layer
 }
 
 function ensureGeometryLayers(map: maplibregl.Map) {
+  ensureFireIcon(map)
+
   if (!map.getSource(SRC_RADIUS)) {
     map.addSource(SRC_RADIUS, {
       type: 'geojson',
@@ -249,14 +269,14 @@ function ensureGeometryLayers(map: maplibregl.Map) {
       type: 'symbol',
       source: SRC_FIRES,
       layout: {
-        'text-field': '🔥',
-        'text-size': ['get', 'emojiSize'],
-        'text-allow-overlap': true,
-        'text-ignore-placement': true,
-        'text-anchor': 'center',
+        'icon-image': FIRE_ICON_ID,
+        'icon-size': ['/', ['get', 'emojiSize'], FIRE_ICON_BASE_PX / 2],
+        'icon-allow-overlap': true,
+        'icon-ignore-placement': true,
+        'icon-anchor': 'center',
       },
       paint: {
-        'text-opacity': ['get', 'opacity'],
+        'icon-opacity': ['get', 'opacity'],
       },
     })
   }
@@ -296,7 +316,8 @@ function fitMapToScene(
   const bounds = new maplibregl.LngLatBounds()
   bounds.extend([lon, lat])
   for (const bearing of [0, 90, 180, 270]) {
-    const [pLat, pLon] = destinationPoint(lat, lon, bearing, SEARCH_RADIUS_KM)
+    // destinationPoint returns GeoJSON [lon, lat]
+    const [pLon, pLat] = destinationPoint(lat, lon, bearing, SEARCH_RADIUS_KM)
     bounds.extend([pLon, pLat])
   }
   for (const d of annotated) {
@@ -333,7 +354,7 @@ export function FireMap({
   const mapRef = useRef<maplibregl.Map | null>(null)
   const userMarkerRef = useRef<maplibregl.Marker | null>(null)
   const popupRef = useRef<maplibregl.Popup | null>(null)
-  const windLayerRef = useRef<ReturnType<typeof createWindParticleLayer> | null>(null)
+  const windOverlayRef = useRef<WindOverlay | null>(null)
 
   const wind = windFromDeg ?? 0
   const annotated = useMemo(
@@ -349,10 +370,8 @@ export function FireMap({
         userMarkerRef.current = null
         popupRef.current?.remove()
         popupRef.current = null
-        if (windLayerRef.current && mapRef.current.getLayer('wind-particles')) {
-          mapRef.current.removeLayer('wind-particles')
-        }
-        windLayerRef.current = null
+        windOverlayRef.current?.destroy()
+        windOverlayRef.current = null
         mapRef.current.remove()
         mapRef.current = null
       }
@@ -372,36 +391,52 @@ export function FireMap({
     map.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'top-right')
     mapRef.current = map
 
-    const onLoad = () => {
-      ensureGeometryLayers(map)
-      setGeometryData(map, lat, lon, wind, annotated)
-      fitMapToScene(map, lat, lon, annotated)
-      userMarkerRef.current?.remove()
-      userMarkerRef.current = new maplibregl.Marker({ color: '#0072B2' }).setLngLat([lon, lat]).addTo(map)
+    // Wind overlay needs only the canvas container — attach immediately, not in onLoad.
+    if (!prefersReducedMotion()) {
+      try {
+        windOverlayRef.current = attachWindOverlay(map, wind, windSpeedKmh)
+      } catch (err) {
+        console.error('[FireMap] wind overlay failed', err)
+      }
+    }
 
-      if (!prefersReducedMotion()) {
-        const windLayer = createWindParticleLayer(wind, windSpeedKmh)
-        windLayerRef.current = windLayer
-        map.addLayer(windLayer)
+    const onLoad = () => {
+      try {
+        ensureGeometryLayers(map)
+        setGeometryData(map, lat, lon, wind, annotated)
+        fitMapToScene(map, lat, lon, annotated)
+      } catch (err) {
+        console.error('[FireMap] geometry setup failed', err)
       }
 
-      map.on('mouseenter', 'fire-points', () => {
-        map.getCanvas().style.cursor = 'pointer'
-      })
-      map.on('mouseleave', 'fire-points', () => {
-        map.getCanvas().style.cursor = ''
-      })
-      map.on('click', 'fire-points', (e) => {
-        const f = e.features?.[0]
-        if (!f || f.geometry.type !== 'Point') return
-        const coords = (f.geometry as Point).coordinates.slice() as [number, number]
-        const label = String(f.properties?.label ?? '')
-        popupRef.current?.remove()
-        popupRef.current = new maplibregl.Popup({ offset: 12 })
-          .setLngLat(coords)
-          .setText(label)
-          .addTo(map)
-      })
+      try {
+        userMarkerRef.current?.remove()
+        userMarkerRef.current = new maplibregl.Marker({ color: '#0072B2' }).setLngLat([lon, lat]).addTo(map)
+      } catch (err) {
+        console.error('[FireMap] user marker failed', err)
+      }
+
+      try {
+        map.on('mouseenter', 'fire-points', () => {
+          map.getCanvas().style.cursor = 'pointer'
+        })
+        map.on('mouseleave', 'fire-points', () => {
+          map.getCanvas().style.cursor = ''
+        })
+        map.on('click', 'fire-points', (e) => {
+          const f = e.features?.[0]
+          if (!f || f.geometry.type !== 'Point') return
+          const coords = (f.geometry as Point).coordinates.slice() as [number, number]
+          const label = String(f.properties?.label ?? '')
+          popupRef.current?.remove()
+          popupRef.current = new maplibregl.Popup({ offset: 12 })
+            .setLngLat(coords)
+            .setText(label)
+            .addTo(map)
+        })
+      } catch (err) {
+        console.error('[FireMap] fire event handlers failed', err)
+      }
 
       requestAnimationFrame(() => {
         map.resize()
@@ -421,7 +456,8 @@ export function FireMap({
       userMarkerRef.current = null
       popupRef.current?.remove()
       popupRef.current = null
-      windLayerRef.current = null
+      windOverlayRef.current?.destroy()
+      windOverlayRef.current = null
       map.remove()
       mapRef.current = null
     }
@@ -433,12 +469,16 @@ export function FireMap({
     const map = mapRef.current
     if (!open || textMode || !map) return
     const apply = () => {
-      ensureGeometryLayers(map)
-      setGeometryData(map, lat, lon, wind, annotated)
-      fitMapToScene(map, lat, lon, annotated)
-      userMarkerRef.current?.setLngLat([lon, lat])
-      windLayerRef.current?.updateWind(wind, windSpeedKmh)
-      map.resize()
+      try {
+        ensureGeometryLayers(map)
+        setGeometryData(map, lat, lon, wind, annotated)
+        fitMapToScene(map, lat, lon, annotated)
+        userMarkerRef.current?.setLngLat([lon, lat])
+        windOverlayRef.current?.updateWind(wind, windSpeedKmh)
+        map.resize()
+      } catch (err) {
+        console.error('[FireMap] apply update failed', err)
+      }
     }
     if (map.loaded()) apply()
     else map.once('load', apply)
