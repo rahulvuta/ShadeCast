@@ -142,6 +142,8 @@ class ActionOut(BaseModel):
     source_url: str
     source_name: str
     trigger: str
+    category: str | None = None
+    body_zone: str | None = None
 
 
 class NwsAlertOut(BaseModel):

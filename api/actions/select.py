@@ -26,12 +26,18 @@ LIBRARY_PATH = Path(__file__).with_name("library.yaml")
 Trigger = Literal[
     "heat",
     "heat_emergency",
+    "heat_ppe",
     "smoke",
     "high_uv",
     "high_wind",
+    "storm",
+    "overnight",
     "youth",
     "sensitive",
 ]
+
+BodyZone = Literal["head", "eyes", "torso", "hands", "feet", "respiratory"]
+ActionCategory = Literal["clothing"]
 
 
 class ActionEntry(BaseModel):
@@ -43,6 +49,8 @@ class ActionEntry(BaseModel):
     body: str
     source_url: str
     source_name: str
+    category: ActionCategory | None = None
+    body_zone: BodyZone | None = None
 
 
 class ActionLibrary(BaseModel):
@@ -56,6 +64,8 @@ class SelectedAction(BaseModel):
     source_url: str
     source_name: str
     trigger: str
+    category: str | None = None
+    body_zone: str | None = None
 
 
 @lru_cache
@@ -66,7 +76,22 @@ def load_library() -> ActionLibrary:
     for a in lib.actions:
         if not a.source_url.startswith("http"):
             raise ValueError(f"Action {a.id} missing http source_url")
+        if a.category == "clothing" and not a.body_zone:
+            raise ValueError(f"Clothing action {a.id} missing body_zone")
     return lib
+
+
+def _as_selected(a: ActionEntry) -> SelectedAction:
+    return SelectedAction(
+        id=a.id,
+        title=a.title,
+        body=a.body,
+        source_url=a.source_url,
+        source_name=a.source_name,
+        trigger=a.trigger,
+        category=a.category,
+        body_zone=a.body_zone,
+    )
 
 
 def derive_triggers(
@@ -78,27 +103,39 @@ def derive_triggers(
     uv_band: str | None = None,
     wind_gusts_kmh: float | None = None,
     profile: str = "general",
+    workload: str | None = None,
+    storm_band: str | None = None,
+    lightning_risk: bool = False,
+    overnight: bool = False,
+    include_fallback: bool = True,
 ) -> list[Trigger]:
     triggers: list[Trigger] = []
     if verdict in ("RESTRICT", "STOP") and heat_band in ("DANGER", "EXTREME_DANGER"):
         triggers.append("heat_emergency")
     if heat_band and heat_band not in ("SAFE",):
         triggers.append("heat")
+    if workload == "heavy" and heat_band in ("DANGER", "EXTREME_DANGER"):
+        triggers.append("heat_ppe")
     if smoke_pressure >= 10 or (us_aqi is not None and us_aqi >= 101):
         triggers.append("smoke")
     if uv_band in ("HIGH", "VERY_HIGH", "EXTREME"):
         triggers.append("high_uv")
     if wind_gusts_kmh is not None and wind_gusts_kmh > 40:
         triggers.append("high_wind")
+    if lightning_risk or (storm_band and storm_band in ("WATCH", "WARNING", "HARD_STOP")):
+        triggers.append("storm")
+    if overnight:
+        triggers.append("overnight")
     if profile == "athlete":
         triggers.append("youth")
     if profile in ("asthma_respiratory", "cardiovascular", "children", "over_65"):
         triggers.append("sensitive")
-    # Always offer at least heat hydration guidance on non-GO days
-    if not triggers and verdict and verdict != "GO":
-        triggers.append("heat")
-    if not triggers:
-        triggers.append("heat")
+    if include_fallback:
+        # Always offer at least heat hydration guidance on non-GO days
+        if not triggers and verdict and verdict != "GO":
+            triggers.append("heat")
+        if not triggers:
+            triggers.append("heat")
     # Preserve order, unique
     seen: set[str] = set()
     out: list[Trigger] = []
@@ -127,17 +164,7 @@ def filter_candidates(
 
 
 def deterministic_top_n(candidates: list[ActionEntry], n: int = 4) -> list[SelectedAction]:
-    return [
-        SelectedAction(
-            id=a.id,
-            title=a.title,
-            body=a.body,
-            source_url=a.source_url,
-            source_name=a.source_name,
-            trigger=a.trigger,
-        )
-        for a in candidates[:n]
-    ]
+    return [_as_selected(a) for a in candidates[:n]]
 
 
 def validate_selected_ids(
@@ -152,17 +179,7 @@ def validate_selected_ids(
     seen: set[str] = set()
     for cid in chosen_ids:
         if cid in by_id and cid not in seen:
-            a = by_id[cid]
-            selected.append(
-                SelectedAction(
-                    id=a.id,
-                    title=a.title,
-                    body=a.body,
-                    source_url=a.source_url,
-                    source_name=a.source_name,
-                    trigger=a.trigger,
-                )
-            )
+            selected.append(_as_selected(by_id[cid]))
             seen.add(cid)
         else:
             logger.info("Discarding hallucinated or unknown action id: %s", cid)
@@ -170,20 +187,53 @@ def validate_selected_ids(
         for a in candidates:
             if a.id in seen:
                 continue
-            selected.append(
-                SelectedAction(
-                    id=a.id,
-                    title=a.title,
-                    body=a.body,
-                    source_url=a.source_url,
-                    source_name=a.source_name,
-                    trigger=a.trigger,
-                )
-            )
+            selected.append(_as_selected(a))
             seen.add(a.id)
             if len(selected) >= n:
                 break
     return selected[:n]
+
+
+def _operational_candidates(candidates: list[ActionEntry]) -> list[ActionEntry]:
+    return [a for a in candidates if a.category != "clothing"]
+
+
+def select_clothing(
+    *,
+    verdict: str | None,
+    heat_band: str | None = None,
+    smoke_pressure: float = 0.0,
+    us_aqi: float | None = None,
+    uv_band: str | None = None,
+    wind_gusts_kmh: float | None = None,
+    profile: str = "general",
+    workload: str | None = None,
+    storm_band: str | None = None,
+    lightning_risk: bool = False,
+    overnight: bool = False,
+) -> list[SelectedAction]:
+    """All matching clothing/PPE rows, grouped later by body_zone in the UI."""
+    triggers = derive_triggers(
+        verdict=verdict,
+        heat_band=heat_band,
+        smoke_pressure=smoke_pressure,
+        us_aqi=us_aqi,
+        uv_band=uv_band,
+        wind_gusts_kmh=wind_gusts_kmh,
+        profile=profile,
+        workload=workload,
+        storm_band=storm_band,
+        lightning_risk=lightning_risk,
+        overnight=overnight,
+        include_fallback=False,
+    )
+    matched = [
+        a
+        for a in filter_candidates(triggers, audience=profile)
+        if a.category == "clothing"
+    ]
+    matched.sort(key=lambda a: (a.body_zone or "torso", a.priority))
+    return [_as_selected(a) for a in matched]
 
 
 def select_actions(
@@ -195,6 +245,10 @@ def select_actions(
     uv_band: str | None = None,
     wind_gusts_kmh: float | None = None,
     profile: str = "general",
+    workload: str | None = None,
+    storm_band: str | None = None,
+    lightning_risk: bool = False,
+    overnight: bool = False,
     llm_chosen_ids: list[str] | None = None,
     n: int = 4,
 ) -> list[SelectedAction]:
@@ -206,10 +260,14 @@ def select_actions(
         uv_band=uv_band,
         wind_gusts_kmh=wind_gusts_kmh,
         profile=profile,
+        workload=workload,
+        storm_band=storm_band,
+        lightning_risk=lightning_risk,
+        overnight=overnight,
     )
-    candidates = filter_candidates(triggers, audience=profile)
+    candidates = _operational_candidates(filter_candidates(triggers, audience=profile))
     if not candidates:
-        candidates = filter_candidates(["heat"], audience="general")
+        candidates = _operational_candidates(filter_candidates(["heat"], audience="general"))
     if llm_chosen_ids:
         return validate_selected_ids(llm_chosen_ids, candidates, n=n)
     return deterministic_top_n(candidates, n=n)

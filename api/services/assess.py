@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
-from api.actions.select import select_actions
+from api.actions.select import select_actions, select_clothing
 from api.clients import air_quality as aq_client
 from api.clients import forecast as forecast_client
 from api.clients.firms import round_coord
@@ -952,6 +952,23 @@ def build_assessment(
         uv_band=uv_today.band.value,
         wind_gusts_kmh=current_row.wind_gusts_kmh,
         profile=sensitivity_profile,
+        workload=workload,
+        storm_band=storm_now.storm_band.value,
+        lightning_risk=storm_now.lightning_risk,
+        overnight=any(w.daypart == "overnight" for w in windows),
+    )
+    clothing = select_clothing(
+        verdict=adj_current,
+        heat_band=cur_heat.effective_band.value,
+        smoke_pressure=smoke.smoke_pressure,
+        us_aqi=air_now.us_aqi,
+        uv_band=uv_today.band.value,
+        wind_gusts_kmh=current_row.wind_gusts_kmh,
+        profile=sensitivity_profile,
+        workload=workload,
+        storm_band=storm_now.storm_band.value,
+        lightning_risk=storm_now.lightning_risk,
+        overnight=any(w.daypart == "overnight" for w in windows),
     )
     prior_payload = prior_cached.model_dump() if prior_cached is not None else None
     # Build a lightweight current dict for diff before full response
@@ -1123,8 +1140,10 @@ def build_assessment(
                 source_url=a.source_url,
                 source_name=a.source_name,
                 trigger=a.trigger,
+                category=a.category,
+                body_zone=a.body_zone,
             )
-            for a in selected
+            for a in [*selected, *clothing]
         ],
         diff_summary=diff_summary,
         climatology=ClimatologyDelta(

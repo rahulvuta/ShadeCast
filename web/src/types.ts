@@ -50,6 +50,8 @@ export interface ActionItem {
   source_url: string
   source_name: string
   trigger: string
+  category?: string | null
+  body_zone?: string | null
 }
 
 export interface HourlyAssessment {

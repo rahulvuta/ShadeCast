@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { fetchAssess, fetchBrief, fetchEvents, fetchFires, fetchGeocode, type GeocodeHit, type HistoricalEventSummary } from './api'
 import { ActionCards } from './components/ActionCards'
+import { ClothingPanel } from './components/ClothingPanel'
 import { BriefingCard } from './components/BriefingCard'
 import { ClimatologyLine } from './components/ClimatologyLine'
 import { ConcordanceBadge } from './components/ConcordanceBadge'
@@ -995,6 +996,7 @@ export default function App() {
                     delta={assess.climatology.delta_c}
                   />
                 </div>
+                <ClothingPanel actions={assess.actions ?? []} />
 
                 <p className="type-micro text-[var(--muted)] normal-case tracking-normal font-normal">
                   {assess.current.disclaimer}
