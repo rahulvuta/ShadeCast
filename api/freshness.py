@@ -28,6 +28,11 @@ SOURCES: list[SourceAttribution] = [
         url="https://open-meteo.com/en/docs/air-quality-api",
         role="CAMS PM2.5 / US AQI (air-quality term; slow refresh)",
     ),
+    SourceAttribution(
+        name="NWS",
+        url="https://www.weather.gov/",
+        role="US real-time alerts + near-term cross-check (additive; not used outside the US)",
+    ),
 ]
 
 

@@ -247,3 +247,91 @@ class HistoricalBundle(Base):
     fetched_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class NwsGridCache(Base):
+    """Permanent NWS grid mapping (or nws_available=false) per rounded coordinate."""
+
+    __tablename__ = "nws_grid_cache"
+    __table_args__ = (
+        UniqueConstraint("lat_round", "lon_round", name="uq_nws_grid_cache"),
+        Index("ix_nws_grid_loc", "lat_round", "lon_round"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    lat_round: Mapped[float] = mapped_column(Float, nullable=False)
+    lon_round: Mapped[float] = mapped_column(Float, nullable=False)
+    available: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    office: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    grid_x: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    grid_y: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    timezone: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    city: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class NwsAlertRow(Base):
+    """Cached NWS active alerts for a rounded coordinate (min 5-minute reuse)."""
+
+    __tablename__ = "nws_alerts"
+    __table_args__ = (
+        UniqueConstraint(
+            "alert_id",
+            "lat_round",
+            "lon_round",
+            name="uq_nws_alert_loc",
+        ),
+        Index("ix_nws_alerts_loc", "lat_round", "lon_round"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    alert_id: Mapped[str] = mapped_column(String(256), nullable=False)
+    lat_round: Mapped[float] = mapped_column(Float, nullable=False)
+    lon_round: Mapped[float] = mapped_column(Float, nullable=False)
+    event: Mapped[str] = mapped_column(String(128), nullable=False)
+    severity: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    urgency: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    certainty: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    onset: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    headline: Mapped[str | None] = mapped_column(Text, nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    area: Mapped[str | None] = mapped_column(Text, nullable=True)
+    web: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class NwsObservationHour(Base):
+    """NWS hourly grid forecast (cron-refreshed; used for 0–6h blend + integrity)."""
+
+    __tablename__ = "nws_observations_hours"
+    __table_args__ = (
+        UniqueConstraint(
+            "lat_round",
+            "lon_round",
+            "valid_at",
+            name="uq_nws_observation_hour",
+        ),
+        Index("ix_nws_obs_loc_time", "lat_round", "lon_round", "valid_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    latitude: Mapped[float] = mapped_column(Float, nullable=False)
+    longitude: Mapped[float] = mapped_column(Float, nullable=False)
+    lat_round: Mapped[float] = mapped_column(Float, nullable=False)
+    lon_round: Mapped[float] = mapped_column(Float, nullable=False)
+    valid_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    temperature_c: Mapped[float | None] = mapped_column(Float, nullable=True)
+    relative_humidity: Mapped[float | None] = mapped_column(Float, nullable=True)
+    dewpoint_c: Mapped[float | None] = mapped_column(Float, nullable=True)
+    wind_speed_kmh: Mapped[float | None] = mapped_column(Float, nullable=True)
+    wind_direction_deg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    precipitation_probability: Mapped[float | None] = mapped_column(Float, nullable=True)
+    short_forecast: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

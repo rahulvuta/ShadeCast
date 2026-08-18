@@ -190,6 +190,29 @@ export interface AssessResponse {
   } | null
   /** FIRMS detections used by the engine (historical bundles include these for the map). */
   fires?: FirePoint[]
+  nws_status?: {
+    available: boolean
+    state: 'active' | 'outside_us' | 'unavailable'
+    message: string
+    office?: string | null
+    current_temp_source?: 'open-meteo' | 'nws'
+    current_wind_source?: 'open-meteo' | 'nws'
+    near_term_overridden_hours?: number
+    alert_count?: number
+  } | null
+  active_alerts?: Array<{
+    id: string
+    event: string
+    severity?: string | null
+    urgency?: string | null
+    certainty?: string | null
+    onset?: string | null
+    expires?: string | null
+    headline?: string | null
+    description?: string | null
+    area?: string | null
+    web?: string | null
+  }>
 }
 
 export interface BriefResponse {

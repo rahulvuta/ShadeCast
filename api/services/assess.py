@@ -20,6 +20,7 @@ from api.engine.compound import Verdict
 from api.engine.environmental_load import assess_environmental_load
 from api.engine.explain import explain_from_drivers
 from api.engine.heat import Workload, assess_heat, celsius_to_fahrenheit
+from api.engine.nws_blend import blend_forecast_hours
 from api.engine.schedule import build_multiday_schedule, build_schedule, shift_planner
 from api.engine.sensitivity import SensitivityProfile
 from api.engine.smoke import FireDetectionInput, assess_smoke
@@ -30,6 +31,8 @@ from api.integrity.checks import (
     STALE_AIR_QUALITY,
     HourlyInputs,
     IntegrityBundle,
+    NwsAlertSnapshot,
+    NwsCompareHour,
     run_all_checks,
 )
 from api.integrity.confidence import aggregate
@@ -58,6 +61,8 @@ from api.schemas import (
     HistoricalEventMeta,
     HourlyAssessment,
     IntegrityFindingOut,
+    NwsAlertOut,
+    NwsStatusOut,
     ScheduleSummaryOut,
     ShiftWindowOut,
     SmokeDetail,
@@ -630,6 +635,39 @@ def build_assessment(
         # Today's local date may be all-null; search the full horizon.
         current_row = _nearest_usable_hour(forecast_rows, now_utc)
 
+    original_today_rows = list(today_rows)
+    nws_slice = None
+    blend_result = None
+    if hist_injection is None:
+        try:
+            from api.services.nws import MSG_UNAVAILABLE, load_nws_for_assess
+
+            nws_slice = load_nws_for_assess(
+                session,
+                lat,
+                lon,
+                allow_network=allow_network and not settings.demo_mode,
+                now=now_utc,
+            )
+            if nws_slice.available and nws_slice.hours:
+                blend_result = blend_forecast_hours(
+                    forecast_rows, nws_slice.hours, now=now_utc
+                )
+                forecast_rows = blend_result.rows
+                by_day = {}
+                for r in forecast_rows:
+                    by_day.setdefault(r.valid_at.date(), []).append(r)
+                day_keys = sorted(by_day.keys())[:5]
+                today = day_keys[0]
+                today_rows = by_day[today]
+                try:
+                    current_row = _nearest_usable_hour(today_rows, now_utc)
+                except RuntimeError:
+                    current_row = _nearest_usable_hour(forecast_rows, now_utc)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("NWS extras skipped: %s", exc)
+            nws_slice = None
+
     wind_from = current_row.wind_direction_deg or 0.0
     smoke = assess_smoke(
         lat,
@@ -655,7 +693,7 @@ def build_assessment(
         clim_fetched = clim_fetched_row.fetched_at if clim_fetched_row else None
 
     integrity_bundle = make_bundle(
-        forecast_rows=today_rows,
+        forecast_rows=original_today_rows,
         aq_rows=aq_rows,
         climatology_temp_c=baseline,
         firms_fetched_at=fire_fetched,
@@ -664,6 +702,20 @@ def build_assessment(
         climatology_fetched_at=clim_fetched,
         horizon_hours=24,
         now=now_utc,
+        nws_compare_hours=[
+            NwsCompareHour(
+                valid_at=h.valid_at,
+                temperature_c=h.temperature_c,
+                wind_speed_kmh=h.wind_speed_kmh,
+            )
+            for h in (nws_slice.hours if nws_slice else [])
+        ],
+        nws_alerts=[
+            NwsAlertSnapshot(alert_id=a.alert_id, expires=a.expires, event=a.event)
+            for a in (nws_slice.alerts if nws_slice else [])
+        ],
+        nws_available=nws_slice.available if nws_slice else None,
+        nws_has_grid=nws_slice.has_grid if nws_slice else None,
     )
     findings = run_all_checks(integrity_bundle)
     if _wants_corrupt(lat, lon, force_corrupt):
@@ -851,14 +903,17 @@ def build_assessment(
             f"for this date/hour at this location."
         )
 
-    freshness = build_freshness(
-        [
-            ("NASA FIRMS", fire_fetched),
-            ("Open-Meteo", forecast_fetched),
-            ("Open-Meteo Air Quality", aq_fetched),
-            ("NASA POWER", clim_fetched),
-        ]
-    )
+    freshness_pairs: list[tuple[str, datetime | None]] = [
+        ("NASA FIRMS", fire_fetched),
+        ("Open-Meteo", forecast_fetched),
+        ("Open-Meteo Air Quality", aq_fetched),
+        ("NASA POWER", clim_fetched),
+    ]
+    if nws_slice is not None and nws_slice.available:
+        freshness_pairs.append(
+            ("NWS", nws_slice.alerts_fetched_at or nws_slice.hours_fetched_at)
+        )
+    freshness = build_freshness(freshness_pairs)
     conf_out = _confidence_out(conf_result, verdict_escalated=verdict_escalated)
 
     explain_text = explain_from_drivers(
@@ -889,6 +944,47 @@ def build_assessment(
         "environmental_load": {"concordance": load.concordance.value},
     }
     diff_summary = diff_assessments(current_for_diff, prior_payload)
+
+    if nws_slice is not None:
+        nws_status = NwsStatusOut(
+            available=nws_slice.available,
+            state=nws_slice.state,
+            message=nws_slice.message,
+            office=nws_slice.office,
+            current_temp_source=(
+                blend_result.current_temp_source if blend_result else "open-meteo"
+            ),
+            current_wind_source=(
+                blend_result.current_wind_source if blend_result else "open-meteo"
+            ),
+            near_term_overridden_hours=(
+                blend_result.overridden_hours if blend_result else 0
+            ),
+            alert_count=len(nws_slice.alerts),
+        )
+        active_alerts = [
+            NwsAlertOut(
+                id=a.alert_id,
+                event=a.event,
+                severity=a.severity,
+                urgency=a.urgency,
+                certainty=a.certainty,
+                onset=a.onset,
+                expires=a.expires,
+                headline=a.headline,
+                description=a.description,
+                area=a.area,
+                web=a.web,
+            )
+            for a in nws_slice.alerts
+        ]
+    else:
+        nws_status = NwsStatusOut(
+            available=False,
+            state="unavailable",
+            message="NWS data not available for this location — using global model data",
+        )
+        active_alerts = []
 
     resp = AssessResponse(
         lat=lat,
@@ -1045,6 +1141,8 @@ def build_assessment(
             else None
         ),
         fires=fire_points_out,
+        nws_status=nws_status,
+        active_alerts=active_alerts,
     )
 
     if hist_injection is not None:

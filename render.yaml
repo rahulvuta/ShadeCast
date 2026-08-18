@@ -38,6 +38,8 @@ services:
         value: "0"
       - key: CORS_ORIGINS
         sync: false
+      - key: NWS_USER_AGENT
+        value: "ShadeCast/1.0 (+https://github.com/rahulvuta/ShadeCast)"
       - key: PYTHON_VERSION
         value: "3.12.0"
 
@@ -72,5 +74,7 @@ services:
         sync: false
       - key: NASA_API_KEY
         sync: false
+      - key: NWS_USER_AGENT
+        value: "ShadeCast/1.0 (+https://github.com/rahulvuta/ShadeCast)"
       - key: PYTHON_VERSION
         value: "3.12.0"

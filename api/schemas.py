@@ -144,6 +144,31 @@ class ActionOut(BaseModel):
     trigger: str
 
 
+class NwsAlertOut(BaseModel):
+    id: str
+    event: str
+    severity: str | None = None
+    urgency: str | None = None
+    certainty: str | None = None
+    onset: datetime | None = None
+    expires: datetime | None = None
+    headline: str | None = None
+    description: str | None = None
+    area: str | None = None
+    web: str | None = None
+
+
+class NwsStatusOut(BaseModel):
+    available: bool
+    state: Literal["active", "outside_us", "unavailable"]
+    message: str
+    office: str | None = None
+    current_temp_source: Literal["open-meteo", "nws"] = "open-meteo"
+    current_wind_source: Literal["open-meteo", "nws"] = "open-meteo"
+    near_term_overridden_hours: int = 0
+    alert_count: int = 0
+
+
 class HourlyAssessment(BaseModel):
     hour: int
     valid_at: datetime | None = None
@@ -231,6 +256,8 @@ class AssessResponse(BaseModel):
     actual_vs_expected: ActualVsExpected | None = None
     # FIRMS detections used by the engine — historical replay fills this for the map.
     fires: list[FirePoint] = Field(default_factory=list)
+    nws_status: NwsStatusOut | None = None
+    active_alerts: list[NwsAlertOut] = Field(default_factory=list)
 
 
 class FirePoint(BaseModel):

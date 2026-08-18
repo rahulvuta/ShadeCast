@@ -1,0 +1,52 @@
+{
+  "id": "https://api.weather.gov/points/33.45,-112.07",
+  "type": "Feature",
+  "geometry": {
+    "type": "Point",
+    "coordinates": [
+      -112.07,
+      33.45
+    ]
+  },
+  "properties": {
+    "@id": "https://api.weather.gov/points/33.45,-112.07",
+    "@type": "wx:Point",
+    "cwa": "PSR",
+    "type": "land",
+    "forecastOffice": "https://api.weather.gov/offices/PSR",
+    "gridId": "PSR",
+    "gridX": 159,
+    "gridY": 58,
+    "forecast": "https://api.weather.gov/gridpoints/PSR/159,58/forecast",
+    "forecastHourly": "https://api.weather.gov/gridpoints/PSR/159,58/forecast/hourly",
+    "forecastGridData": "https://api.weather.gov/gridpoints/PSR/159,58",
+    "observationStations": "https://api.weather.gov/gridpoints/PSR/159,58/stations",
+    "relativeLocation": {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -112.0901324,
+          33.5721544
+        ]
+      },
+      "properties": {
+        "city": "Phoenix",
+        "state": "AZ",
+        "distance": {
+          "unitCode": "wmoUnit:m",
+          "value": 0
+        },
+        "bearing": {
+          "unitCode": "wmoUnit:degree_(angle)",
+          "value": 0
+        }
+      }
+    },
+    "forecastZone": "https://api.weather.gov/zones/forecast/AZZ543",
+    "county": "https://api.weather.gov/zones/county/AZC013",
+    "fireWeatherZone": "https://api.weather.gov/zones/fire/AZZ132",
+    "timeZone": "America/Phoenix",
+    "radarStation": "KIWA"
+  }
+}

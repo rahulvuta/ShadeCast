@@ -71,6 +71,14 @@ STALE_FORECAST_SEVERE = timedelta(hours=12)  # beyond mild stale → ERROR
 STALE_AIR_QUALITY = timedelta(hours=30)
 STALE_CLIMATOLOGY = timedelta(days=14)
 
+# NWS vs Open-Meteo cross-source (US only; skipped when NWS unavailable).
+NWS_TEMP_WARN_C = 5.0
+NWS_TEMP_ERROR_C = 10.0
+NWS_TEMP_CRITICAL_C = 20.0
+NWS_WIND_WARN_KMH = 15.0
+NWS_WIND_ERROR_KMH = 40.0
+NWS_WIND_CRITICAL_KMH = 80.0
+
 # Completeness: require most of the requested horizon.
 MIN_HOURS_FRACTION = 0.75
 DEFAULT_HORIZON_HOURS = 24
@@ -118,6 +126,22 @@ class HourlyInputs:
 
 
 @dataclass(frozen=True)
+class NwsCompareHour:
+    """NWS hourly values aligned to Open-Meteo hours for cross-source checks."""
+
+    valid_at: datetime
+    temperature_c: float | None = None
+    wind_speed_kmh: float | None = None
+
+
+@dataclass(frozen=True)
+class NwsAlertSnapshot:
+    alert_id: str
+    expires: datetime | None = None
+    event: str = ""
+
+
+@dataclass(frozen=True)
 class IntegrityBundle:
     """All inputs the integrity layer inspects before the engine runs."""
 
@@ -129,6 +153,10 @@ class IntegrityBundle:
     climatology_fetched_at: datetime | None = None
     horizon_hours: int = DEFAULT_HORIZON_HOURS
     now: datetime | None = None  # injectable for tests
+    nws_compare_hours: Sequence[NwsCompareHour] = ()
+    nws_alerts: Sequence[NwsAlertSnapshot] = ()
+    nws_available: bool | None = None
+    nws_has_grid: bool | None = None
 
 
 def _finding(
@@ -875,6 +903,142 @@ def check_staleness(
     return out
 
 
+def _hour_key(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc).replace(minute=0, second=0, microsecond=0)
+
+
+def check_nws_temp_divergence(
+    hours: Sequence[HourlyInputs],
+    nws_hours: Sequence[NwsCompareHour],
+) -> list[IntegrityFinding]:
+    """NWS vs Open-Meteo temperature at matching hours."""
+    if not nws_hours:
+        return []
+    nws_by = {_hour_key(r.valid_at): r for r in nws_hours}
+    worst: IntegrityFinding | None = None
+    worst_rank = -1
+    rank = {Severity.WARNING: 1, Severity.ERROR: 2, Severity.CRITICAL: 3}
+    for h in hours:
+        if h.valid_at is None or h.temperature_c is None:
+            continue
+        nws = nws_by.get(_hour_key(h.valid_at))
+        if nws is None or nws.temperature_c is None:
+            continue
+        delta = abs(h.temperature_c - nws.temperature_c)
+        sev = _severity_for_excess(
+            delta,
+            warn=NWS_TEMP_WARN_C,
+            error=NWS_TEMP_ERROR_C,
+            critical=NWS_TEMP_CRITICAL_C,
+        )
+        if sev is None:
+            continue
+        suffix = {Severity.WARNING: "", Severity.ERROR: "_large", Severity.CRITICAL: "_critical"}[sev]
+        finding = _finding(
+            f"nws_temp_divergence{suffix}",
+            sev,
+            f"NWS and Open-Meteo temperature differ by {delta:.1f}°C",
+            "temperature_c",
+            delta,
+            f"ΔT ≤ {NWS_TEMP_WARN_C}°C",
+        )
+        r = rank[sev]
+        if r > worst_rank:
+            worst, worst_rank = finding, r
+    return [worst] if worst else []
+
+
+def check_nws_wind_divergence(
+    hours: Sequence[HourlyInputs],
+    nws_hours: Sequence[NwsCompareHour],
+) -> list[IntegrityFinding]:
+    """NWS vs Open-Meteo wind speed at matching hours."""
+    if not nws_hours:
+        return []
+    nws_by = {_hour_key(r.valid_at): r for r in nws_hours}
+    worst: IntegrityFinding | None = None
+    worst_rank = -1
+    rank = {Severity.WARNING: 1, Severity.ERROR: 2, Severity.CRITICAL: 3}
+    for h in hours:
+        if h.valid_at is None or h.wind_speed_kmh is None:
+            continue
+        nws = nws_by.get(_hour_key(h.valid_at))
+        if nws is None or nws.wind_speed_kmh is None:
+            continue
+        delta = abs(h.wind_speed_kmh - nws.wind_speed_kmh)
+        sev = _severity_for_excess(
+            delta,
+            warn=NWS_WIND_WARN_KMH,
+            error=NWS_WIND_ERROR_KMH,
+            critical=NWS_WIND_CRITICAL_KMH,
+        )
+        if sev is None:
+            continue
+        suffix = {Severity.WARNING: "", Severity.ERROR: "_large", Severity.CRITICAL: "_critical"}[sev]
+        finding = _finding(
+            f"nws_wind_divergence{suffix}",
+            sev,
+            f"NWS and Open-Meteo wind differ by {delta:.1f} km/h",
+            "wind_speed_kmh",
+            delta,
+            f"Δwind ≤ {NWS_WIND_WARN_KMH} km/h",
+        )
+        r = rank[sev]
+        if r > worst_rank:
+            worst, worst_rank = finding, r
+    return [worst] if worst else []
+
+
+def check_nws_alert_expired(
+    alerts: Sequence[NwsAlertSnapshot],
+    *,
+    now: datetime | None = None,
+) -> list[IntegrityFinding]:
+    """Active-feed alerts whose expires timestamp is already in the past."""
+    clock = now or datetime.now(timezone.utc)
+    if clock.tzinfo is None:
+        clock = clock.replace(tzinfo=timezone.utc)
+    out: list[IntegrityFinding] = []
+    for a in alerts:
+        if not a.event or a.expires is None:
+            continue
+        exp = a.expires if a.expires.tzinfo else a.expires.replace(tzinfo=timezone.utc)
+        if exp < clock:
+            out.append(
+                _finding(
+                    "nws_alert_expired",
+                    Severity.WARNING,
+                    f"NWS alert '{a.event}' expires timestamp is in the past",
+                    "nws_alert.expires",
+                    exp.isoformat(),
+                    "expires ≥ now",
+                )
+            )
+    return out
+
+
+def check_nws_missing_grid(
+    *,
+    nws_available: bool | None,
+    nws_has_grid: bool | None,
+) -> list[IntegrityFinding]:
+    """Coverage claimed but office/gridX/gridY missing."""
+    if nws_available is True and nws_has_grid is False:
+        return [
+            _finding(
+                "nws_missing_grid",
+                Severity.ERROR,
+                "NWS coverage flagged available but grid mapping is missing",
+                "nws_grid",
+                None,
+                "office, gridX, gridY present",
+            )
+        ]
+    return []
+
+
 # --- Orchestrator ----------------------------------------------------------
 
 
@@ -910,4 +1074,14 @@ def run_all_checks(bundle: IntegrityBundle) -> list[IntegrityFinding]:
             now=bundle.now,
         )
     )
+    if bundle.nws_available:
+        findings.extend(check_nws_temp_divergence(hours, bundle.nws_compare_hours))
+        findings.extend(check_nws_wind_divergence(hours, bundle.nws_compare_hours))
+        findings.extend(check_nws_alert_expired(bundle.nws_alerts, now=bundle.now))
+        findings.extend(
+            check_nws_missing_grid(
+                nws_available=bundle.nws_available,
+                nws_has_grid=bundle.nws_has_grid,
+            )
+        )
     return findings

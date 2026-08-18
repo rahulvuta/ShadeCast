@@ -30,6 +30,10 @@ export const INTEGRITY_CATALOG: CatalogCheck[] = [
   { id: 'cross_temp_power', category: 'cross-source', label: 'Temp vs POWER climatology' },
   { id: 'uv_cross_source', category: 'cross-source', label: 'Forecast UV vs air-quality UV' },
   { id: 'hi_vs_apparent', category: 'cross-source', label: 'Rothfusz HI vs apparent temperature' },
+  { id: 'nws_temp_divergence', category: 'cross-source', label: 'NWS vs Open-Meteo temperature' },
+  { id: 'nws_wind_divergence', category: 'cross-source', label: 'NWS vs Open-Meteo wind' },
+  { id: 'nws_alert_expired', category: 'cross-source', label: 'NWS alert expiry in the past' },
+  { id: 'nws_missing_grid', category: 'completeness', label: 'NWS grid mapping present' },
 
   { id: 'empty_series', category: 'completeness', label: 'Hourly series present' },
   { id: 'required_nulls', category: 'completeness', label: 'Required temp/RH fields populated' },
@@ -70,6 +74,8 @@ export function catalogIdForFinding(checkId: string): string {
   if (id.startsWith('uv_cross_source')) return 'uv_cross_source'
   if (id.startsWith('hi_vs_apparent')) return 'hi_vs_apparent'
   if (id.startsWith('cross_temp_power')) return 'cross_temp_power'
+  if (id.startsWith('nws_temp_divergence')) return 'nws_temp_divergence'
+  if (id.startsWith('nws_wind_divergence')) return 'nws_wind_divergence'
   for (const c of INTEGRITY_CATALOG) {
     if (id === c.id || id.startsWith(`${c.id}_`)) return c.id
   }
