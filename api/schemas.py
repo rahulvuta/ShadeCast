@@ -197,6 +197,10 @@ class HourlyAssessment(BaseModel):
     rest_minutes: int
     note: str
     is_current: bool = False
+    wind_gusts_kmh: float | None = None
+    load_score: float | None = None
+    driver_stack: dict[str, float] = Field(default_factory=dict)
+    interactions: list[str] = Field(default_factory=list)
 
 
 class ScheduleSummaryOut(BaseModel):
@@ -243,6 +247,7 @@ class AssessResponse(BaseModel):
     sensitivity_profile: str = "general"
     current: CurrentConditions
     hourly: list[HourlyAssessment]
+    horizon: list[HourlyAssessment] = Field(default_factory=list)
     schedule: ScheduleSummaryOut
     days: list[DaySummaryOut] = Field(default_factory=list)
     shift_windows: list[ShiftWindowOut] = Field(default_factory=list)

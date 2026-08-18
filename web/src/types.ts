@@ -52,6 +52,29 @@ export interface ActionItem {
   trigger: string
 }
 
+export interface HourlyAssessment {
+  hour: number
+  valid_at?: string | null
+  day?: string | null
+  temperature_c?: number | null
+  heat_index_f?: number | null
+  heat_band: string
+  smoke_pressure: number
+  uv_index?: number | null
+  us_aqi?: number | null
+  wind_direction_deg?: number | null
+  wind_speed_kmh?: number | null
+  wind_gusts_kmh?: number | null
+  verdict: Verdict
+  work_minutes: number
+  rest_minutes: number
+  note: string
+  is_current?: boolean
+  load_score?: number | null
+  driver_stack?: Record<string, number>
+  interactions?: string[]
+}
+
 export interface AssessResponse {
   lat: number
   lon: number
@@ -75,24 +98,8 @@ export interface AssessResponse {
     verdict: Verdict | null
     disclaimer: string
   }
-  hourly: Array<{
-    hour: number
-    valid_at?: string | null
-    day?: string | null
-    temperature_c?: number | null
-    heat_index_f?: number | null
-    heat_band: string
-    smoke_pressure: number
-    uv_index?: number | null
-    us_aqi?: number | null
-    wind_direction_deg?: number | null
-    wind_speed_kmh?: number | null
-    verdict: Verdict
-    work_minutes: number
-    rest_minutes: number
-    note: string
-    is_current?: boolean
-  }>
+  hourly: HourlyAssessment[]
+  horizon?: HourlyAssessment[]
   schedule: {
     hard_stop_window: string | null
     best_work_window: string | null
