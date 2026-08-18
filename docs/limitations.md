@@ -92,3 +92,20 @@ The smoke-algorithm panel uses a static mosaic of [OpenStreetMap](https://www.op
 **Concordance** of `smoke_pressure` vs CAMS AQI on real bundle hours is a **consistency study** (satellite/model vs model), **not** ground-truth validation against measured PM2.5. See `docs/validation.md`. Ground-station validation remains future work.
 
 **Quebec wildfires Time Machine:** placed at Lebel-sur-Quévillon (evacuated June 2023) with archive weather/AQ and a hand-authored FIRMS fixture. Live FIRMS NRT still cannot retain 2023 for other events.
+
+## 16. NWS is US-only and not instantaneous
+
+[api.weather.gov](https://www.weather.gov/documentation/services-web-api) covers the United States, territories, and adjacent marine zones. Coordinates outside that domain (probed: Oaxaca 17.07, −96.72) return `InvalidPoint`. ShadeCast caches that as `nws_available: false` and does **not** retry on the hot path. The UI states this as designed behavior, not an outage.
+
+NWS is **additive**: Open-Meteo still drives the global schedule. A 0–6 hour override happens only when temperature differs by ≥5 °C or wind by ≥15 km/h.
+
+Alert arrival is **not instantaneous**. We fetch `/alerts/active` live per assess call with a 5-minute cache floor and a 30-second process throttle. There is still NWS issuance latency, network delay, and that cache floor. Do not treat ShadeCast as a warning-radio replacement.
+
+## 17. Storm signals outside the US are model probabilities
+
+Outside NWS, storm/lightning uses Open-Meteo convective fields (`cape`, `precipitation_probability`). That is a **model proxy**, not an official warning. `thunderstorm_probability` is advertised on the forecast API but was null in probes for Phoenix, Seattle, and Oaxaca — we do not use it. Tornado/severe-thunderstorm **warnings** therefore cannot fire outside NWS coverage.
+
+## 18. Clothing and PPE are library lookups, not a kit engine
+
+Clothing rows live in `api/actions/library.yaml` and are selected with the same deterministic trigger filter as other actions. They are decision-support reminders with source URLs, not a personal protective equipment program or an OSHA-compliance checklist.
+
