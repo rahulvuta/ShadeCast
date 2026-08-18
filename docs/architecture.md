@@ -32,9 +32,11 @@ Implemented in `api/engine/nws_blend.py` (single source of truth, unit-tested):
 2. **Current-conditions cross-check** — integrity compares NWS vs Open-Meteo temperature and wind.
 3. **Near-term override (0–6 h only)** — if `|ΔT| ≥ 5 °C` or `|Δwind| ≥ 15 km/h`, that hour’s temperature, RH, and wind come from NWS. UV, gusts, cloud, and precip stay Open-Meteo.
 
-Outside NWS coverage (e.g. Oaxaca), `/points` 404 is cached as `nws_available: false` forever and never retried on the hot path. The UI copy is designed: *“NWS unavailable outside the US — using global model data.”*
+Outside NWS coverage (e.g. Oaxaca), `/points` 404 is cached as `nws_available: false` and not retried on the hot path until the mapping TTL expires. The UI copy is designed: *“NWS unavailable outside the US — using global model data.”*
 
-Grid mapping (`/points/{lat},{lon}`) is cached permanently in `nws_grid_cache`.
+Grid mapping (`/points/{lat},{lon}`) is cached in `nws_grid_cache` with a 30-day TTL, because NWS warns a coordinate's grid or office can change. Each cache write commits its own unit of work — the request-scoped session only closes, so a flushed-but-uncommitted row would be silently discarded. A failed re-check keeps the cached mapping.
+
+Only a definitive weather.gov answer yields `outside_us`. An incomplete lookup yields `pending`, so a throttle or network blip is never shown as missing coverage. The client's token bucket is the single request budget: `api/services/nws.py` asks for whatever is stale, alerts first, and each call skips itself when the budget is spent.
 
 ## Storm hazard class
 

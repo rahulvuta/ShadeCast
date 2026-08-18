@@ -173,7 +173,7 @@ class StormDetail(BaseModel):
 
 class NwsStatusOut(BaseModel):
     available: bool
-    state: Literal["active", "outside_us", "unavailable"]
+    state: Literal["active", "outside_us", "pending", "unavailable"]
     message: str
     office: str | None = None
     current_temp_source: Literal["open-meteo", "nws"] = "open-meteo"

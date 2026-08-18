@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 import httpx
 import pytest
 
 from api.clients.nws import (
+    BURST_CAPACITY,
+    SUSTAINED_RATE_PER_S,
     NwsThrottleSkipped,
     allow_request,
     compass_to_degrees,
@@ -139,8 +142,10 @@ def test_fetch_alerts_uses_active_point_query():
     assert "active=true" not in seen[0]
 
 
-def test_throttle_skips_second_request_without_blocking():
-    assert allow_request(block=False) is True
+def test_burst_is_allowed_then_skipped_without_blocking():
+    """Concurrent visitors must each get a slot; only a sustained flood is skipped."""
+    for _ in range(int(BURST_CAPACITY)):
+        assert allow_request(block=False) is True
     assert allow_request(block=False) is False
     with pytest.raises(NwsThrottleSkipped):
         fetch_points(
@@ -150,3 +155,28 @@ def test_throttle_skips_second_request_without_blocking():
                 transport=httpx.MockTransport(lambda r: httpx.Response(200, json={}))
             ),
         )
+
+
+def test_budget_refills_at_the_sustained_rate():
+    for _ in range(int(BURST_CAPACITY)):
+        assert allow_request(block=False) is True
+    clock = time.monotonic() + 1.0 / SUSTAINED_RATE_PER_S
+    assert allow_request(block=False, clock=lambda: clock) is True
+
+
+def test_rate_limit_response_triggers_a_real_cooldown():
+    """A 403/429 from weather.gov must pause calls, not just get logged."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(429, headers={"Retry-After": "7"}, json={})
+
+    with pytest.raises(RuntimeError):
+        fetch_active_alerts(
+            33.45,
+            -112.07,
+            client=httpx.Client(transport=httpx.MockTransport(handler)),
+        )
+    assert allow_request(block=False) is False
+    # The server-supplied Retry-After wins over the default cooldown.
+    assert allow_request(block=False, max_wait_s=6.0, sleeper=lambda _s: None) is False
+    assert allow_request(block=False, max_wait_s=8.0, sleeper=lambda _s: None) is True

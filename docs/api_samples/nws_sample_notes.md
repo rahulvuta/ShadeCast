@@ -34,5 +34,12 @@ Base URL: https://api.weather.gov. Accept: application/geo+json.
 - Properties used: id, event, severity, urgency, certainty, onset, expires, headline, description, areaDesc, web
 
 ## Rate limit
-- NWS asks for no more than about one request per 30 seconds
-- ShadeCast: per-process throttle; alerts cached ≥5 minutes; grid cached forever
+- NWS does not publish a number: "reasonable rate limits... a generous amount for typical use"
+- Exceeding it returns 403/429 and clears in about 5 seconds
+- A User-Agent identifying the app is required on every request
+- ShadeCast: per-process token bucket (1/s sustained, burst 5) plus backoff when NWS returns 403/429
+- Caching is what keeps volume low: alerts ≥5 minutes, hourly per staleness window, grid re-checked every 30 days
+
+## Grid stability
+- gridX/gridY (and the office) for a coordinate can occasionally change, so NWS asks clients to
+  re-check `/points` periodically rather than caching the mapping forever

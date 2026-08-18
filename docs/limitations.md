@@ -95,11 +95,13 @@ The smoke-algorithm panel uses a static mosaic of [OpenStreetMap](https://www.op
 
 ## 16. NWS is US-only and not instantaneous
 
-[api.weather.gov](https://www.weather.gov/documentation/services-web-api) covers the United States, territories, and adjacent marine zones. Coordinates outside that domain (probed: Oaxaca 17.07, −96.72) return `InvalidPoint`. ShadeCast caches that as `nws_available: false` and does **not** retry on the hot path. The UI states this as designed behavior, not an outage.
+[api.weather.gov](https://www.weather.gov/documentation/services-web-api) covers the United States, territories, and adjacent marine zones. Coordinates outside that domain (probed: Oaxaca 17.07, −96.72) return `InvalidPoint`. ShadeCast caches that as `nws_available: false` and does **not** retry it on the hot path until the mapping TTL expires. The UI states this as designed behavior, not an outage.
 
 NWS is **additive**: Open-Meteo still drives the global schedule. A 0–6 hour override happens only when temperature differs by ≥5 °C or wind by ≥15 km/h.
 
-Alert arrival is **not instantaneous**. We fetch `/alerts/active` live per assess call with a 5-minute cache floor and a 30-second process throttle. There is still NWS issuance latency, network delay, and that cache floor. Do not treat ShadeCast as a warning-radio replacement.
+Alert arrival is **not instantaneous**. We fetch `/alerts/active` live per assess call with a 5-minute cache floor, behind a per-process token bucket (1/s sustained, burst 5) that backs off when weather.gov returns 403/429. There is still NWS issuance latency, network delay, and that cache floor. Do not treat ShadeCast as a warning-radio replacement.
+
+A miss reports **which kind** of miss it is. `outside_us` means weather.gov gave a definitive answer for that coordinate; `pending` means the lookup itself did not complete (throttled, network error, or a first visit that has not resolved yet) and will retry on the next assess. A transient failure is never presented as absent coverage. NWS also asks clients to re-check `/points` periodically because a coordinate's grid or office can change, so the mapping carries a 30-day TTL — and a failed re-check keeps the cached mapping rather than downgrading the location.
 
 ## 17. Storm signals outside the US are model probabilities
 

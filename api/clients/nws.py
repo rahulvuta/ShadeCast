@@ -21,9 +21,21 @@ endpoint but remain on forecast/hourly — use that, not periods.
 Active alerts: GET /alerts/active?point={lat},{lon}.
 Do not use /alerts?active=true — that parameter is deprecated.
 
-NWS asks for no more than one request per 30 seconds. This client enforces
-a per-process throttle. Alert responses should be cached at least 5 minutes
-by the caller (see api/services/nws.py).
+NWS does not publish a numeric rate limit. The documented policy is a generous
+allowance for typical use, an identifying User-Agent on every request, and a
+retry after roughly 5 seconds when a limit is hit (403/429). This client keeps
+traffic polite with a token bucket — a low sustained rate plus a small burst —
+and backs off for real when weather.gov signals throttling.
+
+A fixed one-call-per-N-seconds interval must not be used here: it caps the whole
+process rather than each user, so a handful of concurrent visitors would push
+every location into a permanent "throttled" state. Caller-side caching
+(see api/services/nws.py) is what actually keeps request volume low.
+
+Callers choose how the limiter degrades: skip immediately (default, for
+repeatable calls), wait for a slot (block=True, cron), or wait up to a bounded
+budget (max_wait_s, for lookups that would otherwise never resolve under
+skip-only semantics).
 
 Non-US coordinates: /points returns HTTP 404 InvalidPoint outside NWS
 coverage. Detect it once, cache nws_available=false, and never retry on
@@ -51,8 +63,15 @@ logger = logging.getLogger(__name__)
 BASE_URL = "https://api.weather.gov"
 DEFAULT_USER_AGENT = "ShadeCast/1.0 (+https://github.com/rahulvuta/ShadeCast)"
 INVALID_POINT_TYPE = "https://api.weather.gov/problems/InvalidPoint"
-MIN_INTERVAL_S = 30.0
 ALERTS_MIN_CACHE_S = 5 * 60
+
+# Politeness budget, not a published limit: sustained calls per second plus a
+# small burst so a few simultaneous visitors each get served.
+SUSTAINED_RATE_PER_S = 1.0
+BURST_CAPACITY = 5.0
+# weather.gov signals throttling with 403/429 and clears in about 5 seconds.
+RATE_LIMIT_STATUSES = frozenset({403, 429})
+RATE_LIMIT_COOLDOWN_S = 5.0
 
 # Compass → meteorological "from" degrees.
 _COMPASS_DEG: dict[str, float] = {
@@ -74,17 +93,52 @@ _COMPASS_DEG: dict[str, float] = {
     "NNW": 337.5,
 }
 
-_last_request_monotonic: float | None = None
+_tokens: float = BURST_CAPACITY
+_last_refill: float | None = None
+_cooldown_until: float | None = None
 
 
 class NwsThrottleSkipped(Exception):
-    """Live call skipped because the per-process 30s throttle is active."""
+    """Live call skipped because the local politeness budget is exhausted."""
 
 
 def reset_throttle() -> None:
-    """Test helper — clear the process-wide request clock."""
-    global _last_request_monotonic
-    _last_request_monotonic = None
+    """Test helper — refill the process-wide budget and clear any cooldown."""
+    global _tokens, _last_refill, _cooldown_until
+    _tokens = BURST_CAPACITY
+    _last_refill = None
+    _cooldown_until = None
+
+
+def note_rate_limited(
+    retry_after_s: float | None = None,
+    clock: Callable[[], float] = time.monotonic,
+) -> None:
+    """Back off after weather.gov itself signalled throttling."""
+    global _cooldown_until, _tokens
+    wait = retry_after_s if retry_after_s and retry_after_s > 0 else RATE_LIMIT_COOLDOWN_S
+    _cooldown_until = clock() + wait
+    _tokens = 0.0
+
+
+def _refill(now: float) -> None:
+    global _tokens, _last_refill
+    if _last_refill is None:
+        _last_refill = now
+        return
+    elapsed = max(0.0, now - _last_refill)
+    _last_refill = now
+    _tokens = min(BURST_CAPACITY, _tokens + elapsed * SUSTAINED_RATE_PER_S)
+
+
+def _wait_for_slot(now: float) -> float:
+    """Seconds until a call may proceed; 0 when one may proceed now."""
+    wait = 0.0
+    if _cooldown_until is not None and now < _cooldown_until:
+        wait = _cooldown_until - now
+    if _tokens < 1.0:
+        wait = max(wait, (1.0 - _tokens) / SUSTAINED_RATE_PER_S)
+    return wait
 
 
 def nws_headers() -> dict[str, str]:
@@ -99,31 +153,29 @@ def nws_headers() -> dict[str, str]:
 def allow_request(
     *,
     block: bool = False,
+    max_wait_s: float | None = None,
     sleeper: Callable[[float], None] = time.sleep,
     clock: Callable[[], float] = time.monotonic,
 ) -> bool:
-    """Return True if a weather.gov call may proceed.
+    """Return True if a weather.gov call may proceed, consuming one slot.
 
     Assess hot path uses block=False (skip rather than sleep).
-    Cron uses block=True (wait out the remaining interval).
+    Cron uses block=True (wait for a slot).
+    max_wait_s waits only when the delay fits the budget, so a caller can trade a
+    little latency for a lookup that would otherwise be skipped forever.
     """
-    global _last_request_monotonic
+    global _tokens
     now = clock()
-    last = _last_request_monotonic
-    if last is not None:
-        wait = MIN_INTERVAL_S - (now - last)
-        if wait > 0:
-            if not block:
-                return False
-            sleeper(wait)
-            now = clock()
-    _last_request_monotonic = now
+    _refill(now)
+    wait = _wait_for_slot(now)
+    if wait > 0:
+        budget = wait if block else (max_wait_s or 0.0)
+        if wait > budget:
+            return False
+        sleeper(wait)
+        _refill(clock())
+    _tokens = max(0.0, _tokens - 1.0)
     return True
-
-
-def mark_request(clock: Callable[[], float] = time.monotonic) -> None:
-    global _last_request_monotonic
-    _last_request_monotonic = clock()
 
 
 @dataclass(frozen=True)
@@ -308,16 +360,30 @@ def parse_alerts(data: dict[str, Any]) -> list[NwsAlert]:
     return out
 
 
+def _retry_after_seconds(value: str | None) -> float | None:
+    """Parse a numeric Retry-After. HTTP-date form falls back to the default."""
+    if not value:
+        return None
+    try:
+        return max(0.0, float(value.strip()))
+    except ValueError:
+        return None
+
+
 def _request_json(
     client: httpx.Client,
     url: str,
     *,
     block: bool,
+    max_wait_s: float | None = None,
 ) -> tuple[int, Any]:
-    if not allow_request(block=block):
+    if not allow_request(block=block, max_wait_s=max_wait_s):
         raise NwsThrottleSkipped(url)
     resp = client.get(url, headers=nws_headers())
-    mark_request()
+    if resp.status_code in RATE_LIMIT_STATUSES:
+        cooldown = _retry_after_seconds(resp.headers.get("Retry-After"))
+        note_rate_limited(cooldown)
+        logger.warning("NWS throttled us (HTTP %s) on %s", resp.status_code, url)
     try:
         payload = resp.json()
     except Exception:  # noqa: BLE001
@@ -331,12 +397,13 @@ def fetch_points(
     client: httpx.Client | None = None,
     *,
     block: bool = False,
+    max_wait_s: float | None = None,
 ) -> NwsGrid:
     url = f"{BASE_URL}/points/{lat:.4f},{lon:.4f}"
     owns = client is None
     client = client or httpx.Client(timeout=30.0)
     try:
-        status, payload = _request_json(client, url, block=block)
+        status, payload = _request_json(client, url, block=block, max_wait_s=max_wait_s)
         if is_outside_coverage(status, payload):
             return NwsGrid(available=False)
         if status >= 400:
@@ -356,12 +423,13 @@ def fetch_hourly_forecast(
     client: httpx.Client | None = None,
     *,
     block: bool = False,
+    max_wait_s: float | None = None,
 ) -> list[NwsHourlyRow]:
     url = f"{BASE_URL}/gridpoints/{office}/{grid_x},{grid_y}/forecast/hourly"
     owns = client is None
     client = client or httpx.Client(timeout=30.0)
     try:
-        status, payload = _request_json(client, url, block=block)
+        status, payload = _request_json(client, url, block=block, max_wait_s=max_wait_s)
         if status >= 400 or not isinstance(payload, dict):
             raise RuntimeError(f"NWS hourly forecast returned HTTP {status}")
         return parse_hourly(payload)
@@ -376,12 +444,13 @@ def fetch_active_alerts(
     client: httpx.Client | None = None,
     *,
     block: bool = False,
+    max_wait_s: float | None = None,
 ) -> list[NwsAlert]:
     url = f"{BASE_URL}/alerts/active?point={lat:.4f},{lon:.4f}"
     owns = client is None
     client = client or httpx.Client(timeout=30.0)
     try:
-        status, payload = _request_json(client, url, block=block)
+        status, payload = _request_json(client, url, block=block, max_wait_s=max_wait_s)
         if status >= 400 or not isinstance(payload, dict):
             raise RuntimeError(f"NWS alerts returned HTTP {status}")
         return parse_alerts(payload)

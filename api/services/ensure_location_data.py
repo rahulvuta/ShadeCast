@@ -2,6 +2,11 @@
 
 The assess path may soft-refresh FIRMS/POWER/forecast/AQ when missing or stale,
 with DB caching. Fail soft — never raise to the assess caller.
+
+NWS is deliberately absent here. api/services/nws.py already refreshes what it
+needs on the same request, and it holds the one live weather.gov call an assess
+may spend; warming here would consume that call and leave the user-facing path
+throttled. Bulk NWS warming belongs to the cron (ingest/job.py), which can block.
 """
 
 from __future__ import annotations
@@ -55,7 +60,6 @@ def ensure_location_data(
     _ensure_climatology(session, lat, lon)
     _ensure_forecast(session, lat, lon)
     _ensure_air_quality(session, lat, lon)
-    _ensure_nws_hourly(session, lat, lon)
 
 
 def _aware(dt: datetime | None) -> datetime | None:
@@ -225,33 +229,3 @@ def _ensure_air_quality(session: Session, lat: float, lon: float) -> None:
             "On-demand air quality failed for (%.3f, %.3f): %s", lat, lon, exc
         )
         session.rollback()
-
-
-def _ensure_nws_hourly(session: Session, lat: float, lon: float) -> None:
-    """Refresh NWS hourly grid when missing/stale. Fail soft. Does not fetch alerts."""
-    try:
-        from api.models import NwsObservationHour
-        from api.services.nws import load_hourly_from_db, refresh_hourly_for_ingest
-
-        lat_r = firms_client.round_coord(lat)
-        lon_r = firms_client.round_coord(lon)
-        now = datetime.now(timezone.utc)
-        newest = session.scalar(
-            select(func.max(NwsObservationHour.fetched_at)).where(
-                NwsObservationHour.lat_round == lat_r,
-                NwsObservationHour.lon_round == lon_r,
-            )
-        )
-        hours, _fetched = load_hourly_from_db(session, lat, lon)
-        if hours and newest is not None and not _is_stale(newest, STALE_FORECAST, now):
-            return
-        n = refresh_hourly_for_ingest(session, lat, lon, block=False)
-        session.commit()
-        if n:
-            logger.info("On-demand NWS hourly for (%.3f, %.3f): upserted=%d", lat, lon, n)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("On-demand NWS hourly failed for (%.3f, %.3f): %s", lat, lon, exc)
-        try:
-            session.rollback()
-        except Exception:  # noqa: BLE001
-            pass

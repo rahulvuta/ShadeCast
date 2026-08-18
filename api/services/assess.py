@@ -71,6 +71,7 @@ from api.schemas import (
     UVDetail,
 )
 from api.services.diff import diff_assessments
+from api.services.nws import MSG_PENDING, MSG_UNAVAILABLE
 from api.services.historical_bundle import actual_vs_expected as _actual_vs_expected
 
 
@@ -642,7 +643,7 @@ def build_assessment(
     blend_result = None
     if hist_injection is None:
         try:
-            from api.services.nws import MSG_UNAVAILABLE, load_nws_for_assess
+            from api.services.nws import load_nws_for_assess
 
             nws_slice = load_nws_for_assess(
                 session,
@@ -1019,10 +1020,13 @@ def build_assessment(
             for a in nws_slice.alerts
         ]
     else:
+        # No slice: either a historical replay, which carries no live NWS, or a
+        # failed lookup — which says nothing about coverage at this location.
+        replay = hist_injection is not None
         nws_status = NwsStatusOut(
             available=False,
-            state="unavailable",
-            message="NWS data not available for this location — using global model data",
+            state="unavailable" if replay else "pending",
+            message=MSG_UNAVAILABLE if replay else MSG_PENDING,
         )
         active_alerts = []
 

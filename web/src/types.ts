@@ -201,7 +201,7 @@ export interface AssessResponse {
   fires?: FirePoint[]
   nws_status?: {
     available: boolean
-    state: 'active' | 'outside_us' | 'unavailable'
+    state: 'active' | 'outside_us' | 'pending' | 'unavailable'
     message: string
     office?: string | null
     current_temp_source?: 'open-meteo' | 'nws'

@@ -1,13 +1,25 @@
-"""NWS cache orchestration: permanent grid map, 5-minute alerts, hourly grid.
+"""NWS cache orchestration: long-lived grid map, 5-minute alerts, hourly grid.
 
-Grid lookups hit weather.gov at most once per rounded coordinate for the life
-of the database. Outside-coverage (nws_available=false) is cached the same way
-and is never retried on the assess hot path.
+Grid lookups hit weather.gov at most once per rounded coordinate per GRID_TTL.
+The mapping is stable but not immutable — NWS asks clients to re-check /points
+periodically because gridX/gridY and even the office can change — so a stale row
+is re-resolved opportunistically and kept as the answer whenever the re-check
+cannot complete. Outside-coverage (nws_available=false) is cached the same way.
 
 Alerts are fetched live on assess (the point of NWS is timeliness) but reused
 for a minimum of 5 minutes. Hourly grid data is cron-refreshed; assess reads
 the table and only live-fetches when the cache is empty or older than the
 forecast staleness window.
+
+Every cache write here commits its own unit of work. The request-scoped session
+(api/db.py get_db) only closes, so a flushed-but-uncommitted write is discarded
+at the end of the request — a permanently cached fact like the grid mapping must
+not depend on some later caller committing for it.
+
+A miss is reported as one of two distinct states: "outside_us" only when
+weather.gov gave a definitive answer, and "pending" when the lookup could not be
+completed (throttled, network error, or network disabled). Never report a
+transient condition as a coverage verdict.
 """
 
 from __future__ import annotations
@@ -15,7 +27,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Callable, Literal
+from typing import Callable, Literal, NamedTuple
 
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -35,7 +47,13 @@ from api.models import NwsAlertRow, NwsGridCache, NwsObservationHour
 
 logger = logging.getLogger(__name__)
 
-NwsState = Literal["active", "outside_us", "unavailable"]
+NwsState = Literal["active", "outside_us", "pending", "unavailable"]
+
+# The grid mapping is resolved once per coordinate per TTL, so it is worth a
+# short wait rather than being skipped indefinitely by the limiter.
+GRID_WAIT_S = 3.0
+# NWS asks clients to re-check /points periodically rather than pinning forever.
+GRID_TTL = timedelta(days=30)
 
 
 @dataclass
@@ -49,12 +67,39 @@ class NwsSlice:
     hours_fetched_at: datetime | None
     alerts_fetched_at: datetime | None
     has_grid: bool
-    points_fetched: bool
 
 
 MSG_ACTIVE = "Real-time NWS alerts active for this location"
 MSG_OUTSIDE = "NWS unavailable outside the US — using global model data"
-MSG_UNAVAILABLE = "NWS data not available for this location — using global model data"
+MSG_PENDING = "Checking NWS for this location — using global model data meanwhile"
+MSG_UNAVAILABLE = "NWS live data is not part of a historical replay"
+
+
+class GridLookup(NamedTuple):
+    """Result of resolving a coordinate to an NWS grid.
+
+    points_fetched marks that this call spent a live /points request.
+    deferred marks a miss with no definitive answer from weather.gov, which must
+    not be cached and must not be reported as missing coverage.
+    """
+
+    grid: NwsGrid
+    points_fetched: bool
+    deferred: bool
+
+
+def _commit_unit(session: Session, what: str) -> bool:
+    """Commit one cache write. Fail soft — roll back only this unit's work."""
+    try:
+        session.commit()
+        return True
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("NWS %s commit failed: %s", what, exc)
+        try:
+            session.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        return False
 
 
 def _aware(dt: datetime | None) -> datetime | None:
@@ -74,6 +119,13 @@ def grid_from_row(row: NwsGridCache) -> NwsGrid:
         timezone=row.timezone,
         city=row.city,
     )
+
+
+def _grid_fresh(row: NwsGridCache, now: datetime) -> bool:
+    fetched = _aware(row.fetched_at)
+    if fetched is None:
+        return False
+    return (now - fetched) <= GRID_TTL
 
 
 def lookup_grid(session: Session, lat: float, lon: float) -> NwsGridCache | None:
@@ -124,31 +176,45 @@ def get_or_fetch_grid(
     *,
     allow_network: bool,
     block: bool = False,
+    max_wait_s: float | None = None,
+    now: datetime | None = None,
     fetch_points: Callable[..., NwsGrid] = nws_client.fetch_points,
-) -> tuple[NwsGrid, bool]:
-    """Return cached grid; fetch /points only when this coordinate has never been resolved.
-
-    The second item is True iff this call performed a live /points request.
-    """
+) -> GridLookup:
+    """Return the cached grid, re-resolving /points only when absent or past its TTL."""
+    now = now or datetime.now(timezone.utc)
     row = lookup_grid(session, lat, lon)
-    if row is not None:
-        return grid_from_row(row), False
+    cached = grid_from_row(row) if row is not None else None
+    if row is not None and _grid_fresh(row, now):
+        return GridLookup(grid_from_row(row), False, False)
+
+    def fall_back(reason: str) -> GridLookup:
+        # A stale mapping is still almost certainly correct, so a failed re-check
+        # must never downgrade a coordinate we have already resolved.
+        if cached is not None:
+            logger.info("NWS keeping cached grid for %s,%s (%s)", lat, lon, reason)
+            return GridLookup(cached, False, False)
+        return GridLookup(NwsGrid(available=False), False, True)
+
     if not allow_network:
-        return NwsGrid(available=False), False
+        return fall_back("network disabled")
     try:
-        grid = fetch_points(lat, lon, block=block)
+        grid = fetch_points(lat, lon, block=block, max_wait_s=max_wait_s)
     except NwsThrottleSkipped:
         logger.info("NWS /points throttled for %s,%s", lat, lon)
-        return NwsGrid(available=False), False
+        return fall_back("throttled")
     except Exception as exc:  # noqa: BLE001
         logger.warning("NWS /points failed for %s,%s: %s", lat, lon, exc)
-        return NwsGrid(available=False), False
+        return fall_back("lookup failed")
+    # The grid mapping never changes, so persist it now: a later failure
+    # elsewhere in this request must not cost us the one /points call.
     try:
         with session.begin_nested():
             upsert_grid(session, lat, lon, grid)
     except Exception as exc:  # noqa: BLE001
         logger.warning("NWS grid cache write failed: %s", exc)
-    return grid, True
+    else:
+        _commit_unit(session, "grid cache")
+    return GridLookup(grid, True, False)
 
 
 def upsert_hourly(
@@ -331,51 +397,53 @@ def load_nws_for_assess(
     allow_network: bool,
     now: datetime | None = None,
     block: bool = False,
+    grid_wait_s: float | None = GRID_WAIT_S,
     fetch_points: Callable[..., NwsGrid] = nws_client.fetch_points,
     fetch_hourly: Callable[..., list[NwsHourlyRow]] = nws_client.fetch_hourly_forecast,
     fetch_alerts: Callable[..., list[NwsAlert]] = nws_client.fetch_active_alerts,
 ) -> NwsSlice:
     """Load NWS extras for one assess. Fail soft — never raise to the caller."""
     now = now or datetime.now(timezone.utc)
-    grid, points_fetched = get_or_fetch_grid(
+    grid, _points_fetched, deferred = get_or_fetch_grid(
         session,
         lat,
         lon,
         allow_network=allow_network,
         block=block,
+        max_wait_s=grid_wait_s,
+        now=now,
         fetch_points=fetch_points,
     )
     if not grid.available:
-        # Cached false (outside US) vs never-resolved / transient miss.
-        row = lookup_grid(session, lat, lon)
-        outside = row is not None and row.available is False
+        # Only a definitive answer from weather.gov means "no coverage here";
+        # an incomplete lookup is pending and will resolve on a later assess.
         return NwsSlice(
             available=False,
-            state="outside_us" if outside else "unavailable",
-            message=MSG_OUTSIDE if outside else MSG_UNAVAILABLE,
+            state="pending" if deferred else "outside_us",
+            message=MSG_PENDING if deferred else MSG_OUTSIDE,
             office=None,
             hours=[],
             alerts=[],
             hours_fetched_at=None,
             alerts_fetched_at=None,
             has_grid=False,
-            points_fetched=points_fetched,
         )
 
     hours, hours_fetched = load_hourly_from_db(session, lat, lon)
     alerts, alerts_fetched = load_alerts_from_db(session, lat, lon)
     alerts_need = allow_network and not _alerts_fresh(alerts_fetched, now)
     hours_need = allow_network and (not hours or not _hours_fresh(hours_fetched, now))
-    can_live = allow_network and not points_fetched
 
-    # One weather.gov call per 30s: prefer live alerts (timeliness) over hourly.
-    if can_live and alerts_need:
+    # The client's rate limiter owns the request budget. Ask for what is stale,
+    # most timely first, and let each call skip itself when the budget is spent —
+    # a second hand-rolled cap here would just starve whichever call came last.
+    if alerts_need:
         try:
             alerts = fetch_alerts(lat, lon, block=block)
             alerts_fetched = datetime.now(timezone.utc)
             with session.begin_nested():
                 replace_alerts(session, lat, lon, alerts)
-            can_live = False
+            _commit_unit(session, "alerts cache")
         except NwsThrottleSkipped:
             logger.info("NWS alerts throttled for %s,%s", lat, lon)
         except Exception as exc:  # noqa: BLE001
@@ -383,8 +451,7 @@ def load_nws_for_assess(
             alerts, alerts_fetched = load_alerts_from_db(session, lat, lon)
 
     if (
-        can_live
-        and hours_need
+        hours_need
         and grid.office is not None
         and grid.grid_x is not None
         and grid.grid_y is not None
@@ -394,6 +461,7 @@ def load_nws_for_assess(
             hours_fetched = datetime.now(timezone.utc)
             with session.begin_nested():
                 upsert_hourly(session, lat, lon, hours)
+            _commit_unit(session, "hourly cache")
         except NwsThrottleSkipped:
             logger.info("NWS hourly throttled for %s,%s", lat, lon)
         except Exception as exc:  # noqa: BLE001
@@ -411,7 +479,6 @@ def load_nws_for_assess(
         hours_fetched_at=hours_fetched,
         alerts_fetched_at=alerts_fetched,
         has_grid=has_grid,
-        points_fetched=points_fetched,
     )
 
 
@@ -423,8 +490,10 @@ def refresh_hourly_for_ingest(
     block: bool = True,
 ) -> int:
     """Cron path: resolve grid (cached) and refresh hourly rows. Returns upsert count."""
-    grid, _ = get_or_fetch_grid(session, lat, lon, allow_network=True, block=block)
+    grid = get_or_fetch_grid(session, lat, lon, allow_network=True, block=block).grid
     if not grid.available or grid.office is None or grid.grid_x is None or grid.grid_y is None:
         return 0
     rows = nws_client.fetch_hourly_forecast(grid.office, grid.grid_x, grid.grid_y, block=block)
-    return upsert_hourly(session, lat, lon, rows)
+    n = upsert_hourly(session, lat, lon, rows)
+    _commit_unit(session, "hourly cache")
+    return n
