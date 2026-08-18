@@ -183,3 +183,35 @@ def test_waterfall_ends_at_load_score():
     assert any(s.kind == "interaction" for s in load.waterfall)
     smoke_heavy = next(s for s in load.waterfall if s.id == "ix:smoke+heavy_workload")
     assert smoke_heavy.mechanism and "respiration" in smoke_heavy.mechanism.lower()
+
+
+def test_driver_stack_sums_to_load_score():
+    from api.engine.environmental_load import stack_from_waterfall
+    from api.engine.uv import UVBand, UVAssessment
+
+    cases = [
+        dict(heat_band=HeatBand.SAFE, smoke_pressure=0.0, us_aqi=30.0, gusts=5.0),
+        dict(heat_band=HeatBand.DANGER, smoke_pressure=40.0, us_aqi=165.0, gusts=50.0),
+        dict(heat_band=HeatBand.CAUTION, smoke_pressure=15.0, us_aqi=90.0, gusts=10.0),
+    ]
+    for c in cases:
+        load = assess_environmental_load(
+            heat_band=c["heat_band"],
+            smoke_pressure=c["smoke_pressure"],
+            smoke_label="high" if c["smoke_pressure"] >= 10 else "low",
+            air=assess_air(smoke_pressure=c["smoke_pressure"], us_aqi=c["us_aqi"]),
+            uv=UVAssessment(
+                daily_max=9.0,
+                band=UVBand.VERY_HIGH,
+                clear_sky_max=10.0,
+                peak_hour=13,
+                peak_valid_at=None,
+                minutes_to_burn=20.0,
+                skin_type=3,
+            ),
+            wind_gusts_kmh=c["gusts"],
+            workload="moderate",
+            confidence=ConfidenceLevel.HIGH,
+        )
+        stack = stack_from_waterfall(load.waterfall, load.load_score)
+        assert abs(sum(stack.values()) - load.load_score) < 0.05, (c, stack, load.load_score)

@@ -34,6 +34,8 @@ export function VerdictCard({
   confidence,
   unusable,
   interactions,
+  inspectingLabel,
+  onClearInspect,
 }: {
   verdict: Verdict | null
   hardStop: string | null
@@ -46,6 +48,8 @@ export function VerdictCard({
   confidence?: ConfidenceLevel | null
   unusable?: boolean
   interactions?: string[]
+  inspectingLabel?: string | null
+  onClearInspect?: () => void
 }) {
   const displayVerdict = unusable || verdict == null ? null : verdict
   const headerClass = displayVerdict
@@ -68,6 +72,15 @@ export function VerdictCard({
       >
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="type-micro opacity-90">Crew verdict</p>
+          {inspectingLabel && (
+            <button
+              type="button"
+              className="touch-target rounded border border-black/25 bg-black/25 px-2.5 py-1 type-micro"
+              onClick={onClearInspect}
+            >
+              {inspectingLabel} — show now
+            </button>
+          )}
           {confidence && (
             <span
               className="rounded border border-black/25 bg-black/25 px-2.5 py-1 type-micro"

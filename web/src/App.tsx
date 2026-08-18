@@ -16,6 +16,7 @@ import { ShiftSheetExport } from './components/ShiftSheetExport'
 import { StaleBanner } from './components/StaleBanner'
 import { NwsStatusBanner } from './components/NwsStatusBanner'
 import { StormAlertBanner } from './components/StormAlertBanner'
+import { ConditionChartsPanel } from './components/ConditionChartsPanel'
 import { TimelinePanel } from './components/TimelinePanel'
 import { UVPanel } from './components/UVPanel'
 import { VerdictCard } from './components/VerdictCard'
@@ -125,6 +126,7 @@ export default function App() {
   const [lang, setLang] = useState<Lang>('en')
   const [historicalEvents, setHistoricalEvents] = useState<HistoricalEventSummary[]>([])
   const [hourOffset] = useState<number | null>(null)
+  const [focusHour, setFocusHour] = useState<{ day: string | null; hour: number } | null>(null)
 
   const [tabs, setTabs] = useState<LocationTab[]>([])
   const [activeTabId, setActiveTabId] = useState<string>(INTEGRITY_TAB_ID)
@@ -470,13 +472,36 @@ export default function App() {
     }
   }, [onIntegrityTab, assess, lang, workload, acclimatized, profile])
 
-  const displayVerdict = assess?.current.verdict ?? null
-  const displayHeat = assess?.current.heat_index_f ?? null
-  const displaySmoke = assess?.smoke.smoke_pressure ?? 0
+  const focusedRow = useMemo(() => {
+    if (!assess || !focusHour) return null
+    const pool = assess.horizon?.length ? assess.horizon : assess.hourly
+    return (
+      pool.find(
+        (h) =>
+          h.hour === focusHour.hour &&
+          (focusHour.day == null || !h.day || h.day === focusHour.day),
+      ) ?? null
+    )
+  }, [assess, focusHour])
+
+  const displayVerdict = (focusedRow?.verdict ?? assess?.current.verdict ?? null) as Verdict | null
+  const displayHeat = focusedRow?.heat_index_f ?? assess?.current.heat_index_f ?? null
+  const displaySmoke = focusedRow?.smoke_pressure ?? assess?.smoke.smoke_pressure ?? 0
+  const mapSmoke = assess?.smoke.smoke_pressure ?? 0
+  const displayLoadScore = focusedRow?.load_score ?? assess?.environmental_load?.load_score
+  const displayInteractions = focusedRow?.interactions ?? assess?.environmental_load?.interactions
   const displayWind = assess?.current.wind_direction_deg ?? null
   const displayWindSpeed = assess?.current.wind_speed_kmh ?? null
   const currentHour =
     assess?.hourly.find((h) => h.is_current)?.hour ?? assess?.hourly[0]?.hour ?? null
+  const scrubHour = focusHour?.hour ?? currentHour
+  const inspectingLabel = focusedRow
+    ? `Inspecting ${focusedRow.day ? `${focusedRow.day} ` : ''}${String(focusedRow.hour).padStart(2, '0')}:00`
+    : null
+
+  useEffect(() => {
+    setFocusHour(null)
+  }, [assess, activeTabId])
 
   useEffect(() => {
     document.body.classList.toggle('text-mode', textMode)
@@ -613,6 +638,11 @@ export default function App() {
     setTabs((prev) =>
       prev.map((t) => (t.id === activeTabId ? { ...t, selectedDay: day } : t)),
     )
+  }
+
+  function onSelectHour(day: string | null, hour: number) {
+    setFocusHour({ day, hour })
+    if (day) setSelectedDay(day)
   }
 
   const controlsProps = {
@@ -878,14 +908,16 @@ export default function App() {
                       bestWork={assess.schedule.best_work_window}
                       heatIndex={displayHeat}
                       smokePressure={displaySmoke}
-                      loadScore={assess.environmental_load?.load_score}
+                      loadScore={displayLoadScore}
                       explainText={assess.explain_text}
                       ceilingReason={
                         assess.ceiling_reason ?? assess.environmental_load?.ceiling_reason
                       }
                       confidence={assess.data_confidence?.level}
                       unusable={false}
-                      interactions={assess.environmental_load?.interactions}
+                      interactions={displayInteractions}
+                      inspectingLabel={inspectingLabel}
+                      onClearInspect={focusHour ? () => setFocusHour(null) : undefined}
                     />
                   </div>
                 </div>
@@ -912,7 +944,7 @@ export default function App() {
                     lon={assess.lon}
                     windFromDeg={displayWind}
                     windSpeedKmh={displayWindSpeed}
-                    smokePressure={displaySmoke}
+                    smokePressure={mapSmoke}
                     fires={fires}
                     textMode={textMode}
                     defaultOpen={true}
@@ -924,6 +956,13 @@ export default function App() {
                   )}
                 </div>
 
+                <ConditionChartsPanel
+                  hourly={assess.hourly}
+                  horizon={assess.horizon}
+                  textMode={textMode}
+                  onSelectHour={onSelectHour}
+                />
+
                 <TimelinePanel
                   hourly={assess.hourly}
                   days={assess.days}
@@ -933,7 +972,7 @@ export default function App() {
                   todayIso={assess.days?.[0]?.day ?? null}
                   hardStop={assess.schedule.hard_stop_window}
                   bestWork={assess.schedule.best_work_window}
-                  scrubHour={currentHour}
+                  scrubHour={scrubHour}
                 />
 
                 <ShiftSheetExport

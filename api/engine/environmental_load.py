@@ -382,3 +382,24 @@ def assess_environmental_load(
         profile=profile,
         waterfall=waterfall,
     )
+
+
+def stack_from_waterfall(
+    waterfall: list[WaterfallStep],
+    load_score: float,
+) -> dict[str, float]:
+    """Absolute driver slices that sum to load_score (stacked-area contract)."""
+    parts = {s.id: float(s.delta) for s in waterfall if s.kind == "driver"}
+    total = sum(parts.values())
+    if total <= 0 or load_score <= 0:
+        return {}
+    if abs(total - load_score) < 0.05:
+        scaled = {k: round(v, 2) for k, v in parts.items()}
+    else:
+        scale = load_score / total
+        scaled = {k: round(v * scale, 2) for k, v in parts.items()}
+    drift = round(load_score - sum(scaled.values()), 2)
+    if scaled and abs(drift) >= 0.01:
+        top = max(scaled, key=lambda k: abs(scaled[k]))
+        scaled[top] = round(scaled[top] + drift, 2)
+    return scaled

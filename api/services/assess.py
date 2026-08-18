@@ -17,7 +17,7 @@ from api.clients.firms import round_coord
 from api.config import CORRUPT_DEMO_LOCATION, DEMO_LOCATIONS, get_settings
 from api.engine.air import assess_air
 from api.engine.compound import Verdict
-from api.engine.environmental_load import assess_environmental_load
+from api.engine.environmental_load import assess_environmental_load, stack_from_waterfall
 from api.engine.explain import explain_from_drivers
 from api.engine.heat import Workload, assess_heat, celsius_to_fahrenheit
 from api.engine.nws_blend import blend_forecast_hours
@@ -873,11 +873,15 @@ def build_assessment(
                     us_aqi=aq_u,
                     wind_direction_deg=r.wind_direction_deg,
                     wind_speed_kmh=r.wind_speed_kmh,
+                    wind_gusts_kmh=r.wind_gusts_kmh,
                     verdict=hour_load.verdict.value,
                     work_minutes=0,
                     rest_minutes=0,
                     note="",
                     is_current=r.valid_at == current_row.valid_at,
+                    load_score=hour_load.load_score,
+                    driver_stack=stack_from_waterfall(hour_load.waterfall, hour_load.load_score),
+                    interactions=list(hour_load.interactions),
                 )
             )
         daily_verdicts.append((day, day_pairs))
@@ -1031,6 +1035,7 @@ def build_assessment(
             disclaimer=cur_heat.disclaimer,
         ),
         hourly=[h for h in hourly_out if h.day == today.isoformat()],
+        horizon=hourly_out,
         schedule=ScheduleSummaryOut(
             hard_stop_window=today_schedule.summary.hard_stop_window,
             best_work_window=today_schedule.summary.best_work_window,

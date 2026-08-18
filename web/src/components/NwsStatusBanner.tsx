@@ -13,12 +13,12 @@ export function NwsStatusBanner({ status }: { status: AssessResponse['nws_status
       }`}
     >
       <p className="font-semibold">{status.message}</p>
-      {active && status.alert_count > 0 && (
+      {active && (status.alert_count ?? 0) > 0 && (
         <p className="mt-0.5 text-xs text-[var(--muted)]">
           {status.alert_count} official NWS alert{status.alert_count === 1 ? '' : 's'} for this
           point. Near-term numbers use {status.current_temp_source === 'nws' ? 'NWS' : 'Open-Meteo'}{' '}
           temperature
-          {status.near_term_overridden_hours > 0
+          {(status.near_term_overridden_hours ?? 0) > 0
             ? ` (${status.near_term_overridden_hours} hour${status.near_term_overridden_hours === 1 ? '' : 's'} overridden).`
             : '.'}
         </p>
