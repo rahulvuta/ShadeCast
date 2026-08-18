@@ -2,7 +2,7 @@
 
 # ShadeCast
 
-**Environmental-load work/rest scheduler for outdoor crews — heat, wildfire smoke, UV, and air quality in one verdict, with transparent drivers and data-confidence gates.**
+**Environmental-load work/rest scheduler for outdoor crews — heat, wildfire smoke, UV, air quality, and US NWS storm alerts in one verdict, with transparent drivers and data-confidence gates.**
 
 A supervisor opens ShadeCast and gets one answer: is it safe to work outside, when should we stop over the next five days, why, and when the system does not trust its inputs.
 
@@ -21,7 +21,7 @@ Outdoor crews face two hazards that existing tools treat separately:
 - British Columbia has piloted a [combined wildfire-smoke and extreme-heat action plan](https://www.vchri.ca/stories/2026/04/20/helping-people-breathe-easier-changing-climate) because [co-exposure poses greater risk than either hazard alone](https://www.bccdc.ca/resource-gallery/Documents/Guidelines%20and%20Forms/Guidelines%20and%20Manuals/Health-Environment/BCCDC_WildFire_FactSheet_HotWeather.pdf).
 - The [University of Minnesota Extension farm safety guide](https://extension.umn.edu/climate-resilience-resources-vegetable-growers-minnesota/heat-and-air-quality-safety-plan) instructs growers to check the **OSHA-NIOSH Heat Safety Tool** and **separately** check an air-quality forecast — the exact two-tool workflow ShadeCast collapses into one.
 
-Public-health authorities already validate the compound-risk premise. ShadeCast's contribution is **per-crew environmental-load scheduling** with **global satellite coverage**, a **data-integrity gate**, and a **5-day shift planner**.
+Public-health authorities already validate the compound-risk premise. ShadeCast's contribution is **per-crew environmental-load scheduling** with **global satellite coverage**, a **data-integrity gate**, a **5-day shift planner**, and **US NWS alerts** that never replace the global model.
 
 ## Validation snapshot
 
@@ -61,31 +61,34 @@ Full write-up: [docs/validation.md](docs/validation.md) (unit · historical repl
 ![Spanish crew briefing ready to copy](docs/screenshots/briefing_spanish.png)  
 *Copyable crew briefing in English, Spanish, or Vietnamese, plus sourced action cards.*
 
+v4 adds NWS alerts, a storm hard-stop banner, 24h/120h condition charts, and clothing/PPE by body zone. **New screenshots of those panels are not in this repo yet** (no browser capture in the build environment) — capture locally after merge if you want them on Devpost.
+
 Live verification (healthz, ingest freshness, Lighthouse): [docs/verification_phase7.md](docs/verification_phase7.md).
 
 ## How it works
 
 ```text
-FIRMS + Open-Meteo Forecast + Air Quality + POWER
+FIRMS + Open-Meteo Forecast + Air Quality + POWER + NWS (US only)
         │
         ▼
  Postgres cache ──▶ Integrity layer (confidence)
         │
         ▼
- Environmental load engine (heat/smoke/UV/air/wind/profile)
+ Environmental load engine (heat/smoke/UV/air/wind/storm/profile)
         │
         ▼
- Explain + sourced actions + 5-day schedule ──▶ React UI
+ Explain + sourced actions/clothing + 5-day schedule ──▶ React UI
         │
         └── Featherless LLM rephrases briefings only (never risk math)
 ```
 
 | Data source | Role |
 |---|---|
-| **Open-Meteo Forecast** | Forward-looking hourly weather + UV — drives the schedule |
+| **Open-Meteo Forecast** | Forward-looking hourly weather + UV — **schedule backbone everywhere** |
 | **Open-Meteo Air Quality** | CAMS PM2.5 / US AQI (slow refresh; cross-check vs FIRMS) |
 | **NASA POWER** | Climatological baseline ("is today hotter than usual here?") — **not a forecast** |
 | **NASA FIRMS** | Active fire detections for satellite-derived smoke pressure |
+| **NWS (api.weather.gov)** | US-only live alerts + near-term cross-check; never a hard dependency |
 | **Open-Meteo Geocoding** | Place search for arbitrary coordinates |
 
 **Critical:** POWER is a reanalysis archive. Misusing it as a forecast is a common mistake. ShadeCast uses Open-Meteo for forward hours and POWER only for climatology comparison.
@@ -123,7 +126,7 @@ The natural institutional home is a school environmental or CS club, or a county
 
 The architecture minimizes upkeep by design:
 
-- Three of four data sources need **no API key** (Open-Meteo forecast, Open-Meteo geocoding, NASA POWER). FIRMS needs one free MAP_KEY.
+- Four of five data sources need **no API key** (Open-Meteo forecast, Open-Meteo geocoding, NASA POWER, NWS). FIRMS needs one free MAP_KEY.
 - The risk engine is pure functions with a large automated pytest suite — contributors cannot silently break the science.
 - `docs/limitations.md` and `docs/runbook.md` transfer the reasoning, not just the code.
 
@@ -164,6 +167,8 @@ Read [docs/limitations.md](docs/limitations.md). Linked from the app footer. Key
 - Smoke pressure is a satellite-derived proxy, **not PM2.5 or AQI**
 - Heat index is a screening tool, **not WBGT**
 - POWER is climatology, **not a forecast**
+- NWS is **US-only**; outside the US we use global model data by design
+- Storm warnings outside the US are **model probabilities**, not official alerts
 - Not medical advice
 
 ## Run locally

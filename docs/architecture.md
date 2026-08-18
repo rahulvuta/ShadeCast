@@ -1,52 +1,69 @@
-# ShadeCast architecture (v3)
+# ShadeCast architecture (v4)
 
 ShadeCast answers: **plan the next five days around every environmental stressor here, know exactly why, and know when the system does not trust its own inputs** — including **Time Machine** replay of real historical archives through the unmodified engine.
 
 ```text
-┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
-│ NASA FIRMS   │  │ Open-Meteo   │  │ Open-Meteo   │  │ NASA POWER   │
-│ fires / FRP  │  │ Forecast OR  │  │ Air Quality  │  │ climatology  │
-│              │  │ Archive      │  │ (live/hist)  │  │ (live only)  │
-└──────┬───────┘  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘
-       │                 │                 │                 │
-       └────────────┬────┴────────┬────────┴────────┬────────┘
-                    ▼             ▼                 ▼
-              ┌──────────────────────────────────────────┐
-              │  Postgres cache / ingest  ·  Historical   │
-              │  bundles (validation/fixtures/bundles)    │
-              └────────────────────┬─────────────────────┘
-                                   ▼
-              ┌──────────────────────────────────────────┐
-              │     Data integrity layer (api/integrity)  │
-              │  → data_confidence (+ Integrity Theater)  │
-              └────────────────────┬─────────────────────┘
-                                   ▼
-              ┌──────────────────────────────────────────┐
-              │   Environmental load engine (api/engine)  │
-              │  → one verdict + waterfall + concordance  │
-              └────────────────────┬─────────────────────┘
-                                   ▼
-              ┌──────────────────────────────────────────┐
-              │  React UI — design tokens, ops/sunlight,  │
-              │  algorithm map, risk clock, compare, PDF  │
-              └──────────────────────────────────────────┘
+┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────┐
+│ NASA     │ │ Open-    │ │ Open-    │ │ NASA     │ │ NWS          │
+│ FIRMS    │ │ Meteo    │ │ Meteo AQ │ │ POWER    │ │ api.weather  │
+│ fires    │ │ forecast │ │ CAMS     │ │ clim.    │ │ .gov (US)    │
+└────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘ └──────┬───────┘
+     │            │            │            │              │
+     └────────────┴──────┬─────┴────────────┴──────────────┘
+                         ▼
+              Postgres cache / ingest · Historical bundles
+                         ▼
+              Data integrity layer (api/integrity)
+              → data_confidence (+ Integrity Theater)
+                         ▼
+              Environmental load engine (api/engine)
+              → one verdict + waterfall + storm hard-stop
+                         ▼
+              React UI — tokens, map, charts, clothing, PDF
 ```
+
+NWS is the **fifth source**. It is additive and US-only. Open-Meteo remains the schedule backbone everywhere, including Phoenix.
+
+## NWS blending rule
+
+Implemented in `api/engine/nws_blend.py` (single source of truth, unit-tested):
+
+1. **Alerts** — live `GET /alerts/active?point=` per assess call (5-minute cache floor). Not mixed into `load_score`.
+2. **Current-conditions cross-check** — integrity compares NWS vs Open-Meteo temperature and wind.
+3. **Near-term override (0–6 h only)** — if `|ΔT| ≥ 5 °C` or `|Δwind| ≥ 15 km/h`, that hour’s temperature, RH, and wind come from NWS. UV, gusts, cloud, and precip stay Open-Meteo.
+
+Outside NWS coverage (e.g. Oaxaca), `/points` 404 is cached as `nws_available: false` forever and never retried on the hot path. The UI copy is designed: *“NWS unavailable outside the US — using global model data.”*
+
+Grid mapping (`/points/{lat},{lon}`) is cached permanently in `nws_grid_cache`.
+
+## Storm hazard class
+
+`api/engine/storm.py` is an independent hard-stop, like wind gusts — **not** a smooth `load_score` band.
+
+- Tornado Warning or Severe Thunderstorm Warning → immediate STOP (`storm_hard_stop`).
+- Lightning (NWS severe-tstorm warning, or Open-Meteo CAPE ≥ 1500 J/kg **and** precip ≥ 50%) → binary STOP. `thunderstorm_probability` is advertised by Open-Meteo but returned null in probes; we do not use it.
+- Watches escalate one verdict level and add “conditions may deteriorate rapidly”; they do not hard-stop.
+- Extreme Heat / Air Quality NWS alerts appear on the banner; heat and air engines still own those scores.
+
+When NWS/storm inputs are absent, existing verdicts are unchanged (`tests/test_storm.py`).
 
 ## Key packages
 
 | Path | Role |
 | --- | --- |
-| `api/clients/` | FIRMS, POWER, Open-Meteo forecast + air quality + **`historical.py`** (archive weather / AQ) |
+| `api/clients/` | FIRMS, POWER, Open-Meteo forecast + air quality + **`historical.py`** + **`nws.py`** |
+| `api/engine/nws_blend.py` | Documented Open-Meteo/NWS merge (0–6 h material divergence only) |
+| `api/engine/storm.py` | Storm / lightning hard-stop class |
 | `api/events/` | Time Machine registry (`registry.yaml` + `loader.py`) |
 | `validation/fixtures/bundles/` | Committed real archive JSON per event (FIRMS may be empty archive fixture) |
-| `api/integrity/` | Pre-engine validity / confidence |
-| `api/engine/` | Heat, smoke, UV, air, environmental load (**waterfall steps**), schedule, explain |
-| `api/actions/` | Curated sourced action library + selection |
+| `api/integrity/` | Pre-engine validity / confidence (includes NWS divergence / expired alerts / missing grid) |
+| `api/engine/` | Heat, smoke, UV, air, storm, environmental load (**waterfall steps**), schedule, explain |
+| `api/actions/` | Curated sourced action library + clothing/PPE (`category` / `body_zone`) |
 | `api/services/assess.py` | `/api/assess` — live **or** `?event=` historical via identical `build_assessment` |
 | `web/src/design/` | Tokens + theme (`ops` / `sunlight`) |
 | `web/src/lib/smokeGeometry.ts` | Client mirror of 300 km / ±45° upwind cone math |
 | `web/src/lib/shiftSheetPdf.ts` | Client-side supervisor PDF |
-| `web/src/` | Dashboard: hero, map, scrubber, waterfall, clock, compare, integrity theater |
+| `web/src/` | Dashboard: hero, storm banner, map, condition charts, clothing panel, PDF |
 
 ## Historical path
 
@@ -56,11 +73,12 @@ ShadeCast answers: **plan the next five days around every environmental stressor
 
 ## Invariants
 
-1. **One verdict.** UV / AQI / heat never compete as parallel traffic lights.
+1. **One verdict.** UV / AQI / heat / storm never compete as parallel traffic lights. Storm can hard-stop the same verdict.
 2. **Deterministic risk math.** The LLM never computes or ranks risk.
-3. **Integrity before trust.** Findings are never silently swallowed.
+3. **Integrity before trust.** Findings are never silently swallowed. NWS is checked like every other source.
 4. **LOW confidence never under-calls.** Escalation is one level more conservative.
 5. **MODEL_LEADS ≠ corruption.** High CAMS AQI with quiet FIRMS is signal.
 6. **Historical ≠ synthetic.** Time Machine uses real archive samples; documented CAMS-vs-ground gaps stay visible.
+7. **NWS never a hard dependency.** A crew in Oaxaca gets the same Open-Meteo-backed verdict quality as a crew in Phoenix, minus US-only extras.
 
 See also: [limitations.md](limitations.md), [validation.md](validation.md), [runbook.md](runbook.md), [verification_phase7.md](verification_phase7.md).
