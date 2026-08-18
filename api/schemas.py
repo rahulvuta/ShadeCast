@@ -156,6 +156,17 @@ class NwsAlertOut(BaseModel):
     description: str | None = None
     area: str | None = None
     web: str | None = None
+    is_warning: bool = False
+    is_watch: bool = False
+
+
+class StormDetail(BaseModel):
+    storm_band: str
+    lightning_risk: bool
+    hard_stop: bool
+    watch_note: str | None = None
+    headline_quote: str | None = None
+    source: str = "none"
 
 
 class NwsStatusOut(BaseModel):
@@ -258,6 +269,7 @@ class AssessResponse(BaseModel):
     fires: list[FirePoint] = Field(default_factory=list)
     nws_status: NwsStatusOut | None = None
     active_alerts: list[NwsAlertOut] = Field(default_factory=list)
+    storm: StormDetail | None = None
 
 
 class FirePoint(BaseModel):

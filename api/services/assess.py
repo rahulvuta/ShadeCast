@@ -24,6 +24,7 @@ from api.engine.nws_blend import blend_forecast_hours
 from api.engine.schedule import build_multiday_schedule, build_schedule, shift_planner
 from api.engine.sensitivity import SensitivityProfile
 from api.engine.smoke import FireDetectionInput, assess_smoke
+from api.engine.storm import assess_storm, is_watch_event, is_warning_event
 from api.engine.uv import assess_uv
 from api.freshness import SOURCES, build_freshness
 from api.integrity.bundle import make_bundle
@@ -63,6 +64,7 @@ from api.schemas import (
     IntegrityFindingOut,
     NwsAlertOut,
     NwsStatusOut,
+    StormDetail,
     ScheduleSummaryOut,
     ShiftWindowOut,
     SmokeDetail,
@@ -775,6 +777,12 @@ def build_assessment(
         acclimatized=acclimatized,
         full_sun=full_sun,
     )
+    storm_now = assess_storm(
+        nws_slice.alerts if nws_slice is not None else [],
+        cape=current_row.cape,
+        precipitation_probability=current_row.precipitation_probability,
+        wind_gusts_kmh=current_row.wind_gusts_kmh,
+    )
     load = assess_environmental_load(
         heat_band=cur_heat.effective_band,
         smoke_pressure=smoke.smoke_pressure,
@@ -785,6 +793,7 @@ def build_assessment(
         workload=workload,
         confidence=conf_result.level,
         profile=sensitivity_profile,
+        storm=storm_now,
     )
     verdict_escalated = "low_confidence_escalate" in load.interactions
     adj_current: str | None = load.verdict.value
@@ -832,6 +841,12 @@ def build_assessment(
                 us_aqi=aq_u,
                 pm2_5=aq_pm,
             )
+            hour_storm = assess_storm(
+                nws_slice.alerts if nws_slice is not None else [],
+                cape=r.cape,
+                precipitation_probability=r.precipitation_probability,
+                wind_gusts_kmh=r.wind_gusts_kmh,
+            )
             hour_load = assess_environmental_load(
                 heat_band=heat.effective_band,
                 smoke_pressure=hour_smoke.smoke_pressure,
@@ -842,6 +857,7 @@ def build_assessment(
                 workload=workload,
                 confidence=conf_result.level,
                 profile=sensitivity_profile,
+                storm=hour_storm,
             )
             day_pairs.append((r.valid_at.hour, hour_load.verdict))
             hourly_out.append(
@@ -922,6 +938,7 @@ def build_assessment(
         ceiling_reason=load.ceiling_reason,
         concordance=load.concordance.value,
         interactions=load.interactions,
+        storm_headline=storm_now.headline_quote if storm_now.hard_stop else None,
     )
     selected = select_actions(
         verdict=adj_current,
@@ -975,6 +992,8 @@ def build_assessment(
                 description=a.description,
                 area=a.area,
                 web=a.web,
+                is_warning=is_warning_event(a.event),
+                is_watch=is_watch_event(a.event),
             )
             for a in nws_slice.alerts
         ]
@@ -1143,6 +1162,14 @@ def build_assessment(
         fires=fire_points_out,
         nws_status=nws_status,
         active_alerts=active_alerts,
+        storm=StormDetail(
+            storm_band=storm_now.storm_band.value,
+            lightning_risk=storm_now.lightning_risk,
+            hard_stop=storm_now.hard_stop,
+            watch_note=storm_now.watch_note,
+            headline_quote=storm_now.headline_quote,
+            source=storm_now.source,
+        ),
     )
 
     if hist_injection is not None:

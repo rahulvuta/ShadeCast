@@ -212,7 +212,17 @@ export interface AssessResponse {
     description?: string | null
     area?: string | null
     web?: string | null
+    is_warning?: boolean
+    is_watch?: boolean
   }>
+  storm?: {
+    storm_band: string
+    lightning_risk: boolean
+    hard_stop: boolean
+    watch_note?: string | null
+    headline_quote?: string | null
+    source?: string
+  } | null
 }
 
 export interface BriefResponse {

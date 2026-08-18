@@ -18,6 +18,7 @@ def explain_from_drivers(
     ceiling_reason: str,
     concordance: str | None = None,
     interactions: Sequence[str] | None = None,
+    storm_headline: str | None = None,
 ) -> str:
     """Build a plain-language explanation paragraph.
 
@@ -41,6 +42,8 @@ def explain_from_drivers(
         text += f" Concordance: {concordance}."
     if interactions:
         text += f" Interactions applied: {', '.join(interactions)}."
+    if storm_headline:
+        text += f' Official alert (NWS): "{storm_headline}".'
     return text
 
 
