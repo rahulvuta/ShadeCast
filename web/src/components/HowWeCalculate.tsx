@@ -24,7 +24,9 @@ export function HowWeCalculate() {
         </p>
         <p>
           <strong className="text-[var(--ink)]">Forecast vs climatology:</strong> Open-Meteo drives the
-          schedule; NASA POWER is the historical baseline only.
+          schedule; NASA POWER is the historical baseline only. NWS is US-only and additive:
+          official alerts plus a near-term cross-check. Outside the US the same global model
+          path is used — that is designed behavior, not a failure.
         </p>
         <p>
           Full notes:{' '}

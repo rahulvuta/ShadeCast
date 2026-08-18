@@ -21,11 +21,16 @@ def catalog_id_for_finding(check_id: str) -> str:
         return "hi_vs_apparent"
     if cid.startswith("cross_temp_power"):
         return "cross_temp_power"
+    if cid.startswith("nws_temp_divergence"):
+        return "nws_temp_divergence"
+    if cid.startswith("nws_wind_divergence"):
+        return "nws_wind_divergence"
     return cid
 
 
 def test_catalog_maps_severity_suffixes():
     assert catalog_id_for_finding("cross_temp_power_critical") == "cross_temp_power"
+    assert catalog_id_for_finding("nws_temp_divergence_large") == "nws_temp_divergence"
     assert catalog_id_for_finding("uv_cross_source_large") == "uv_cross_source"
     assert catalog_id_for_finding("stale_forecast_severe") == "stale_forecast"
     assert catalog_id_for_finding("firms_fetch_unknown") == "stale_firms"

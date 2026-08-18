@@ -321,6 +321,14 @@ def run() -> int:
             except Exception as exc:  # noqa: BLE001
                 logger.warning("POWER failed for %s: %s", loc["key"], exc)
 
+            try:
+                from api.services.nws import refresh_hourly_for_ingest
+
+                n = refresh_hourly_for_ingest(session, lat, lon, block=True)
+                logger.info("NWS hourly %s upserted=%d", loc["key"], n)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("NWS hourly failed for %s: %s", loc["key"], exc)
+
         quota = firms_client.firms_quota_remaining()
         run_row.fires_upserted = fires_n
         run_row.forecast_upserted = forecast_n

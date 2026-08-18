@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     stale_after_minutes: int = 60
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
+    # NWS requires a User-Agent; no API key. Override if a contact email is added later.
+    nws_user_agent: str = "ShadeCast/1.0 (+https://github.com/rahulvuta/ShadeCast)"
+
     @field_validator("database_url", mode="before")
     @classmethod
     def _normalize_db_url(cls, v: object) -> object:

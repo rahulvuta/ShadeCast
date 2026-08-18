@@ -67,6 +67,11 @@ _SOURCE_HINTS: list[tuple[str, str]] = [
     ("uv_above", "Open-Meteo"),
     ("hi_", "engine"),
     ("dew_point", "engine"),
+    ("nws_temp", "NWS"),
+    ("nws_wind", "NWS"),
+    ("nws_alert", "NWS"),
+    ("nws_missing", "NWS"),
+    ("nws_", "NWS"),
 ]
 
 

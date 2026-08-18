@@ -8,7 +8,7 @@ from typing import Sequence
 from api.clients import air_quality as aq_client
 from api.clients import forecast as forecast_client
 from api.engine.heat import celsius_to_fahrenheit, heat_index_f
-from api.integrity.checks import HourlyInputs, IntegrityBundle
+from api.integrity.checks import HourlyInputs, IntegrityBundle, NwsAlertSnapshot, NwsCompareHour
 
 
 def build_hourly_inputs(
@@ -67,6 +67,10 @@ def make_bundle(
     climatology_fetched_at: datetime | None,
     horizon_hours: int = 24,
     now: datetime | None = None,
+    nws_compare_hours: Sequence[NwsCompareHour] = (),
+    nws_alerts: Sequence[NwsAlertSnapshot] = (),
+    nws_available: bool | None = None,
+    nws_has_grid: bool | None = None,
 ) -> IntegrityBundle:
     aq_by_hour: dict[datetime, aq_client.AirQualityRow] = {}
     if aq_rows:
@@ -82,4 +86,8 @@ def make_bundle(
         climatology_fetched_at=climatology_fetched_at,
         horizon_hours=horizon_hours,
         now=now,
+        nws_compare_hours=nws_compare_hours,
+        nws_alerts=nws_alerts,
+        nws_available=nws_available,
+        nws_has_grid=nws_has_grid,
     )

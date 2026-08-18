@@ -14,6 +14,7 @@ import { LocationTabBar } from './components/LocationTabBar'
 import { SidebarControls } from './components/SidebarControls'
 import { ShiftSheetExport } from './components/ShiftSheetExport'
 import { StaleBanner } from './components/StaleBanner'
+import { NwsStatusBanner } from './components/NwsStatusBanner'
 import { TimelinePanel } from './components/TimelinePanel'
 import { UVPanel } from './components/UVPanel'
 import { VerdictCard } from './components/VerdictCard'
@@ -863,6 +864,7 @@ export default function App() {
                     servedFromCache={assess.served_from_cache}
                   />
                   <div className="mt-2 space-y-2">
+                    <NwsStatusBanner status={assess.nws_status} />
                     <ConfidenceBanner confidence={assess.data_confidence} />
                     <DiffStrip summary={assess.diff_summary} />
                     <VerdictCard
