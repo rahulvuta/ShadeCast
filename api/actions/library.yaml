@@ -119,3 +119,180 @@ actions:
     body: Keep children hydrated and cool on hot days; limit prolonged or heavy outdoor play when AQI is unhealthy for sensitive groups.
     source_url: https://www.cdc.gov/heat-health/risk-factors/infants-and-children.html
     source_name: CDC Infants and Children and Heat
+
+  # --- Clothing / PPE (category: clothing; selected separately by body_zone) ---
+  - id: clothing_uv_hat
+    trigger: high_uv
+    audience: [general, athlete, children]
+    priority: 20
+    category: clothing
+    body_zone: head
+    title: Wide-brim hat
+    body: Wear a wide-brim or legionnaire hat that shades face, ears, and neck during peak UV.
+    source_url: https://www.who.int/news-room/questions-and-answers/item/radiation-the-ultraviolet-(uv)-index
+    source_name: WHO UV Index
+
+  - id: clothing_uv_upf_shirt
+    trigger: high_uv
+    audience: [general, athlete, children]
+    priority: 22
+    category: clothing
+    body_zone: torso
+    title: Long-sleeve UPF shirt
+    body: Cover the torso and arms with a loose, tightly woven or UPF-rated shirt; do not rely on a t-shirt alone at UV HIGH or above.
+    source_url: https://www.cdc.gov/cancer/skin/basic_info/sun-safety.htm
+    source_name: CDC Sun Safety
+
+  - id: clothing_uv_sunglasses
+    trigger: high_uv
+    audience: [general, athlete, children]
+    priority: 24
+    category: clothing
+    body_zone: eyes
+    title: Wraparound UV sunglasses
+    body: Use wraparound sunglasses that block UVA and UVB; ordinary tinted glasses leave the sides of the eyes exposed.
+    source_url: https://www.cdc.gov/niosh/topics/uvradiation/default.html
+    source_name: CDC/NIOSH UV Radiation
+
+  - id: clothing_uv_spf
+    trigger: high_uv
+    audience: [general, athlete, children]
+    priority: 26
+    category: clothing
+    body_zone: hands
+    title: SPF 30+ on remaining skin
+    body: Apply broad-spectrum SPF 30+ to uncovered skin (hands, neck, ears) 15 minutes before going out; reapply every 2 hours and after heavy sweating.
+    source_url: https://www.who.int/news-room/questions-and-answers/item/radiation-the-ultraviolet-(uv)-index
+    source_name: WHO UV Index
+
+  - id: clothing_heat_loose_light
+    trigger: heat
+    audience: [general, athlete, children, over_65, cardiovascular]
+    priority: 28
+    category: clothing
+    body_zone: torso
+    title: Loose, light-colored clothing
+    body: Wear loose, light-colored, breathable clothing so sweat can evaporate. Tight or dark layers trap heat.
+    source_url: https://www.osha.gov/heat-exposure/personal-risk-factors
+    source_name: OSHA Heat — Personal Risk Factors
+
+  - id: clothing_heat_wicking
+    trigger: heat
+    audience: [general, athlete]
+    priority: 32
+    category: clothing
+    body_zone: torso
+    title: Moisture-wicking base layer
+    body: Prefer moisture-wicking fabrics over cotton when work is sustained in heat; wet cotton stays damp and slows cooling.
+    source_url: https://www.cdc.gov/niosh/topics/heatstress/
+    source_name: CDC/NIOSH Heat Stress
+
+  - id: clothing_heat_cooling_towel
+    trigger: heat
+    audience: [general, athlete, over_65]
+    priority: 34
+    category: clothing
+    body_zone: head
+    title: Cooling towel on rest breaks
+    body: Use a wet cooling towel or bandana on the neck and head during scheduled shade breaks; it is an aid, not a substitute for water and rest.
+    source_url: https://www.osha.gov/heat-exposure/water-rest-shade
+    source_name: OSHA Water. Rest. Shade.
+
+  - id: clothing_heat_ppe_conflict
+    trigger: heat_ppe
+    audience: [general, athlete, over_65, cardiovascular]
+    priority: 6
+    category: clothing
+    body_zone: torso
+    title: Heavy PPE blocks evaporative cooling
+    body: Impermeable or heavy PPE (chemical suits, multiple layers, respirators) stops sweat from evaporating. On DANGER heat with heavy work, add extra rest, shade, and cooling — do not treat clothing rules as enough.
+    source_url: https://www.osha.gov/sites/default/files/publications/OSHA3743.pdf
+    source_name: OSHA Protecting Workers from the Effects of Heat
+
+  - id: clothing_smoke_n95
+    trigger: smoke
+    audience: [general, asthma_respiratory, over_65, children, cardiovascular]
+    priority: 18
+    category: clothing
+    body_zone: respiratory
+    title: NIOSH-approved N95 or better
+    body: When wildfire smoke or AQI is unhealthy, provide NIOSH-approved particulate respirators (N95 or higher) and train on seal. Surgical masks do not filter fine smoke.
+    source_url: https://www.cdc.gov/niosh/topics/wildfire/default.html
+    source_name: CDC/NIOSH Wildfire Smoke
+
+  - id: clothing_smoke_eye
+    trigger: smoke
+    audience: [general, asthma_respiratory, children]
+    priority: 30
+    category: clothing
+    body_zone: eyes
+    title: Wraparound eye protection in smoke
+    body: Use wraparound safety glasses or goggles; smoke and ash irritate eyes and contact lenses make it worse.
+    source_url: https://www.cdc.gov/wildfires/risk-factors/index.html
+    source_name: CDC Wildfire Smoke
+
+  - id: clothing_storm_secure
+    trigger: storm
+    audience: [general]
+    priority: 10
+    category: clothing
+    body_zone: torso
+    title: Secure loose clothing and layers
+    body: Fasten or remove loose jackets, vests, and unsecured gear so wind cannot snag them. Pause work if you cannot keep clothing and materials controlled.
+    source_url: https://www.osha.gov/fall-protection
+    source_name: OSHA Fall Protection
+
+  - id: clothing_storm_hivis
+    trigger: storm
+    audience: [general]
+    priority: 16
+    category: clothing
+    body_zone: torso
+    title: High-visibility outer layer
+    body: In rain, spray, or low visibility from storms, wear a high-visibility outer layer so crews and vehicles can see each other.
+    source_url: https://www.osha.gov/laws-regs/regulations/standardnumber/1926/1926.201
+    source_name: OSHA 1926.201 Signaling
+
+  - id: clothing_storm_lightning_metal
+    trigger: storm
+    audience: [general]
+    priority: 8
+    category: clothing
+    body_zone: hands
+    title: No metal tools during lightning
+    body: If lightning is a risk, stop outdoor work and put down metal tools, ladders, and equipment. Metal does not attract lightning but it conducts it.
+    source_url: https://www.weather.gov/safety/lightning-tips
+    source_name: NWS Lightning Safety
+
+  - id: clothing_storm_footwear
+    trigger: storm
+    audience: [general]
+    priority: 20
+    category: clothing
+    body_zone: feet
+    title: Closed, drainable footwear
+    body: Wear closed-toe boots with grip if flash flooding or standing water is possible; avoid open shoes around debris and current.
+    source_url: https://www.weather.gov/safety/flood
+    source_name: NWS Flood Safety
+
+  - id: clothing_overnight_layers
+    trigger: overnight
+    audience: [general, over_65, children]
+    priority: 20
+    category: clothing
+    body_zone: torso
+    title: Insulating layers for overnight work
+    body: For overnight or pre-dawn shifts, start with a wicking base and an insulating mid-layer you can shed as the sun rises. Avoid a single heavy coat that soaks through.
+    source_url: https://www.cdc.gov/niosh/topics/coldstress/
+    source_name: CDC/NIOSH Cold Stress
+
+  - id: clothing_overnight_feet
+    trigger: overnight
+    audience: [general, over_65]
+    priority: 24
+    category: clothing
+    body_zone: feet
+    title: Insulated, dry footwear overnight
+    body: Keep a dry pair of socks and closed insulated boots for overnight work; wet feet lose heat quickly.
+    source_url: https://www.cdc.gov/niosh/topics/coldstress/
+    source_name: CDC/NIOSH Cold Stress

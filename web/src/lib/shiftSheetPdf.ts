@@ -155,7 +155,7 @@ export async function downloadShiftSheetPdf(input: ShiftSheetInput): Promise<voi
   y += 5
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(8)
-  const actions = (assess.actions ?? []).slice(0, 4)
+  const actions = (assess.actions ?? []).filter((a) => a.category !== 'clothing').slice(0, 4)
   if (actions.length === 0) {
     doc.text('No triggered actions for current conditions.', margin, y)
     y += 5
@@ -170,6 +170,38 @@ export async function downloadShiftSheetPdf(input: ShiftSheetInput): Promise<voi
       doc.setTextColor(0)
       y += 1.5
       if (y > 230) break
+    }
+  }
+
+  const clothing = (assess.actions ?? []).filter((a) => a.category === 'clothing')
+  if (clothing.length > 0 && y < 210) {
+    y += 3
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(11)
+    doc.text('Clothing and PPE', margin, y)
+    y += 5
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(8)
+    const zoneOrder = ['head', 'eyes', 'torso', 'hands', 'feet', 'respiratory']
+    const zoneLabel: Record<string, string> = {
+      head: 'Head',
+      eyes: 'Eyes',
+      torso: 'Torso',
+      hands: 'Hands',
+      feet: 'Feet',
+      respiratory: 'Respiratory',
+    }
+    for (const zone of zoneOrder) {
+      const items = clothing.filter((a) => a.body_zone === zone)
+      if (!items.length) continue
+      doc.setFont('helvetica', 'bold')
+      y = wrapText(doc, zoneLabel[zone] ?? zone, margin, y, contentW - 40)
+      doc.setFont('helvetica', 'normal')
+      for (const a of items) {
+        y = wrapText(doc, `• ${a.title} — ${a.source_name}`, margin + 3, y, contentW - 43, 3.6)
+        if (y > 228) break
+      }
+      if (y > 228) break
     }
   }
 

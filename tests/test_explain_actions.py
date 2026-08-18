@@ -6,6 +6,7 @@ from api.actions.select import (
     filter_candidates,
     load_library,
     select_actions,
+    select_clothing,
     validate_selected_ids,
 )
 from api.engine.environmental_load import Driver
@@ -45,6 +46,18 @@ def test_action_library_every_entry_has_source():
         assert a.source_name
         assert a.id
         assert a.trigger
+
+
+def test_every_clothing_entry_has_source_and_zone():
+    lib = load_library()
+    clothing = [a for a in lib.actions if a.category == "clothing"]
+    assert len(clothing) >= 8
+    zones = {a.body_zone for a in clothing}
+    for needed in ("head", "eyes", "torso", "hands", "feet", "respiratory"):
+        assert needed in zones, needed
+    for a in clothing:
+        assert a.source_url.startswith("http"), a.id
+        assert a.body_zone
 
 
 def test_hallucinated_action_id_rejected():
@@ -104,3 +117,109 @@ def test_diff_large_swing():
     assert "verdict GO → RESTRICT" in summary
     assert "smoke pressure up" in summary
     assert "concordance" in summary.lower() or "FIRMS" in summary
+
+
+def test_select_actions_excludes_clothing_ids():
+    actions = select_actions(
+        verdict="CAUTION",
+        heat_band="CAUTION",
+        smoke_pressure=20.0,
+        us_aqi=80.0,
+        uv_band="HIGH",
+        profile="general",
+        n=4,
+    )
+    assert actions
+    assert all(a.category != "clothing" for a in actions)
+    assert all(not a.id.startswith("clothing_") for a in actions)
+
+
+def test_clothing_uv_and_heat():
+    items = select_clothing(
+        verdict="CAUTION",
+        heat_band="CAUTION",
+        uv_band="VERY_HIGH",
+        profile="athlete",
+    )
+    ids = {a.id for a in items}
+    assert "clothing_uv_hat" in ids
+    assert "clothing_uv_upf_shirt" in ids
+    assert "clothing_uv_sunglasses" in ids
+    assert "clothing_uv_spf" in ids
+    assert "clothing_heat_loose_light" in ids
+    assert all(a.category == "clothing" for a in items)
+    assert all(a.source_url.startswith("http") for a in items)
+
+
+def test_clothing_heat_ppe_conflict_heavy_danger():
+    heavy = select_clothing(
+        verdict="STOP",
+        heat_band="DANGER",
+        workload="heavy",
+        profile="general",
+    )
+    light = select_clothing(
+        verdict="STOP",
+        heat_band="DANGER",
+        workload="light",
+        profile="general",
+    )
+    assert any(a.id == "clothing_heat_ppe_conflict" for a in heavy)
+    assert all(a.id != "clothing_heat_ppe_conflict" for a in light)
+
+
+def test_clothing_smoke_and_storm():
+    smoke = select_clothing(
+        verdict="RESTRICT",
+        heat_band="SAFE",
+        smoke_pressure=25.0,
+        us_aqi=160.0,
+        profile="asthma_respiratory",
+    )
+    smoke_ids = {a.id for a in smoke}
+    assert "clothing_smoke_n95" in smoke_ids
+    assert "clothing_smoke_eye" in smoke_ids
+
+    storm = select_clothing(
+        verdict="STOP",
+        heat_band="SAFE",
+        storm_band="HARD_STOP",
+        lightning_risk=True,
+        profile="general",
+    )
+    storm_ids = {a.id for a in storm}
+    assert "clothing_storm_lightning_metal" in storm_ids
+    assert "clothing_storm_secure" in storm_ids
+    assert "clothing_storm_hivis" in storm_ids
+    assert "clothing_storm_footwear" in storm_ids
+
+
+def test_clothing_overnight_layering():
+    on = select_clothing(
+        verdict="GO",
+        heat_band="SAFE",
+        overnight=True,
+        profile="over_65",
+    )
+    off = select_clothing(
+        verdict="GO",
+        heat_band="SAFE",
+        overnight=False,
+        profile="over_65",
+    )
+    assert any(a.id == "clothing_overnight_layers" for a in on)
+    assert any(a.id == "clothing_overnight_feet" for a in on)
+    assert on
+    assert off == []
+
+
+def test_clothing_empty_when_no_hazard_triggers():
+    items = select_clothing(
+        verdict="GO",
+        heat_band="SAFE",
+        smoke_pressure=0.0,
+        uv_band="LOW",
+        profile="general",
+    )
+    assert items == []
+
