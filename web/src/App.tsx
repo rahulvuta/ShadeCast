@@ -138,10 +138,12 @@ export default function App() {
   const [brief, setBrief] = useState<BriefResponse | null>(null)
   const [briefLoading, setBriefLoading] = useState(false)
   const [briefError, setBriefError] = useState<string | null>(null)
+  const [settingsRefreshing, setSettingsRefreshing] = useState(false)
   const [online, setOnline] = useState(() => navigator.onLine)
 
   const bootDone = useRef(false)
   const commitGen = useRef(0)
+  const settingsRefreshGen = useRef(0)
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? null
   const onIntegrityTab = activeTabId === INTEGRITY_TAB_ID
@@ -387,7 +389,12 @@ export default function App() {
     if (prevSettings.current === settingsKey) return
     prevSettings.current = settingsKey
     if (onIntegrityTab || !activeTab) return
-    void refreshLocationTab(activeTab)
+
+    const gen = ++settingsRefreshGen.current
+    setSettingsRefreshing(true)
+    void refreshLocationTab(activeTab).finally(() => {
+      if (gen === settingsRefreshGen.current) setSettingsRefreshing(false)
+    })
   }, [settingsKey, onIntegrityTab, activeTab, refreshLocationTab])
 
   const applyLocation = useCallback(
@@ -646,6 +653,7 @@ export default function App() {
             windows={assess.shift_windows ?? []}
             requiredHours={requiredHours}
             onRequiredHours={setRequiredHours}
+            refreshing={settingsRefreshing}
           />
         </div>
       </>

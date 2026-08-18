@@ -472,6 +472,52 @@ button:not(.btn-primary):not(.btn-selected):not(.theme-toggle) {
   transition: background 0.45s ease;
 }
 
+@keyframes loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.loading-spinner {
+  display: inline-block;
+  width: 1.25rem;
+  height: 1.25rem;
+  border: 2px solid var(--border);
+  border-top-color: var(--ink);
+  border-radius: 50%;
+  animation: loading-spin 0.7s linear infinite;
+}
+
+.loading-spinner-sm {
+  width: 0.875rem;
+  height: 0.875rem;
+  border-width: 1.5px;
+}
+
+.shift-refresh-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 0.375rem;
+  background: color-mix(in srgb, var(--card) 88%, transparent);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--ink);
+  backdrop-filter: blur(1px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loading-spinner {
+    animation: none;
+    border-top-color: var(--ink);
+    opacity: 0.75;
+  }
+}
+
 .footer-micro {
   font-size: var(--font-micro);
   color: var(--muted);

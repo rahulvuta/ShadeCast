@@ -131,10 +131,12 @@ export function ShiftPlanner({
   windows,
   requiredHours,
   onRequiredHours,
+  refreshing = false,
 }: {
   windows: NonNullable<AssessResponse['shift_windows']>
   requiredHours: number
   onRequiredHours: (n: number) => void
+  refreshing?: boolean
 }) {
   const hours = Math.min(12, Math.max(1, requiredHours))
 
@@ -143,7 +145,7 @@ export function ShiftPlanner({
   }
 
   return (
-    <section aria-labelledby="shift-heading">
+    <section aria-labelledby="shift-heading" aria-busy={refreshing}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 id="shift-heading" className="dash-section-label">
@@ -153,26 +155,32 @@ export function ShiftPlanner({
             Best block per time of day when conditions allow.
           </p>
         </div>
-        <div className="flex items-center gap-1 rounded border border-[var(--border)] bg-[var(--chip-bg)] p-0.5">
+        <div
+          className={`flex items-center gap-1 rounded border border-[var(--border)] bg-[var(--chip-bg)] p-0.5 transition-opacity ${refreshing ? 'opacity-70' : ''}`}
+        >
           <span className="px-2 text-[0.65rem] font-semibold uppercase tracking-wide text-[var(--muted)]">
             Block
           </span>
           <button
             type="button"
             onClick={() => stepHours(-1)}
-            disabled={hours <= 1}
+            disabled={hours <= 1 || refreshing}
             aria-label="Shorter block"
             className="touch-target flex h-8 w-8 items-center justify-center rounded text-sm font-bold disabled:opacity-40"
           >
             −
           </button>
-          <span className="min-w-[2rem] text-center text-sm font-bold tabular-nums" aria-live="polite">
+          <span
+            className="flex min-w-[2rem] items-center justify-center gap-1.5 text-center text-sm font-bold tabular-nums"
+            aria-live="polite"
+          >
+            {refreshing && <span className="loading-spinner loading-spinner-sm" aria-hidden />}
             {hours}h
           </span>
           <button
             type="button"
             onClick={() => stepHours(1)}
-            disabled={hours >= 12}
+            disabled={hours >= 12 || refreshing}
             aria-label="Longer block"
             className="touch-target flex h-8 w-8 items-center justify-center rounded text-sm font-bold disabled:opacity-40"
           >
@@ -181,50 +189,65 @@ export function ShiftPlanner({
         </div>
       </div>
 
-      {windows.length === 0 ? (
-        <p className="mt-3 rounded border border-dashed border-[var(--border)] bg-[var(--panel)] px-3 py-2.5 text-xs text-[var(--muted)]">
-          No {hours}-hour window fits in the next 5 days without a hard stop.
-        </p>
-      ) : (
-        <ol className="mt-3 space-y-2">
-          {windows.map((w, index) => {
-            const { dayLabel, timeRange } = formatWindow(w)
-            const quality = windowQuality(w.mean_rank)
-            return (
-              <li
-                key={`${w.day}-${w.start_hour}-${w.end_hour}`}
-                className="rounded-md border border-[var(--border)] bg-[var(--panel)] px-3 py-2.5"
-              >
-                <div className="flex items-start gap-2.5">
-                  <span
-                    className="btn-selected mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[0.65rem] font-bold"
-                    aria-hidden
+      <div className="relative mt-3">
+        {refreshing && (
+          <div
+            className="shift-refresh-overlay"
+            role="status"
+            aria-live="polite"
+          >
+            <span className="loading-spinner" aria-hidden />
+            <span>Updating shift plan…</span>
+          </div>
+        )}
+
+        <div className={refreshing ? 'pointer-events-none opacity-45' : undefined}>
+          {windows.length === 0 ? (
+            <p className="rounded border border-dashed border-[var(--border)] bg-[var(--panel)] px-3 py-2.5 text-xs text-[var(--muted)]">
+              No {hours}-hour window fits in the next 5 days without a hard stop.
+            </p>
+          ) : (
+            <ol className="space-y-2">
+              {windows.map((w, index) => {
+                const { dayLabel, timeRange } = formatWindow(w)
+                const quality = windowQuality(w.mean_rank)
+                return (
+                  <li
+                    key={`${w.day}-${w.start_hour}-${w.end_hour}`}
+                    className="rounded-md border border-[var(--border)] bg-[var(--panel)] px-3 py-2.5"
                   >
-                    {index + 1}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs font-semibold text-[var(--muted)]">{dayLabel}</p>
-                    <p className="mt-0.5 text-sm font-bold tracking-tight text-[var(--ink)]">{timeRange}</p>
-                    <div className="mt-2 flex flex-wrap items-center gap-2">
-                      <span className="rounded border border-[var(--border)] bg-[var(--chip-bg)] px-2 py-0.5 text-[0.65rem] font-semibold text-[var(--muted)]">
-                        {daypartLabel(w)}
-                      </span>
-                      <span className="rounded border border-[var(--border)] bg-[var(--chip-bg)] px-2 py-0.5 text-[0.65rem] font-semibold text-[var(--muted)]">
-                        {w.required_hours}h block
-                      </span>
+                    <div className="flex items-start gap-2.5">
                       <span
-                        className={`rounded border px-2 py-0.5 text-[0.65rem] font-bold uppercase tracking-wide ${QUALITY_CLASS[quality.tone]}`}
+                        className="btn-selected mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[0.65rem] font-bold"
+                        aria-hidden
                       >
-                        {quality.label}
+                        {index + 1}
                       </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-semibold text-[var(--muted)]">{dayLabel}</p>
+                        <p className="mt-0.5 text-sm font-bold tracking-tight text-[var(--ink)]">{timeRange}</p>
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <span className="rounded border border-[var(--border)] bg-[var(--chip-bg)] px-2 py-0.5 text-[0.65rem] font-semibold text-[var(--muted)]">
+                            {daypartLabel(w)}
+                          </span>
+                          <span className="rounded border border-[var(--border)] bg-[var(--chip-bg)] px-2 py-0.5 text-[0.65rem] font-semibold text-[var(--muted)]">
+                            {w.required_hours}h block
+                          </span>
+                          <span
+                            className={`rounded border px-2 py-0.5 text-[0.65rem] font-bold uppercase tracking-wide ${QUALITY_CLASS[quality.tone]}`}
+                          >
+                            {quality.label}
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
-              </li>
-            )
-          })}
-        </ol>
-      )}
+                  </li>
+                )
+              })}
+            </ol>
+          )}
+        </div>
+      </div>
     </section>
   )
 }
