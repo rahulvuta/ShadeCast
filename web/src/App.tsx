@@ -15,6 +15,7 @@ import { SidebarControls } from './components/SidebarControls'
 import { ShiftSheetExport } from './components/ShiftSheetExport'
 import { StaleBanner } from './components/StaleBanner'
 import { NwsStatusBanner } from './components/NwsStatusBanner'
+import { StormAlertBanner } from './components/StormAlertBanner'
 import { TimelinePanel } from './components/TimelinePanel'
 import { UVPanel } from './components/UVPanel'
 import { VerdictCard } from './components/VerdictCard'
@@ -858,12 +859,16 @@ export default function App() {
                   </aside>
                 )}
 
-                <div className="layout-hero-band">
+                <div className="layout-hero-band space-y-2">
+                  <StormAlertBanner
+                    storm={assess.storm}
+                    alerts={assess.active_alerts ?? []}
+                  />
                   <StaleBanner
                     freshness={assess.data_freshness}
                     servedFromCache={assess.served_from_cache}
                   />
-                  <div className="mt-2 space-y-2">
+                  <div className="space-y-2">
                     <NwsStatusBanner status={assess.nws_status} />
                     <ConfidenceBanner confidence={assess.data_confidence} />
                     <DiffStrip summary={assess.diff_summary} />

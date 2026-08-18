@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 FORECAST_HOURLY = (
     "temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m,"
     "uv_index,uv_index_clear_sky,wind_gusts_10m,precipitation_probability,"
-    "cloud_cover,apparent_temperature"
+    "cloud_cover,apparent_temperature,cape"
 )
 
 
@@ -45,6 +45,7 @@ class ForecastRow:
     uv_index: float | None
     uv_index_clear_sky: float | None
     timezone: str
+    cape: float | None = None  # J/kg; convective available energy (GFS). Not persisted.
 
 
 def _n(val: Any) -> float | None:
@@ -76,6 +77,7 @@ def parse_open_meteo(data: dict[str, Any]) -> list[ForecastRow]:
     apparent = hourly.get("apparent_temperature") or []
     uv = hourly.get("uv_index") or []
     uv_cs = hourly.get("uv_index_clear_sky") or []
+    cape = hourly.get("cape") or []
 
     rows: list[ForecastRow] = []
     for i, t in enumerate(times):
@@ -100,6 +102,7 @@ def parse_open_meteo(data: dict[str, Any]) -> list[ForecastRow]:
                 uv_index=_n(uv[i] if i < len(uv) else None),
                 uv_index_clear_sky=_n(uv_cs[i] if i < len(uv_cs) else None),
                 timezone=tz_name,
+                cape=_n(cape[i] if i < len(cape) else None),
             )
         )
     return rows

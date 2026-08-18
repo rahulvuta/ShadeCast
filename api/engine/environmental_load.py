@@ -24,6 +24,7 @@ from api.engine.air import AQIBand, AirAssessment, Concordance, assess_air
 from api.engine.compound import Verdict, combine
 from api.engine.heat import HeatBand, Workload
 from api.engine.sensitivity import SensitivityProfile, apply_profile
+from api.engine.storm import StormAssessment, StormBand, is_hard_stop_event
 from api.engine.uv import UVAssessment, UVBand
 from api.integrity.types import ConfidenceLevel
 
@@ -53,6 +54,9 @@ INTERACTION_MECHANISMS: dict[str, str] = {
         "Smoke + heavy workload: elevated respiration multiplies particulate dose."
     ),
     "wind_gust_hard_stop": "Gusts above 40 km/h force a hard stop for elevated outdoor work.",
+    "storm_hard_stop": "Official NWS warning or lightning risk forces a hard stop for all outdoor work.",
+    "lightning_hard_stop": "Lightning risk is a binary outdoor-work stop — not averaged into load score.",
+    "storm_watch_escalate": "A storm watch is in effect; conditions may deteriorate rapidly.",
     "low_confidence_escalate": "LOW confidence — verdict escalated one level more conservative.",
     "unusable_confidence": "UNUSABLE inputs — refuse trust and treat as STOP sentinel.",
     "heat+high_uv_shorten_exposure": (
@@ -133,6 +137,7 @@ def assess_environmental_load(
     profile: SensitivityProfile = "general",
     us_aqi: float | None = None,
     pm2_5: float | None = None,
+    storm: StormAssessment | None = None,
 ) -> EnvironmentalLoadResult:
     """Compute a single environmental-load verdict with transparent drivers."""
     if air is None:
@@ -196,6 +201,22 @@ def assess_environmental_load(
         # Caller should refuse a verdict; we still return STOP as a safe sentinel.
         verdict = Verdict.STOP
         interactions.append("unusable_confidence")
+
+    # 6. Storm / lightning — independent hard-stop class, not a load_score term.
+    if storm is not None:
+        if storm.hard_stop:
+            verdict = Verdict.STOP
+            if any(is_hard_stop_event(a.event) for a in storm.active_alerts):
+                interactions.append("storm_hard_stop")
+            if storm.lightning_risk:
+                interactions.append("lightning_hard_stop")
+            if "storm_hard_stop" not in interactions and "lightning_hard_stop" not in interactions:
+                interactions.append("storm_hard_stop")
+        elif storm.storm_band == StormBand.WATCH:
+            new_v = _escalate(verdict, 1)
+            if new_v != verdict:
+                verdict = new_v
+            interactions.append("storm_watch_escalate")
 
     # 2. heat + high UV shortens exposure — does NOT escalate verdict
     exposure_cap: int | None = None
@@ -330,6 +351,11 @@ def assess_environmental_load(
         ceiling_parts.append(f"US AQI {air.us_aqi:.0f}" if air.us_aqi is not None else f"AQI {aqi_adj.value}")
     if wind_gusts_kmh is not None and wind_gusts_kmh > WIND_GUST_HARD_STOP_KMH:
         ceiling_parts.append(f"gusts {wind_gusts_kmh:.0f} km/h")
+    if storm is not None and storm.hard_stop:
+        if storm.headline_event:
+            ceiling_parts.append(f"official {storm.headline_event}")
+        elif storm.lightning_risk:
+            ceiling_parts.append("lightning risk")
     if not ceiling_parts:
         ceiling_reason = "No single stressor is elevated; conditions support normal outdoor work."
     else:
