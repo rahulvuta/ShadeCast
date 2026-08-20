@@ -71,6 +71,10 @@ html.theme-ops {
   --verdict-wash: transparent;
 }
 
+html.theme-ops .kit-figure-outline {
+  filter: invert(1);
+}
+
 html.theme-sunlight {
   color-scheme: light;
 
