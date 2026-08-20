@@ -985,19 +985,27 @@ export default function App() {
                 />
 
                 <div className="dash-panel lg:hidden">{renderBriefingShift()}</div>
-                <div className="grid gap-4 lg:grid-cols-2">
+                <div className="grid gap-4 lg:grid-cols-3">
                   {assess.actions && assess.actions.length > 0 && (
-                    <ActionCards actions={assess.actions} />
+                    <div className="lg:col-span-2">
+                      <ActionCards actions={assess.actions} />
+                    </div>
                   )}
-                  <ClimatologyLine
-                    message={assess.climatology.message}
-                    note={assess.climatology.note}
-                    todayTemp={assess.climatology.today_temp_c}
-                    baseline={assess.climatology.baseline_temp_c}
-                    delta={assess.climatology.delta_c}
-                  />
+                  <div
+                    className={
+                      assess.actions && assess.actions.length > 0 ? '' : 'lg:col-span-3'
+                    }
+                  >
+                    <ClimatologyLine
+                      message={assess.climatology.message}
+                      note={assess.climatology.note}
+                      todayTemp={assess.climatology.today_temp_c}
+                      baseline={assess.climatology.baseline_temp_c}
+                      delta={assess.climatology.delta_c}
+                    />
+                  </div>
                 </div>
-                <ClothingPanel actions={assess.actions ?? []} />
+                <ClothingPanel actions={assess.actions ?? []} textMode={textMode} />
 
                 <p className="type-micro text-[var(--muted)] normal-case tracking-normal font-normal">
                   {assess.current.disclaimer}
