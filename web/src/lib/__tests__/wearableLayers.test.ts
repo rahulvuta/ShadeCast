@@ -27,6 +27,12 @@ describe('wearableLayersFor', () => {
       'clothing_overnight_feet',
       'clothing_uv_spf',
     ])
-    expect(layers.map((l) => l.layer)).toEqual(['boots', 'shirt', 'goggles'])
+    expect(layers.map((l) => l.layer)).toEqual(['jeans', 'boots', 'shirt', 'goggles'])
+  })
+
+  it('always draws jeans and a t-shirt when no torso garment is recommended', () => {
+    const layers = wearableLayersFor(['clothing_uv_spf'])
+    expect(layers.map((l) => l.layer)).toEqual(['jeans', 'tee'])
+    expect(layers.every((l) => l.base)).toBe(true)
   })
 })

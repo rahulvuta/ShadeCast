@@ -1,8 +1,10 @@
 import { LIBRARY_ACTION_IDS } from './kitIcons'
 
-export type WearableZone = 'head' | 'eyes' | 'torso' | 'hands' | 'feet' | 'respiratory'
+export type WearableZone = 'head' | 'eyes' | 'torso' | 'hands' | 'feet' | 'respiratory' | 'legs'
 
 export const WEARABLE_LAYERS = [
+  'jeans',
+  'tee',
   'boots',
   'shirt',
   'layers',
@@ -23,6 +25,8 @@ export const WEARABLE_SKIP_IDS = [
 ] as const
 
 const LAYER_ZONE: Record<WearableLayer, WearableZone> = {
+  jeans: 'legs',
+  tee: 'torso',
   hat: 'head',
   towel: 'head',
   sunglasses: 'eyes',
@@ -33,6 +37,8 @@ const LAYER_ZONE: Record<WearableLayer, WearableZone> = {
   layers: 'torso',
   boots: 'feet',
 }
+
+const BASE_LAYERS = new Set<WearableLayer>(['jeans', 'tee'])
 
 /** clothing_* library id → overlay file (null = list-only, not drawn). */
 export const WEARABLE_BY_ID: Record<string, WearableLayer | null> = {
@@ -58,6 +64,7 @@ export type ActiveWearable = {
   layer: WearableLayer
   src: string
   zone: WearableZone
+  base: boolean
 }
 
 export function clothingLibraryIds(): string[] {
@@ -65,16 +72,19 @@ export function clothingLibraryIds(): string[] {
 }
 
 export function wearableLayersFor(ids: string[]): ActiveWearable[] {
-  const wanted = new Set<WearableLayer>()
+  const wanted = new Set<WearableLayer>(['jeans'])
   for (const id of ids) {
     if (!(id in WEARABLE_BY_ID)) continue
     const layer = WEARABLE_BY_ID[id]
     if (layer) wanted.add(layer)
   }
   if (wanted.has('goggles')) wanted.delete('sunglasses')
+  if (wanted.has('shirt') || wanted.has('layers')) wanted.delete('tee')
+  else wanted.add('tee')
   return WEARABLE_LAYERS.filter((layer) => wanted.has(layer)).map((layer) => ({
     layer,
     src: `/kit/${layer}.png`,
     zone: LAYER_ZONE[layer],
+    base: BASE_LAYERS.has(layer),
   }))
 }

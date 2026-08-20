@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { FirePoint } from '../types'
 import {
   SEARCH_RADIUS_KM,
@@ -12,6 +12,11 @@ import { SmokeScopeOverlay } from './SmokeScopeOverlay'
 
 function prefersReducedMotion(): boolean {
   return typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+}
+
+function boxSize(el: HTMLElement): { width: number; height: number } {
+  const r = el.getBoundingClientRect()
+  return { width: Math.max(0, Math.round(r.width)), height: Math.max(0, Math.round(r.height)) }
 }
 
 type WindOverlay = {
@@ -168,17 +173,37 @@ export function FireMap({
       : 6
   const zoom = Math.max(1, Math.min(12, baseZoom + zoomOffset))
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = containerRef.current
     if (!el) return
-    const ro = new ResizeObserver((entries) => {
-      const entry = entries[0]
-      if (!entry) return
-      const { width, height } = entry.contentRect
-      setSize({ width: Math.round(width), height: Math.round(height) })
+    let cancelled = false
+    let raf1 = 0
+    let raf2 = 0
+
+    const apply = () => {
+      if (cancelled) return
+      const next = boxSize(el)
+      if (next.width <= 0 || next.height <= 0) return
+      setSize((prev) =>
+        prev.width === next.width && prev.height === next.height ? prev : next,
+      )
+    }
+
+    apply()
+    raf1 = requestAnimationFrame(() => {
+      apply()
+      raf2 = requestAnimationFrame(apply)
     })
+    const ro = new ResizeObserver(apply)
     ro.observe(el)
-    return () => ro.disconnect()
+    window.addEventListener('resize', apply)
+    return () => {
+      cancelled = true
+      cancelAnimationFrame(raf1)
+      cancelAnimationFrame(raf2)
+      ro.disconnect()
+      window.removeEventListener('resize', apply)
+    }
   }, [open, textMode])
 
   useEffect(() => {

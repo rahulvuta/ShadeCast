@@ -93,7 +93,7 @@ function BodyFigure({
           alt=""
           draggable={false}
           className="pointer-events-none absolute inset-0 z-[1] h-full w-full object-fill"
-          style={{ opacity: layer.zone === selected ? 1 : 0.55 }}
+          style={{ opacity: layer.base || layer.zone === selected ? 1 : 0.55 }}
         />
       ))}
       <ZoneHit zone="head" label="Head" className="left-[38%] top-[5%] h-[16%] w-[24%]" />

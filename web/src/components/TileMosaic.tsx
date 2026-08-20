@@ -1,10 +1,63 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { tilesForViewport } from '../lib/mercator'
+import { TILE_SIZE, tilesForViewport, type ViewportTile } from '../lib/mercator'
 
 const OSM_TILE = (z: number, x: number, y: number) =>
   `https://tile.openstreetmap.org/${z}/${x}/${y}.png`
 
-const TILE_FAIL_MS = 4000
+const MAX_ATTEMPTS = 3
+
+function OsmTile({ tile }: { tile: ViewportTile }) {
+  const [attempt, setAttempt] = useState(0)
+  const [dead, setDead] = useState(false)
+  const retryRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (retryRef.current != null) window.clearTimeout(retryRef.current)
+    }
+  }, [])
+
+  if (dead) {
+    return (
+      <div
+        className="absolute"
+        style={{
+          left: tile.left,
+          top: tile.top,
+          width: TILE_SIZE,
+          height: TILE_SIZE,
+          background: 'var(--panel, #e8eaed)',
+        }}
+      />
+    )
+  }
+
+  return (
+    <img
+      key={attempt}
+      src={OSM_TILE(tile.z, tile.x, tile.y)}
+      alt=""
+      aria-hidden="true"
+      draggable={false}
+      loading="eager"
+      decoding="async"
+      width={TILE_SIZE}
+      height={TILE_SIZE}
+      className="absolute select-none"
+      style={{ left: tile.left, top: tile.top, width: TILE_SIZE, height: TILE_SIZE }}
+      onError={() => {
+        if (attempt + 1 >= MAX_ATTEMPTS) {
+          setDead(true)
+          return
+        }
+        retryRef.current = window.setTimeout(
+          () => setAttempt((n) => n + 1),
+          500 * 2 ** attempt,
+        )
+      }}
+    />
+  )
+}
 
 export function TileMosaic({
   centerLat,
@@ -24,72 +77,16 @@ export function TileMosaic({
     [centerLat, centerLon, zoom, width, height],
   )
 
-  const [failedKeys, setFailedKeys] = useState<Set<string>>(() => new Set())
-  const [tilesFailed, setTilesFailed] = useState(false)
-  const loadedRef = useRef(0)
-
-  useEffect(() => {
-    loadedRef.current = 0
-    setFailedKeys(new Set())
-    setTilesFailed(false)
-    const t = window.setTimeout(() => {
-      if (loadedRef.current === 0) setTilesFailed(true)
-    }, TILE_FAIL_MS)
-    return () => window.clearTimeout(t)
-  }, [tiles])
-
   return (
     <>
       <div
-        className="absolute inset-0 overflow-hidden"
+        className="absolute left-0 top-0 overflow-hidden"
         style={{ width, height, background: 'var(--panel, #e8eaed)' }}
         aria-hidden
       >
-        {tilesFailed
-          ? null
-          : tiles.map((tile) => {
-              const key = `${tile.z}/${tile.x}/${tile.y}`
-              if (failedKeys.has(key)) {
-                return (
-                  <div
-                    key={key}
-                    className="absolute"
-                    style={{
-                      left: tile.left,
-                      top: tile.top,
-                      width: 256,
-                      height: 256,
-                      background: 'var(--panel, #e8eaed)',
-                    }}
-                  />
-                )
-              }
-              return (
-                <img
-                  key={key}
-                  src={OSM_TILE(tile.z, tile.x, tile.y)}
-                  alt=""
-                  aria-hidden="true"
-                  draggable={false}
-                  loading="eager"
-                  decoding="async"
-                  width={256}
-                  height={256}
-                  className="absolute select-none"
-                  style={{ left: tile.left, top: tile.top, width: 256, height: 256 }}
-                  onLoad={() => {
-                    loadedRef.current += 1
-                  }}
-                  onError={() => {
-                    setFailedKeys((prev) => {
-                      const next = new Set(prev)
-                      next.add(key)
-                      return next
-                    })
-                  }}
-                />
-              )
-            })}
+        {tiles.map((tile) => (
+          <OsmTile key={`${tile.z}/${tile.x}/${tile.y}`} tile={tile} />
+        ))}
       </div>
       <a
         href="https://www.openstreetmap.org/copyright"

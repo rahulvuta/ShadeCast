@@ -674,22 +674,20 @@ export default function App() {
     onGoLatLon: goLatLon,
   }
 
-  function renderBriefingShift() {
+  function renderBriefing() {
+    if (!assess || isUnusable(assess)) return null
+    return <BriefingCard brief={brief} loading={briefLoading} error={briefError} />
+  }
+
+  function renderShiftPlanner() {
     if (!assess || isUnusable(assess)) return null
     return (
-      <>
-        <div className="sidebar-module">
-          <BriefingCard brief={brief} loading={briefLoading} error={briefError} />
-        </div>
-        <div className="sidebar-module">
-          <ShiftPlanner
-            windows={assess.shift_windows ?? []}
-            requiredHours={requiredHours}
-            onRequiredHours={setRequiredHours}
-            refreshing={settingsRefreshing}
-          />
-        </div>
-      </>
+      <ShiftPlanner
+        windows={assess.shift_windows ?? []}
+        requiredHours={requiredHours}
+        onRequiredHours={setRequiredHours}
+        refreshing={settingsRefreshing}
+      />
     )
   }
 
@@ -984,7 +982,8 @@ export default function App() {
                   textMode={textMode}
                 />
 
-                <div className="dash-panel lg:hidden">{renderBriefingShift()}</div>
+                <div className="dash-panel">{renderBriefing()}</div>
+                <div className="dash-panel lg:hidden">{renderShiftPlanner()}</div>
                 <div className="grid gap-4 lg:grid-cols-3">
                   {assess.actions && assess.actions.length > 0 && (
                     <div className="lg:col-span-2">
@@ -1025,7 +1024,7 @@ export default function App() {
             </div>
 
             {showLocationContent && assess && (
-              <div className="hidden lg:block">{renderBriefingShift()}</div>
+              <div className="hidden lg:block sidebar-module">{renderShiftPlanner()}</div>
             )}
 
             <div className="sidebar-module">
