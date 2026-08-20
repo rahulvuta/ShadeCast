@@ -92,17 +92,17 @@ function BodyFigure({
           src={layer.src}
           alt=""
           draggable={false}
-          className="pointer-events-none absolute inset-0 z-[1] h-full w-full object-contain"
+          className="pointer-events-none absolute inset-0 z-[1] h-full w-full object-fill"
           style={{ opacity: layer.zone === selected ? 1 : 0.55 }}
         />
       ))}
-      <ZoneHit zone="head" label="Head" className="left-[32%] top-[1%] h-[15%] w-[36%]" />
-      <ZoneHit zone="eyes" label="Eyes" className="left-[36%] top-[7%] h-[5%] w-[28%]" />
-      <ZoneHit zone="respiratory" label="Respiratory" className="left-[36%] top-[12%] h-[6%] w-[28%]" />
-      <ZoneHit zone="torso" label="Torso" className="left-[28%] top-[20%] h-[32%] w-[44%]" />
-      <ZoneHit zone="hands" label="Hands" className="left-[2%] top-[36%] h-[16%] w-[22%]" />
-      <ZoneHit zone="hands" label="Hands" className="right-[2%] top-[36%] h-[16%] w-[22%]" />
-      <ZoneHit zone="feet" label="Feet" className="left-[18%] top-[84%] h-[14%] w-[64%]" />
+      <ZoneHit zone="head" label="Head" className="left-[38%] top-[5%] h-[16%] w-[24%]" />
+      <ZoneHit zone="eyes" label="Eyes" className="left-[40%] top-[9%] h-[5%] w-[20%]" />
+      <ZoneHit zone="respiratory" label="Respiratory" className="left-[40%] top-[13%] h-[7%] w-[20%]" />
+      <ZoneHit zone="torso" label="Torso" className="left-[30%] top-[20%] h-[32%] w-[40%]" />
+      <ZoneHit zone="hands" label="Hands" className="left-[8%] top-[42%] h-[12%] w-[16%]" />
+      <ZoneHit zone="hands" label="Hands" className="right-[8%] top-[42%] h-[12%] w-[16%]" />
+      <ZoneHit zone="feet" label="Feet" className="left-[18%] top-[80%] h-[16%] w-[64%]" />
     </figure>
   )
 }
