@@ -15,7 +15,7 @@ REQUIRED_SHIFT_SHEET_KEYS = {
 
 
 def test_shift_sheet_field_checklist():
-    """Supervisor PDF content checklist — keep in sync with web/src/lib/shiftSheetPdf.ts."""
+    """Supervisor sheet content checklist — keep in sync with web/src/lib/shiftSheet.ts."""
     assert "days" in REQUIRED_SHIFT_SHEET_KEYS
     assert "shift_windows" in REQUIRED_SHIFT_SHEET_KEYS
     assert "actions" in REQUIRED_SHIFT_SHEET_KEYS

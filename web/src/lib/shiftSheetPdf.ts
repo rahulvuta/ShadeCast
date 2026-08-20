@@ -1,6 +1,8 @@
 import { jsPDF } from 'jspdf'
 import QRCode from 'qrcode'
-import type { AssessResponse, SensitivityProfile, Workload } from '../types'
+import { buildShiftSheet, type ShiftSheetInput } from './shiftSheet'
+
+export type { ShiftSheetInput }
 
 function wrapText(doc: jsPDF, text: string, x: number, y: number, maxW: number, lineH = 4.2): number {
   const lines = doc.splitTextToSize(text, maxW) as string[]
@@ -8,73 +10,41 @@ function wrapText(doc: jsPDF, text: string, x: number, y: number, maxW: number, 
   return y + lines.length * lineH
 }
 
-function fmtHour(h: number): string {
-  return `${String(h).padStart(2, '0')}:00`
-}
-
-export type ShiftSheetInput = {
-  assess: AssessResponse
-  locationLabel: string
-  workload: Workload
-  profile: SensitivityProfile
-  shareUrl: string
-}
-
 /**
  * Build a one-page letter PDF of the 5-day shift plan for supervisors.
  */
 export async function downloadShiftSheetPdf(input: ShiftSheetInput): Promise<void> {
-  const { assess, locationLabel, workload, profile, shareUrl } = input
+  const sheet = buildShiftSheet(input)
   const doc = new jsPDF({ unit: 'mm', format: 'letter' })
   const pageW = doc.internal.pageSize.getWidth()
   const margin = 14
   const contentW = pageW - margin * 2
   let y = 14
 
-  // Header
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(16)
-  doc.text('ShadeCast — Shift sheet', margin, y)
+  doc.text(sheet.title, margin, y)
   y += 6
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(9)
   doc.setTextColor(60)
-  doc.text('Outdoor crew work/rest plan (decision support — not medical advice)', margin, y)
+  doc.text(sheet.subtitle, margin, y)
   doc.setTextColor(0)
   y += 8
 
-  // Meta block
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(11)
-  doc.text(locationLabel, margin, y)
+  doc.text(sheet.locationLabel, margin, y)
   y += 5
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(9)
-  const days = assess.days ?? []
-  const dateRange =
-    days.length > 0 ? `${days[0]!.day} → ${days[days.length - 1]!.day}` : 'Next 5 days'
-  const verdict = assess.current.verdict ?? 'UNUSABLE'
-  const load = assess.environmental_load?.load_score
-  doc.text(`Date range: ${dateRange}`, margin, y)
+  doc.text(`Date range: ${sheet.dateRange}`, margin, y)
   y += 4.2
-  doc.text(
-    `Workload: ${workload} · Profile: ${profile.replace(/_/g, ' ')} · Verdict now: ${verdict}${
-      load != null ? ` · Load ${load.toFixed(0)}/100` : ''
-    }`,
-    margin,
-    y,
-  )
+  doc.text(sheet.metaLine, margin, y)
   y += 4.2
-  doc.text(
-    `Hard-stop (today): ${assess.schedule.hard_stop_window ?? 'None'} · Best work: ${
-      assess.schedule.best_work_window ?? 'n/a'
-    } · Safe hours: ${assess.schedule.total_safe_hours.toFixed(1)}h`,
-    margin,
-    y,
-  )
+  doc.text(sheet.todayLine, margin, y)
   y += 7
 
-  // Per-day table
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(11)
   doc.text('5-day overview', margin, y)
@@ -100,31 +70,29 @@ export async function downloadShiftSheetPdf(input: ShiftSheetInput): Promise<voi
   y += 4
   doc.setFont('helvetica', 'normal')
 
-  if (days.length === 0) {
+  if (sheet.days.length === 0) {
     doc.text('No day summaries available.', margin, y)
     y += 5
   } else {
-    for (const d of days.slice(0, 5)) {
+    for (const d of sheet.days) {
       doc.text(d.day, col.day, y)
-      doc.text(d.total_safe_hours.toFixed(1), col.safe, y)
-      doc.text(d.worst_verdict, col.worst, y)
-      doc.text(d.hard_stop_window ?? 'None', col.hard, y)
-      doc.text(d.best_work_window ?? 'n/a', col.best, y)
+      doc.text(d.safeHours, col.safe, y)
+      doc.text(d.worst, col.worst, y)
+      doc.text(d.hardStop, col.hard, y)
+      doc.text(d.bestWork, col.best, y)
       y += 4.2
     }
   }
   y += 4
 
-  // Ranked shift windows
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(11)
   doc.text('Ranked shift windows', margin, y)
   y += 5
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(8)
-  const windows = (assess.shift_windows ?? []).slice(0, 8)
-  if (windows.length === 0) {
-    doc.text('No continuous block fits without a hard stop for the selected length.', margin, y)
+  if (sheet.windowsEmpty) {
+    doc.text(sheet.windowsEmpty, margin, y)
     y += 5
   } else {
     doc.setFont('helvetica', 'bold')
@@ -136,45 +104,42 @@ export async function downloadShiftSheetPdf(input: ShiftSheetInput): Promise<voi
     doc.text('Label', margin + 110, y)
     y += 4
     doc.setFont('helvetica', 'normal')
-    windows.forEach((w, i) => {
-      doc.text(String(i + 1), margin, y)
+    for (const w of sheet.windows) {
+      doc.text(String(w.rank), margin, y)
       doc.text(w.day, margin + 8, y)
-      doc.text(`${fmtHour(w.start_hour)}–${fmtHour(w.end_hour)}`, margin + 32, y)
-      doc.text((w.daypart ?? '—').replace(/_/g, ' '), margin + 62, y)
-      doc.text(`${w.required_hours}h`, margin + 92, y)
-      doc.text((w.label || '').slice(0, 36), margin + 110, y)
+      doc.text(w.block, margin + 32, y)
+      doc.text(w.daypart, margin + 62, y)
+      doc.text(w.hours, margin + 92, y)
+      doc.text(w.label.slice(0, 36), margin + 110, y)
       y += 4
-    })
+    }
   }
   y += 4
 
-  // Actions
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(11)
   doc.text('Top action items', margin, y)
   y += 5
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(8)
-  const actions = (assess.actions ?? []).filter((a) => a.category !== 'clothing').slice(0, 4)
-  if (actions.length === 0) {
-    doc.text('No triggered actions for current conditions.', margin, y)
+  if (sheet.actionsEmpty) {
+    doc.text(sheet.actionsEmpty, margin, y)
     y += 5
   } else {
-    for (const a of actions) {
+    for (const a of sheet.actions) {
       doc.setFont('helvetica', 'bold')
       y = wrapText(doc, `• ${a.title}`, margin, y, contentW - 40)
       doc.setFont('helvetica', 'normal')
       y = wrapText(doc, a.body, margin + 3, y, contentW - 43, 3.8)
       doc.setTextColor(80)
-      y = wrapText(doc, `Source: ${a.source_name} — ${a.source_url}`, margin + 3, y, contentW - 43, 3.6)
+      y = wrapText(doc, `Source: ${a.source}`, margin + 3, y, contentW - 43, 3.6)
       doc.setTextColor(0)
       y += 1.5
       if (y > 230) break
     }
   }
 
-  const clothing = (assess.actions ?? []).filter((a) => a.category === 'clothing')
-  if (clothing.length > 0 && y < 210) {
+  if (sheet.clothing.length > 0 && y < 210) {
     y += 3
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(11)
@@ -182,32 +147,20 @@ export async function downloadShiftSheetPdf(input: ShiftSheetInput): Promise<voi
     y += 5
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(8)
-    const zoneOrder = ['head', 'eyes', 'torso', 'hands', 'feet', 'respiratory']
-    const zoneLabel: Record<string, string> = {
-      head: 'Head',
-      eyes: 'Eyes',
-      torso: 'Torso',
-      hands: 'Hands',
-      feet: 'Feet',
-      respiratory: 'Respiratory',
-    }
-    for (const zone of zoneOrder) {
-      const items = clothing.filter((a) => a.body_zone === zone)
-      if (!items.length) continue
+    for (const zone of sheet.clothing) {
       doc.setFont('helvetica', 'bold')
-      y = wrapText(doc, zoneLabel[zone] ?? zone, margin, y, contentW - 40)
+      y = wrapText(doc, zone.label, margin, y, contentW - 40)
       doc.setFont('helvetica', 'normal')
-      for (const a of items) {
-        y = wrapText(doc, `• ${a.title} — ${a.source_name}`, margin + 3, y, contentW - 43, 3.6)
+      for (const item of zone.items) {
+        y = wrapText(doc, `• ${item.title} — ${item.source}`, margin + 3, y, contentW - 43, 3.6)
         if (y > 228) break
       }
       if (y > 228) break
     }
   }
 
-  // QR + share URL (right column near bottom, or below if room)
   const qrSize = 32
-  const qrDataUrl = await QRCode.toDataURL(shareUrl, {
+  const qrDataUrl = await QRCode.toDataURL(sheet.shareUrl, {
     margin: 1,
     width: 256,
     errorCorrectionLevel: 'M',
@@ -223,32 +176,20 @@ export async function downloadShiftSheetPdf(input: ShiftSheetInput): Promise<voi
   doc.setFontSize(7.5)
   doc.text('Live assessment URL:', margin, linkY)
   doc.setTextColor(0, 80, 140)
-  y = wrapText(doc, shareUrl, margin, linkY + 3.5, contentW - qrSize - 8, 3.5)
+  y = wrapText(doc, sheet.shareUrl, margin, linkY + 3.5, contentW - qrSize - 8, 3.5)
   doc.setTextColor(0)
 
-  // Footer
   const footerTop = 262
   doc.setDrawColor(160)
   doc.line(margin, footerTop, margin + contentW, footerTop)
   doc.setFontSize(7)
   doc.setTextColor(70)
   let fy = footerTop + 4
-  const sourceLine =
-    'Data sources: ' +
-    (assess.sources ?? []).map((s) => s.name).join(' · ')
-  fy = wrapText(doc, sourceLine || 'Data sources: see live assessment', margin, fy, contentW, 3.2)
-  fy = wrapText(
-    doc,
-    assess.current.disclaimer ||
-      'Not medical advice. Screening tool for crew scheduling only. Supervisors remain responsible for site decisions.',
-    margin,
-    fy + 0.5,
-    contentW,
-    3.2,
-  )
-  doc.text(`Generated ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC · ShadeCast`, margin, fy + 1)
+  fy = wrapText(doc, sheet.sourcesLine, margin, fy, contentW, 3.2)
+  fy = wrapText(doc, sheet.disclaimer, margin, fy + 0.5, contentW, 3.2)
+  doc.text(sheet.generatedLine, margin, fy + 1)
   doc.setTextColor(0)
 
-  const safeName = locationLabel.replace(/[^a-z0-9]+/gi, '_').slice(0, 40)
+  const safeName = sheet.locationLabel.replace(/[^a-z0-9]+/gi, '_').slice(0, 40)
   doc.save(`ShadeCast_shift_sheet_${safeName || 'plan'}.pdf`)
 }

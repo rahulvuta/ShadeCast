@@ -981,6 +981,7 @@ export default function App() {
                   locationLabel={activeTab.label}
                   workload={workload}
                   profile={profile}
+                  textMode={textMode}
                 />
 
                 <div className="dash-panel lg:hidden">{renderBriefingShift()}</div>

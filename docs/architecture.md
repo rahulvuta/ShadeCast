@@ -64,8 +64,9 @@ When NWS/storm inputs are absent, existing verdicts are unchanged (`tests/test_s
 | `api/services/assess.py` | `/api/assess` — live **or** `?event=` historical via identical `build_assessment` |
 | `web/src/design/` | Tokens + theme (`ops` / `sunlight`) |
 | `web/src/lib/smokeGeometry.ts` | Client mirror of 300 km / ±45° upwind cone math |
+| `web/src/lib/shiftSheet.ts` | Shared supervisor sheet (preview, clipboard, PDF) |
 | `web/src/lib/shiftSheetPdf.ts` | Client-side supervisor PDF |
-| `web/src/` | Dashboard: hero, storm banner, map, condition charts, clothing panel, PDF |
+| `web/src/` | Dashboard: hero, storm banner, map, condition charts, clothing panel, shift sheet |
 
 ## Historical path
 
