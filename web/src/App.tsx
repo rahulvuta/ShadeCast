@@ -10,6 +10,7 @@ import { DiffStrip, ShiftPlanner } from './components/DayStrip'
 import { DriverWaterfall } from './components/DriverWaterfall'
 import { FireMap } from './components/FireMap'
 import { HowWeCalculate } from './components/HowWeCalculate'
+import { HourlyShiftForecast } from './components/HourlyShiftForecast'
 import { IntegrityTheater } from './components/IntegrityTheater'
 import { LocationTabBar } from './components/LocationTabBar'
 import { SidebarControls } from './components/SidebarControls'
@@ -24,6 +25,7 @@ import { VerdictCard } from './components/VerdictCard'
 import { verdictPalette, type VerdictKey } from './design/tokens'
 import { useThemeMode } from './design/useThemeMode'
 import { MAP_FIRE_FETCH_RADIUS_KM } from './lib/smokeGeometry'
+import { hoursInShift, type SelectedShift } from './lib/shiftWindow'
 import {
   INTEGRITY_TAB_ID,
   isUnusable,
@@ -124,6 +126,7 @@ export default function App() {
   const [acclimatized, setAcclimatized] = useState(false)
   const [profile, setProfile] = useState<SensitivityProfile>(() => initialProfile())
   const [requiredHours, setRequiredHours] = useState(4)
+  const [selectedShift, setSelectedShift] = useState<SelectedShift | null>(null)
   const [lang, setLang] = useState<Lang>('en')
   const [historicalEvents, setHistoricalEvents] = useState<HistoricalEventSummary[]>([])
   const [hourOffset] = useState<number | null>(null)
@@ -162,6 +165,35 @@ export default function App() {
   const locLat = onIntegrityTab ? integrity.lat || BOOT_LOC.lat : activeTab?.lat ?? BOOT_LOC.lat
   const locLon = onIntegrityTab ? integrity.lon || BOOT_LOC.lon : activeTab?.lon ?? BOOT_LOC.lon
   const activeEventId = onIntegrityTab ? integrity.eventId : activeTab?.eventId ?? null
+
+  const placeKey = `${assess?.lat ?? ''}|${assess?.lon ?? ''}|${activeEventId ?? ''}`
+  const placeKeyRef = useRef(placeKey)
+
+  useEffect(() => {
+    const windows = assess?.shift_windows ?? []
+    const placeChanged = placeKeyRef.current !== placeKey
+    placeKeyRef.current = placeKey
+    if (windows.length === 0) return
+    const days = new Set((assess?.days ?? []).map((d) => d.day))
+    setSelectedShift((prev) => {
+      if (!placeChanged && prev?.kind === 'custom' && days.has(prev.day)) return prev
+      if (!placeChanged && prev?.kind === 'plan') {
+        const still = windows.some(
+          (w) =>
+            w.day === prev.day && w.start_hour === prev.startHour && w.end_hour === prev.endHour,
+        )
+        if (still) return prev
+      }
+      const w = windows[0]!
+      return { kind: 'plan', day: w.day, startHour: w.start_hour, endHour: w.end_hour }
+    })
+  }, [assess, placeKey])
+
+  const shiftHours = useMemo(() => {
+    if (!assess) return []
+    const pool = assess.horizon?.length ? assess.horizon : assess.hourly
+    return hoursInShift(pool ?? [], selectedShift)
+  }, [assess, selectedShift])
 
   const sidebarLoc: ActiveLocation = {
     lat: locLat,
@@ -451,7 +483,10 @@ export default function App() {
       workload,
       acclimatized,
       profile,
-      engine: assess,
+      engine: {
+        ...assess,
+        hourly: shiftHours.length > 0 ? shiftHours : assess.hourly,
+      },
     })
       .then((b) => {
         if (!cancelled) {
@@ -471,7 +506,7 @@ export default function App() {
     return () => {
       cancelled = true
     }
-  }, [onIntegrityTab, assess, lang, workload, acclimatized, profile])
+  }, [onIntegrityTab, assess, lang, workload, acclimatized, profile, shiftHours])
 
   const focusedRow = useMemo(() => {
     if (!assess || !focusHour) return null
@@ -687,6 +722,9 @@ export default function App() {
         requiredHours={requiredHours}
         onRequiredHours={setRequiredHours}
         refreshing={settingsRefreshing}
+        selected={selectedShift}
+        onSelect={setSelectedShift}
+        days={(assess.days ?? []).map((d) => d.day)}
       />
     )
   }
@@ -947,6 +985,8 @@ export default function App() {
                     fires={fires}
                     textMode={textMode}
                     defaultOpen={true}
+                    historicalStart={assess.historical_event?.start_date ?? null}
+                    historicalEnd={assess.historical_event?.end_date ?? null}
                   />
                   {firesError && (
                     <p className="px-3 py-2 type-micro text-[var(--muted)] normal-case tracking-normal font-normal">
@@ -954,6 +994,8 @@ export default function App() {
                     </p>
                   )}
                 </div>
+
+                <HourlyShiftForecast hours={shiftHours} textMode={textMode} />
 
                 <ConditionChartsPanel
                   hourly={assess.hourly}
@@ -980,6 +1022,7 @@ export default function App() {
                   workload={workload}
                   profile={profile}
                   textMode={textMode}
+                  selected={selectedShift}
                 />
 
                 <div className="dash-panel">{renderBriefing()}</div>

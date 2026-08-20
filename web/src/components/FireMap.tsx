@@ -1,14 +1,15 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { FirePoint } from '../types'
+import { fetchAirGrid, type AirGridCell } from '../api'
 import {
   SEARCH_RADIUS_KM,
   MAP_FIRE_FETCH_RADIUS_KM,
   annotateDetections,
-  smokeLegendLine,
 } from '../lib/smokeGeometry'
 import { zoomToFitRadius } from '../lib/mercator'
 import { TileMosaic } from './TileMosaic'
 import { SmokeScopeOverlay } from './SmokeScopeOverlay'
+import { AirQualityOverlay } from './AirQualityOverlay'
 
 function prefersReducedMotion(): boolean {
   return typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -143,6 +144,8 @@ export function FireMap({
   fires,
   textMode,
   defaultOpen = true,
+  historicalStart = null,
+  historicalEnd = null,
 }: {
   lat: number
   lon: number
@@ -152,6 +155,8 @@ export function FireMap({
   fires: FirePoint[]
   textMode: boolean
   defaultOpen?: boolean
+  historicalStart?: string | null
+  historicalEnd?: string | null
 }) {
   const [open, setOpen] = useState(defaultOpen)
   const containerRef = useRef<HTMLDivElement | null>(null)
@@ -159,13 +164,14 @@ export function FireMap({
   const windOverlayRef = useRef<WindOverlay | null>(null)
   const [size, setSize] = useState({ width: 0, height: 0 })
   const [zoomOffset, setZoomOffset] = useState(0)
+  const [cells, setCells] = useState<AirGridCell[]>([])
 
   const wind = windFromDeg ?? 0
   const annotated = useMemo(
     () => annotateDetections(lat, lon, fires, wind),
     [lat, lon, fires, wind],
   )
-  const legend = smokeLegendLine(annotated, smokePressure)
+  const legend = `${fires.length} FIRMS heat detections in view · CAMS air overlay ${smokePressure.toFixed(0)}/100 at the crew point. Heat detections are thermal anomalies, not smoke.`
 
   const baseZoom =
     size.width > 0 && size.height > 0
@@ -211,6 +217,23 @@ export function FireMap({
   }, [lat, lon])
 
   useEffect(() => {
+    let cancelled = false
+    void fetchAirGrid(lat, lon, {
+      startDate: historicalStart ?? undefined,
+      endDate: historicalEnd ?? undefined,
+    })
+      .then((res) => {
+        if (!cancelled) setCells(res.cells ?? [])
+      })
+      .catch(() => {
+        if (!cancelled) setCells([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [lat, lon, historicalStart, historicalEnd])
+
+  useEffect(() => {
     if (!open || textMode || prefersReducedMotion()) {
       windOverlayRef.current?.destroy()
       windOverlayRef.current = null
@@ -243,7 +266,6 @@ export function FireMap({
       ? 'Wind n/a'
       : `Wind from ${Math.round(windFromDeg)}° · ${windSpeedKmh != null ? `${Math.round(windSpeedKmh)} km/h` : 'speed n/a'}`
   const withinCount = annotated.filter((d) => d.withinRadius).length
-  const upwindCount = annotated.filter((d) => d.upwind).length
   const distantCount = annotated.filter((d) => !d.withinRadius).length
   const ready = size.width > 0 && size.height > 0
 
@@ -251,9 +273,9 @@ export function FireMap({
     <section aria-labelledby="map-heading" className="flex h-full min-h-[inherit] flex-col p-3.5 sm:p-4">
       <div className="flex items-start justify-between gap-2">
         <div>
-          <p className="dash-section-label">Smoke algorithm</p>
+          <p className="dash-section-label">Air quality map</p>
           <h2 id="map-heading" className="text-sm font-bold mt-0.5">
-            Upwind cone · FRP · FIRMS
+            CAMS particulates · FIRMS heat detections
           </h2>
         </div>
         <button
@@ -268,14 +290,14 @@ export function FireMap({
       <p className="text-xs text-[var(--muted)] mt-1">{legend}</p>
       <p className="mt-1 text-sm font-semibold text-[var(--ink)]">
         {fires.length === 0
-          ? 'No FIRMS fire detections in this area right now'
-          : `${fires.length} fire detections · ${upwindCount} upwind · ${withinCount} in ${SEARCH_RADIUS_KM} km${
+          ? 'No FIRMS heat detections in this area right now'
+          : `${fires.length} heat detections · ${withinCount} within ${SEARCH_RADIUS_KM} km${
               distantCount > 0 ? ` · ${distantCount} farther out` : ''
             }`}
       </p>
       <p className="type-micro text-[var(--muted)] mt-1 normal-case tracking-normal font-normal">
-        Dashed outer ring = {MAP_FIRE_FETCH_RADIUS_KM} km fire visibility · solid inner ring ={' '}
-        {SEARCH_RADIUS_KM} km smoke search · filled wedge = ±45° upwind · {windLabel}
+        Dashed ring = {MAP_FIRE_FETCH_RADIUS_KM} km heat-detection visibility · colored cells =
+        Open-Meteo CAMS PM2.5 / US AQI (~45 km, ~24 h lag) · {windLabel}
       </p>
 
       {open && !textMode && (
@@ -299,6 +321,14 @@ export function FireMap({
                   zoom={zoom}
                   width={size.width}
                   height={size.height}
+                />
+                <AirQualityOverlay
+                  lat={lat}
+                  lon={lon}
+                  zoom={zoom}
+                  width={size.width}
+                  height={size.height}
+                  cells={cells}
                 />
                 <div ref={windHostRef} className="pointer-events-none absolute inset-0 z-[1]" />
                 <SmokeScopeOverlay
@@ -373,7 +403,7 @@ export function FireMap({
           {annotated.slice(0, 50).map((f, i) => (
             <li key={`${f.latitude}-${f.longitude}-${i}`}>
               {f.latitude.toFixed(3)}, {f.longitude.toFixed(3)} · FRP {f.frp ?? 'n/a'} ·{' '}
-              {f.distanceKm.toFixed(0)} km · {f.upwind ? `weight ${f.weight.toFixed(2)}` : 'not upwind'}
+              {f.distanceKm.toFixed(0)} km
             </li>
           ))}
         </ul>

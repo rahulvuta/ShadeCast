@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { AssessResponse, SensitivityProfile, Workload } from '../../types'
+import type { AssessResponse, SensitivityProfile, Workload, Verdict } from '../../types'
 import { buildShiftSheet, formatShiftSheetText, fmtHour } from '../shiftSheet'
 
 function sampleAssess(overrides: Partial<AssessResponse> = {}): AssessResponse {
@@ -146,6 +146,77 @@ describe('buildShiftSheet', () => {
     const empty = sampleSheet({ shift_windows: [] })
     expect(empty.windows).toEqual([])
     expect(empty.windowsEmpty).toMatch(/No continuous block/)
+  })
+
+  it('selected window hour rows include weather, humidity band, rating, work minutes', () => {
+    const hour = (h: number, extra: Record<string, unknown> = {}) => ({
+      hour: h,
+      day: '2026-08-18',
+      heat_band: 'CAUTION',
+      smoke_pressure: 8,
+      verdict: (h === 7 ? 'STOP' : 'GO') as Verdict,
+      work_minutes: h === 7 ? 0 : 45,
+      rest_minutes: h === 7 ? 60 : 15,
+      note: '',
+      weather_text: h === 7 ? 'Thunderstorm' : 'Clear',
+      humidity_band: 'low',
+      heat_index_f: 98,
+      uv_index: 6,
+      us_aqi: 42,
+      ...extra,
+    })
+    const sheet = buildShiftSheet({
+      assess: sampleAssess({
+        hourly: [hour(5), hour(6), hour(7), hour(8)],
+        shift_windows: [
+          {
+            day: '2026-08-18',
+            start_hour: 5,
+            end_hour: 9,
+            required_hours: 4,
+            mean_rank: 1,
+            label: 'Cool morning',
+            daypart: 'morning',
+          },
+          {
+            day: '2026-08-18',
+            start_hour: 17,
+            end_hour: 21,
+            required_hours: 4,
+            mean_rank: 2,
+            label: 'Evening',
+            daypart: 'evening',
+          },
+        ],
+      }),
+      locationLabel: 'Phoenix, AZ',
+      workload: 'moderate',
+      profile: 'general',
+      shareUrl: 'https://shadecast.example/plan',
+      now: new Date('2026-08-19T16:00:00.000Z'),
+      selected: { kind: 'plan', day: '2026-08-18', startHour: 5, endHour: 9 },
+    })
+    expect(sheet.chosenHeader).toMatch(/2026-08-18/)
+    expect(sheet.hourRows).toHaveLength(4)
+    expect(sheet.hourRows[0]).toMatchObject({
+      weather: 'Clear',
+      humidityBand: 'low',
+      rating: 'GO',
+      workMinutes: 45,
+    })
+    expect(sheet.hourRows[2]).toMatchObject({
+      weather: 'Thunderstorm',
+      rating: 'STOP',
+      workMinutes: 0,
+    })
+    const text = formatShiftSheetText(sheet)
+    expect(text).toContain('Hour forecast')
+    expect(text).toContain('Clear')
+    expect(text).toContain('low')
+    expect(text).toContain('GO')
+    expect(text).toContain('45/15')
+    expect(text).toContain('Chosen shift')
+    expect(text).toContain('Other dayparts')
   })
 })
 

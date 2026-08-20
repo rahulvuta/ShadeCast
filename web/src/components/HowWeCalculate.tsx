@@ -14,8 +14,14 @@ export function HowWeCalculate() {
           Screening tool — not WBGT, not medical advice.
         </p>
         <p>
-          <strong className="text-[var(--ink)]">Smoke:</strong> Satellite smoke pressure (0–100) from
-          upwind NASA FIRMS, weighted by FRP and distance. Not measured PM2.5; never shown as AQI.
+          <strong className="text-[var(--ink)]">Smoke:</strong> CAMS PM2.5 via Open-Meteo
+          (modelled particulates — wildfire smoke, dust, and urban aerosol). Not FIRMS FRP and
+          not a ground monitor. NASA FIRMS dots on the map are heat detections only.
+        </p>
+        <p>
+          <strong className="text-[var(--ink)]">Storms:</strong> US NWS alerts set verdict floors
+          and sourced precautions by type. Outside NWS coverage, Open-Meteo weathercode plus CAPE
+          score thunderstorms, heavy rain, and snow.
         </p>
         <p>
           <strong className="text-[var(--ink)]">Compound:</strong> Explicit GO / CAUTION / RESTRICT /

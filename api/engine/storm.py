@@ -23,11 +23,12 @@ Rules:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Sequence
 
 from api.clients.nws import NwsAlert
+from api.engine.weather import HEAVY_RAIN_CODES, SNOW_CODES, THUNDER_CODES
 
 # Official event names we keep. Matching is case-insensitive substring.
 RELEVANT_NEEDLES = (
@@ -96,6 +97,8 @@ class StormAssessment:
     headline_quote: str | None
     headline_event: str | None
     source: str  # "nws" | "open-meteo" | "none"
+    hazard_class: str | None = None
+    hazard_classes: tuple[str, ...] = ()
 
 
 def _norm(event: str) -> str:
@@ -150,6 +153,66 @@ def _view(alert: NwsAlert) -> StormAlertView:
     )
 
 
+def nws_hazard_class(event: str) -> str | None:
+    """Map an NWS event name to a crew-precaution class."""
+    e = _norm(event)
+    if "tornado" in e:
+        return "tornado"
+    if "thunderstorm" in e:
+        return "lightning"
+    if "flash flood" in e or "flood" in e:
+        return "flood"
+    if "high wind" in e:
+        return "wind"
+    if "winter" in e:
+        return "winter"
+    if "extreme heat" in e or "air quality" in e:
+        return "display"
+    return None
+
+
+def alerts_active_at(
+    alerts: Sequence[NwsAlert] | None,
+    when: datetime | None,
+) -> list[NwsAlert]:
+    """Keep alerts whose onset/expires window covers `when`. Missing bounds stay in."""
+    rows = list(alerts or [])
+    if when is None:
+        return rows
+    at = when if when.tzinfo is not None else when.replace(tzinfo=timezone.utc)
+    out: list[NwsAlert] = []
+    for a in rows:
+        onset = a.onset
+        expires = a.expires
+        if onset is not None:
+            start = onset if onset.tzinfo is not None else onset.replace(tzinfo=timezone.utc)
+            if at < start:
+                continue
+        if expires is not None:
+            end = expires if expires.tzinfo is not None else expires.replace(tzinfo=timezone.utc)
+            if at >= end:
+                continue
+        out.append(a)
+    return out
+
+
+def storm_from_weathercode(code: int | None) -> tuple[StormBand, bool, str | None]:
+    """Open-Meteo WMO weathercode → band, lightning flag, hazard class."""
+    if code is None:
+        return StormBand.NONE, False, None
+    try:
+        c = int(code)
+    except (TypeError, ValueError):
+        return StormBand.NONE, False, None
+    if c in THUNDER_CODES:
+        return StormBand.HARD_STOP, True, "lightning"
+    if c in HEAVY_RAIN_CODES:
+        return StormBand.WARNING, False, "flood"
+    if c in SNOW_CODES:
+        return StormBand.WARNING, False, "winter"
+    return StormBand.NONE, False, None
+
+
 def lightning_from_model(
     *,
     cape: float | None,
@@ -166,19 +229,26 @@ def lightning_from_model(
     return cape >= LIGHTNING_CAPE_J and precipitation_probability >= LIGHTNING_PRECIP_PCT
 
 
+_MODEL_HEADLINE = {
+    "lightning": "Thunderstorm (Open-Meteo)",
+    "flood": "Heavy rain (Open-Meteo)",
+    "winter": "Snow (Open-Meteo)",
+}
+
+
 def assess_storm(
     alerts: Sequence[NwsAlert] | None = None,
     *,
     cape: float | None = None,
     precipitation_probability: float | None = None,
     wind_gusts_kmh: float | None = None,
+    weathercode: int | None = None,
 ) -> StormAssessment:
     """Return storm_band / lightning_risk / active_alerts for one hour.
 
-    `wind_gusts_kmh` is accepted for callers that already computed gusts; it
-    does not itself set storm_band (the wind-gust hard-stop lives in
-    environmental_load). Unused here so the signature documents the global
-    convective set we considered.
+    NWS alerts, when present, own the band. Open-Meteo weathercode + CAPE
+    fill in when NWS is missing, and model lightning still applies if there
+    is no tornado/severe-thunderstorm warning.
     """
     _ = wind_gusts_kmh
     relevant = [_view(a) for a in (alerts or []) if is_relevant_event(a.event)]
@@ -186,22 +256,35 @@ def assess_storm(
 
     nws_hard = any(is_hard_stop_event(a.event) for a in relevant)
     nws_watch = any(a.is_watch for a in relevant)
-    nws_warning = any(a.is_warning for a in relevant)
+    nws_warning = any(a.is_warning and nws_hazard_class(a.event) != "display" for a in relevant)
+    nws_convective_warning = any(
+        is_hard_stop_event(a.event) for a in relevant
+    )
 
+    wx_band, wx_lightning, wx_class = storm_from_weathercode(weathercode)
     model_lightning = lightning_from_model(
         cape=cape, precipitation_probability=precipitation_probability
-    )
+    ) or wx_lightning
     nws_lightning = any(_norm(a.event) == "severe thunderstorm warning" for a in relevant)
-    lightning = nws_lightning or model_lightning
+    lightning = nws_lightning or (model_lightning if not nws_convective_warning else nws_lightning)
     hard_stop = nws_hard or lightning
+
+    classes: list[str] = []
+    for a in relevant:
+        cls = nws_hazard_class(a.event)
+        if cls and cls != "display" and cls not in classes:
+            classes.append(cls)
+    if wx_class and wx_class not in classes:
+        if not relevant or wx_class == "lightning":
+            classes.append(wx_class)
 
     if hard_stop:
         band = StormBand.HARD_STOP
-    elif nws_warning:
+    elif nws_warning or (wx_band == StormBand.WARNING and not relevant):
         band = StormBand.WARNING
     elif nws_watch:
         band = StormBand.WATCH
-    elif model_lightning:
+    elif wx_band == StormBand.HARD_STOP:
         band = StormBand.HARD_STOP
     else:
         band = StormBand.NONE
@@ -216,9 +299,18 @@ def assess_storm(
     if quote is None and relevant and relevant[0].headline:
         quote = relevant[0].headline
         quote_event = relevant[0].event
+    if quote is None and wx_class and not relevant:
+        quote = _MODEL_HEADLINE.get(wx_class)
+        quote_event = wx_class
 
-    source = "nws" if relevant else ("open-meteo" if model_lightning else "none")
+    if relevant:
+        source = "nws"
+    elif model_lightning or wx_band != StormBand.NONE:
+        source = "open-meteo"
+    else:
+        source = "none"
     watch_note = WATCH_NOTE if nws_watch and not nws_hard else None
+    primary = classes[0] if classes else None
 
     return StormAssessment(
         storm_band=band,
@@ -229,4 +321,6 @@ def assess_storm(
         headline_quote=quote,
         headline_event=quote_event,
         source=source,
+        hazard_class=primary,
+        hazard_classes=tuple(classes),
     )

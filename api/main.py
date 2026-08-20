@@ -33,7 +33,7 @@ app.add_middleware(
     RateLimitMiddleware,
     max_requests=60,
     window_s=60.0,
-    paths=("/api/assess", "/api/brief", "/api/fires", "/api/geocode", "/api/events"),
+    paths=("/api/assess", "/api/brief", "/api/fires", "/api/air-grid", "/api/geocode", "/api/events"),
 )
 
 app.include_router(health.router)

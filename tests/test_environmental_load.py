@@ -215,3 +215,33 @@ def test_driver_stack_sums_to_load_score():
         )
         stack = stack_from_waterfall(load.waterfall, load.load_score)
         assert abs(sum(stack.values()) - load.load_score) < 0.05, (c, stack, load.load_score)
+
+
+def test_pm_dominant_aqi_does_not_double_count_smoke():
+    """Unhealthy AQI from PM is already in smoke_pressure; ozone can still escalate."""
+    pm = assess_environmental_load(
+        heat_band=HeatBand.SAFE,
+        smoke_pressure=0.0,
+        smoke_label="low",
+        air=assess_air(
+            smoke_pressure=0.0,
+            us_aqi=165.0,
+            pm2_5=60.0,
+            dominant_pollutant="pm2_5",
+        ),
+        confidence=ConfidenceLevel.HIGH,
+    )
+    ozone = assess_environmental_load(
+        heat_band=HeatBand.SAFE,
+        smoke_pressure=0.0,
+        smoke_label="low",
+        air=assess_air(
+            smoke_pressure=0.0,
+            us_aqi=165.0,
+            dominant_pollutant="ozone",
+        ),
+        confidence=ConfidenceLevel.HIGH,
+    )
+    assert pm.verdict == Verdict.GO
+    assert ozone.verdict != Verdict.GO
+    assert "air_quality_elevated" in ozone.interactions or "air_quality_escalate" in ozone.interactions

@@ -119,7 +119,38 @@ def test_diff_large_swing():
     assert "concordance" in summary.lower() or "FIRMS" in summary
 
 
+def test_tornado_and_flood_action_packs():
+    tornado = select_actions(
+        verdict="STOP",
+        heat_band="SAFE",
+        storm_band="HARD_STOP",
+        hazard_classes=["tornado"],
+        n=4,
+    )
+    assert any(a.id == "storm_tornado_shelter" for a in tornado)
+    flood = select_actions(
+        verdict="RESTRICT",
+        heat_band="SAFE",
+        storm_band="WARNING",
+        hazard_classes=["flood"],
+        n=4,
+    )
+    assert any(a.id == "storm_flood_leave_low" for a in flood)
+
+
 def test_select_actions_excludes_clothing_ids():
+    actions = select_actions(
+        verdict="CAUTION",
+        heat_band="CAUTION",
+        smoke_pressure=20.0,
+        us_aqi=80.0,
+        uv_band="HIGH",
+        profile="general",
+        n=4,
+    )
+    assert actions
+    assert all(a.category != "clothing" for a in actions)
+    assert all(not a.id.startswith("clothing_") for a in actions)
     actions = select_actions(
         verdict="CAUTION",
         heat_band="CAUTION",

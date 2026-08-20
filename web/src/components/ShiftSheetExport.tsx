@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { AssessResponse, SensitivityProfile, Workload } from '../types'
 import { buildShiftSheet, formatShiftSheetText } from '../lib/shiftSheet'
+import type { SelectedShift } from '../lib/shiftWindow'
 
 export function ShiftSheetExport({
   assess,
@@ -8,12 +9,14 @@ export function ShiftSheetExport({
   workload,
   profile,
   textMode,
+  selected = null,
 }: {
   assess: AssessResponse
   locationLabel: string
   workload: Workload
   profile: SensitivityProfile
   textMode: boolean
+  selected?: SelectedShift | null
 }) {
   const [busy, setBusy] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -30,8 +33,9 @@ export function ShiftSheetExport({
         workload,
         profile,
         shareUrl,
+        selected,
       }),
-    [assess, locationLabel, workload, profile, shareUrl],
+    [assess, locationLabel, workload, profile, shareUrl, selected],
   )
   const plainText = useMemo(() => formatShiftSheetText(sheet), [sheet])
 
@@ -87,6 +91,7 @@ export function ShiftSheetExport({
         workload,
         profile,
         shareUrl,
+        selected,
       })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not generate PDF')
@@ -103,8 +108,8 @@ export function ShiftSheetExport({
             Shift sheet
           </h2>
           <p className="mt-0.5 text-xs text-[var(--muted)]">
-            Preview the 5-day plan, then copy the text or download a one-page PDF with a QR to the
-            live assessment.
+            Preview the chosen shift hour-by-hour, then copy the text or download a PDF (a second
+            page is used if the hour table needs it) with a QR to the live assessment.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -148,6 +153,85 @@ export function ShiftSheetExport({
           <p className="text-xs">{sheet.todayLine}</p>
         </header>
 
+        {sheet.chosenHeader && (
+          <section className="mt-4" aria-labelledby="shift-sheet-chosen">
+            <h4 id="shift-sheet-chosen" className="text-sm font-bold">
+              Chosen shift
+            </h4>
+            <p className="mt-1 text-xs font-semibold">{sheet.chosenHeader}</p>
+            <p className="text-xs">
+              Worst hour: {sheet.chosenWorst ?? '—'} · Safe outdoor minutes:{' '}
+              {sheet.chosenSafeMinutes ?? 0}
+            </p>
+          </section>
+        )}
+
+        {sheet.stormLines.length > 0 && (
+          <section className="mt-4" aria-labelledby="shift-sheet-storm">
+            <h4 id="shift-sheet-storm" className="text-sm font-bold">
+              Storm / precautions
+            </h4>
+            <ul className="mt-1 list-disc pl-4 text-xs">
+              {sheet.stormLines.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        {sheet.hourRows.length > 0 && (
+          <section className="mt-4" aria-labelledby="shift-sheet-hours">
+            <h4 id="shift-sheet-hours" className="text-sm font-bold">
+              Hour forecast
+            </h4>
+            <div className="mt-2 overflow-x-auto">
+              <table className="w-full min-w-[40rem] text-left text-xs">
+                <thead>
+                  <tr className="border-b border-[var(--border)]">
+                    <th className="py-1 pr-2 font-semibold">Time</th>
+                    <th className="py-1 pr-2 font-semibold">Weather</th>
+                    <th className="py-1 pr-2 font-semibold">Heat / RH</th>
+                    <th className="py-1 pr-2 font-semibold">UV</th>
+                    <th className="py-1 pr-2 font-semibold">Air</th>
+                    <th className="py-1 pr-2 font-semibold">Wind</th>
+                    <th className="py-1 pr-2 font-semibold">Rating</th>
+                    <th className="py-1 font-semibold">Work min</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sheet.hourRows.map((h) => (
+                    <tr key={`${h.day}-${h.time}`} className="border-b border-[var(--border)]">
+                      <td className="py-1 pr-2 tabular-nums whitespace-nowrap">
+                        {h.time}
+                        <span className="block text-[0.6rem] text-[var(--muted)]">{h.day}</span>
+                      </td>
+                      <td className="py-1 pr-2">
+                        {h.weather}
+                        {h.precaution ? (
+                          <span className="block text-[0.6rem] font-semibold">{h.precaution}</span>
+                        ) : null}
+                      </td>
+                      <td className="py-1 pr-2 whitespace-nowrap">
+                        {h.heat}
+                        <span className="block text-[0.6rem] text-[var(--muted)]">
+                          RH {h.humidityBand}
+                        </span>
+                      </td>
+                      <td className="py-1 pr-2 tabular-nums">{h.uv}</td>
+                      <td className="py-1 pr-2 tabular-nums">{h.air}</td>
+                      <td className="py-1 pr-2 tabular-nums">{h.wind}</td>
+                      <td className="py-1 pr-2 font-bold">{h.rating}</td>
+                      <td className="py-1 tabular-nums">
+                        {h.workMinutes}/{h.restMinutes}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
+
         <section className="mt-4" aria-labelledby="shift-sheet-days">
           <h4 id="shift-sheet-days" className="text-sm font-bold">
             5-day overview
@@ -184,10 +268,12 @@ export function ShiftSheetExport({
 
         <section className="mt-4" aria-labelledby="shift-sheet-windows">
           <h4 id="shift-sheet-windows" className="text-sm font-bold">
-            Ranked shift windows
+            {sheet.otherWindowsLine ? 'Other dayparts' : 'Ranked shift windows'}
           </h4>
           {sheet.windowsEmpty ? (
             <p className="mt-2 text-xs text-[var(--muted)]">{sheet.windowsEmpty}</p>
+          ) : sheet.otherWindowsLine ? (
+            <p className="mt-2 text-xs leading-relaxed">{sheet.otherWindowsLine}</p>
           ) : (
             <div className="mt-2 overflow-x-auto">
               <table className="w-full text-left text-xs">

@@ -75,6 +75,15 @@ export interface HourlyAssessment {
   load_score?: number | null
   driver_stack?: Record<string, number>
   interactions?: string[]
+  relative_humidity?: number | null
+  humidity_band?: string | null
+  weather_text?: string | null
+  weather_source?: string | null
+  precipitation_probability?: number | null
+  weathercode?: number | null
+  storm_band?: string | null
+  lightning_risk?: boolean
+  precaution?: string | null
 }
 
 export interface AssessResponse {
@@ -230,7 +239,10 @@ export interface AssessResponse {
     hard_stop: boolean
     watch_note?: string | null
     headline_quote?: string | null
+    headline_event?: string | null
     source?: string
+    hazard_class?: string | null
+    hazard_classes?: string[]
   } | null
 }
 

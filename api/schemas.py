@@ -168,7 +168,10 @@ class StormDetail(BaseModel):
     hard_stop: bool
     watch_note: str | None = None
     headline_quote: str | None = None
+    headline_event: str | None = None
     source: str = "none"
+    hazard_class: str | None = None
+    hazard_classes: list[str] = Field(default_factory=list)
 
 
 class NwsStatusOut(BaseModel):
@@ -203,6 +206,15 @@ class HourlyAssessment(BaseModel):
     load_score: float | None = None
     driver_stack: dict[str, float] = Field(default_factory=dict)
     interactions: list[str] = Field(default_factory=list)
+    relative_humidity: float | None = None
+    humidity_band: str | None = None
+    weather_text: str | None = None
+    weather_source: str | None = None
+    precipitation_probability: float | None = None
+    weathercode: int | None = None
+    storm_band: str | None = None
+    lightning_risk: bool = False
+    precaution: str | None = None
 
 
 class ScheduleSummaryOut(BaseModel):
@@ -294,6 +306,27 @@ class FiresResponse(BaseModel):
     count: int
     data_freshness: DataFreshness
     sources: list[SourceAttribution]
+
+
+class AirGridCellOut(BaseModel):
+    latitude: float
+    longitude: float
+    pm2_5: float | None = None
+    us_aqi: float | None = None
+    dust: float | None = None
+    pm10_wildfires: float | None = None
+
+
+class AirGridResponse(BaseModel):
+    lat: float
+    lon: float
+    cells: list[AirGridCellOut]
+    valid_hour: datetime | None = None
+    served_from_cache: bool = False
+    note: str = (
+        "Open-Meteo CAMS particulates on a ~45 km grid. Coarse cells, not a smoke plume. "
+        "pm10_wildfires is included when the model provides it; otherwise use pm2_5."
+    )
 
 
 class BriefRequest(BaseModel):

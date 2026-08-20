@@ -79,6 +79,26 @@ export function fetchEvents(): Promise<{ events: HistoricalEventSummary[] }> {
   return getJson('/api/events')
 }
 
+export type AirGridCell = {
+  latitude: number
+  longitude: number
+  pm2_5: number | null
+  us_aqi: number | null
+  dust: number | null
+  pm10_wildfires: number | null
+}
+
+export function fetchAirGrid(
+  lat: number,
+  lon: number,
+  opts?: { startDate?: string; endDate?: string },
+): Promise<{ cells: AirGridCell[]; valid_hour: string | null; served_from_cache: boolean }> {
+  const q = new URLSearchParams({ lat: String(lat), lon: String(lon) })
+  if (opts?.startDate) q.set('start_date', opts.startDate)
+  if (opts?.endDate) q.set('end_date', opts.endDate)
+  return getJson(`/api/air-grid?${q}`)
+}
+
 export function fetchFires(
   lat: number,
   lon: number,

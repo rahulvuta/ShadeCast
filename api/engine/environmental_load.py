@@ -30,6 +30,8 @@ from api.integrity.types import ConfidenceLevel
 
 WIND_GUST_HARD_STOP_KMH = 40.0
 
+_PM_POLLUTANTS = frozenset({"pm2_5", "pm10"})
+
 # AQI band → contribution toward elevating the heat+smoke base verdict.
 _AQI_ESCALATION: dict[AQIBand, int] = {
     AQIBand.GOOD: 0,
@@ -57,6 +59,8 @@ INTERACTION_MECHANISMS: dict[str, str] = {
     "storm_hard_stop": "Official NWS warning or lightning risk forces a hard stop for all outdoor work.",
     "lightning_hard_stop": "Lightning risk is a binary outdoor-work stop — not averaged into load score.",
     "storm_watch_escalate": "A storm watch is in effect; conditions may deteriorate rapidly.",
+    "storm_warning_floor": "A flood, high-wind, or winter warning floors the verdict at RESTRICT.",
+    "storm_flood_stop": "Flash-flood warning with already-elevated conditions forces STOP.",
     "low_confidence_escalate": "LOW confidence — verdict escalated one level more conservative.",
     "unusable_confidence": "UNUSABLE inputs — refuse trust and treat as STOP sentinel.",
     "heat+high_uv_shorten_exposure": (
@@ -110,6 +114,10 @@ def _verdict_rank(v: Verdict) -> int:
     return _VERDICT_ORDER.index(v)
 
 
+def _verdict_floor(v: Verdict, floor: Verdict) -> Verdict:
+    return floor if _verdict_rank(floor) > _verdict_rank(v) else v
+
+
 def _aqi_to_smoke_like_label(band: AQIBand | None) -> str | None:
     """Map AQI band onto the smoke-label vocabulary for matrix blending."""
     if band is None:
@@ -156,9 +164,11 @@ def assess_environmental_load(
     if compound.superadditive_applied:
         interactions.append("heat+smoke_superadditive")
 
-    # Blend AQI elevation into the verdict when CAMS is worse than FIRMS alone.
+    # Blend AQI elevation when the dominant pollutant is not already captured
+    # by CAMS PM2.5 smoke_pressure (ozone / NO2 / CO / SO2, or unknown).
     aqi_steps = _AQI_ESCALATION.get(aqi_adj, 0) if aqi_adj is not None else 0
-    if aqi_steps:
+    aqi_is_pm = air.dominant_pollutant in _PM_POLLUTANTS
+    if aqi_steps and not aqi_is_pm:
         # Take the worse of (heat+smoke) and (heat + AQI-as-smoke-label)
         aqi_label = _aqi_to_smoke_like_label(aqi_adj)
         aqi_compound = combine(heat_adj, 0.0, aqi_label)
@@ -217,6 +227,25 @@ def assess_environmental_load(
             if new_v != verdict:
                 verdict = new_v
             interactions.append("storm_watch_escalate")
+        elif storm.storm_band == StormBand.WARNING:
+            classes = storm.hazard_classes or (
+                (storm.hazard_class,) if storm.hazard_class else ()
+            )
+            if "flood" in classes:
+                if _verdict_rank(verdict) >= _verdict_rank(Verdict.CAUTION):
+                    if verdict != Verdict.STOP:
+                        verdict = Verdict.STOP
+                        interactions.append("storm_flood_stop")
+                else:
+                    floored = _verdict_floor(verdict, Verdict.RESTRICT)
+                    if floored != verdict:
+                        verdict = floored
+                        interactions.append("storm_warning_floor")
+            elif "wind" in classes or "winter" in classes:
+                floored = _verdict_floor(verdict, Verdict.RESTRICT)
+                if floored != verdict:
+                    verdict = floored
+                    interactions.append("storm_warning_floor")
 
     # 2. heat + high UV shortens exposure — does NOT escalate verdict
     exposure_cap: int | None = None

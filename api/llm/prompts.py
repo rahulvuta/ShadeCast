@@ -23,7 +23,7 @@ You MUST reply with a single JSON object matching this schema exactly:
 Rules:
 - Do not add, change, or infer any number, time, or risk level not present in the input JSON.
 - Do not give medical advice. You may list common heat warning signs already implied by the input.
-- Do not invent PM2.5 or AQI numbers. Smoke is a satellite proxy, not measured air quality.
+- Do not invent PM2.5 or AQI numbers. Smoke is modelled CAMS PM2.5 via Open-Meteo, not FIRMS FRP.
 - Keep each string short enough to read aloud in under 8 seconds.
 """
 
@@ -41,9 +41,22 @@ def build_messages(engine: dict[str, Any], lang: Lang = "en") -> list[dict[str, 
         },
         "climatology": engine.get("climatology"),
         "hourly_verdicts": [
-            {"hour": h.get("hour"), "verdict": h.get("verdict"), "work": h.get("work_minutes"), "rest": h.get("rest_minutes")}
+            {
+                "hour": h.get("hour"),
+                "verdict": h.get("verdict"),
+                "work": h.get("work_minutes"),
+                "rest": h.get("rest_minutes"),
+            }
             for h in (engine.get("hourly") or [])
         ],
+        "storm": {
+            "storm_band": (engine.get("storm") or {}).get("storm_band"),
+            "lightning_risk": (engine.get("storm") or {}).get("lightning_risk"),
+            "source": (engine.get("storm") or {}).get("source"),
+            "watch_note": (engine.get("storm") or {}).get("watch_note"),
+            "headline_quote": (engine.get("storm") or {}).get("headline_quote"),
+            "hazard_class": (engine.get("storm") or {}).get("hazard_class"),
+        },
     }
     return [
         {"role": "system", "content": system},

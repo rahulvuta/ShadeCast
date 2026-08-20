@@ -7,8 +7,8 @@ Facts encoded here and respected in code:
 - Free, no API key, global coverage, 5-day hourly forecast.
 - Time series always starts at 00:00 today (local via timezone=auto).
 - Backed by CAMS European (~11 km, Europe only) and CAMS global (~45 km),
-  both updating every 24 hours. That slow refresh is why FIRMS remains
-  essential for near-real-time wildfire smoke detection.
+  both updating every 24 hours. FIRMS heat detections remain useful for
+  lag concordance (fresh ignition vs delayed CAMS PM2.5), not as smoke.
 - us_aqi and european_aqi are different scales — never mix them.
   Default to us_aqi; expose european_aqi only for European coordinates.
 - The consolidated us_aqi is the maximum of the individual pollutant
@@ -194,6 +194,128 @@ def fetch_air_quality(
             resp.json(),
             include_european_aqi=is_europe(lat, lon),
         )
+    finally:
+        if owns:
+            client.close()
+
+
+GRID_HOURLY = "pm2_5,us_aqi,dust,pm10_wildfires"
+GRID_N = 5
+GRID_STEP_DEG = 0.40  # ~45 km, native CAMS global scale
+
+
+@dataclass(frozen=True)
+class AirGridCell:
+    latitude: float
+    longitude: float
+    pm2_5: float | None
+    us_aqi: float | None
+    dust: float | None
+    pm10_wildfires: float | None
+
+
+def grid_coordinates(lat: float, lon: float) -> list[tuple[float, float]]:
+    half = GRID_N // 2
+    out: list[tuple[float, float]] = []
+    for i in range(GRID_N):
+        for j in range(GRID_N):
+            out.append(
+                (
+                    round(lat + (i - half) * GRID_STEP_DEG, 4),
+                    round(lon + (j - half) * GRID_STEP_DEG, 4),
+                )
+            )
+    return out
+
+
+def _pick_hour_index(times: list[str], at: datetime | None) -> int:
+    if not times:
+        return 0
+    if at is None:
+        return 0
+    target = at.replace(minute=0, second=0, microsecond=0)
+    best_i = 0
+    best_d = None
+    for i, t in enumerate(times):
+        try:
+            naive = datetime.fromisoformat(t)
+        except ValueError:
+            continue
+        # Compare wall-clock hour; timezone already local via timezone=auto.
+        d = abs((naive.replace(tzinfo=None) - target.replace(tzinfo=None)).total_seconds())
+        if best_d is None or d < best_d:
+            best_d = d
+            best_i = i
+    return best_i
+
+
+def _at(vals: list[Any], i: int) -> float | None:
+    if not vals or i < 0 or i >= len(vals):
+        return None
+    return _n(vals[i])
+
+
+def parse_air_quality_grid(
+    data: dict[str, Any] | list[Any],
+    *,
+    at: datetime | None = None,
+) -> list[AirGridCell]:
+    """Parse a multi-location Open-Meteo AQ response into current-hour cells."""
+    payloads = data if isinstance(data, list) else [data]
+    cells: list[AirGridCell] = []
+    for item in payloads:
+        if not isinstance(item, dict):
+            continue
+        hourly = item.get("hourly") or {}
+        times = hourly.get("time") or []
+        idx = _pick_hour_index(times, at)
+        cells.append(
+            AirGridCell(
+                latitude=float(item.get("latitude") or 0.0),
+                longitude=float(item.get("longitude") or 0.0),
+                pm2_5=_at(hourly.get("pm2_5") or [], idx),
+                us_aqi=_at(hourly.get("us_aqi") or [], idx),
+                dust=_at(hourly.get("dust") or [], idx),
+                pm10_wildfires=_at(hourly.get("pm10_wildfires") or [], idx),
+            )
+        )
+    return cells
+
+
+def fetch_air_quality_grid(
+    lat: float,
+    lon: float,
+    *,
+    at: datetime | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    client: httpx.Client | None = None,
+) -> list[AirGridCell]:
+    """One multi-location Open-Meteo AQ call covering a 5×5 CAMS-scale grid."""
+    coords = grid_coordinates(lat, lon)
+    lat_csv = ",".join(f"{p[0]:.4f}" for p in coords)
+    lon_csv = ",".join(f"{p[1]:.4f}" for p in coords)
+    url = (
+        "https://air-quality-api.open-meteo.com/v1/air-quality"
+        f"?latitude={lat_csv}&longitude={lon_csv}"
+        f"&hourly={GRID_HOURLY}"
+        "&timezone=auto"
+        "&forecast_days=1"
+    )
+    if start_date and end_date:
+        url = (
+            "https://air-quality-api.open-meteo.com/v1/air-quality"
+            f"?latitude={lat_csv}&longitude={lon_csv}"
+            f"&hourly={GRID_HOURLY}"
+            f"&start_date={start_date}&end_date={end_date}"
+            "&timezone=auto"
+        )
+    owns = client is None
+    client = client or httpx.Client(timeout=45.0)
+    try:
+        resp = client.get(url)
+        resp.raise_for_status()
+        return parse_air_quality_grid(resp.json(), at=at)
     finally:
         if owns:
             client.close()

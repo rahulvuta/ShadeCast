@@ -114,6 +114,8 @@ def upsert_forecast(session, lat: float, lon: float, rows: list[forecast_client.
             "apparent_temperature_c": r.apparent_temperature_c,
             "uv_index": r.uv_index,
             "uv_index_clear_sky": r.uv_index_clear_sky,
+            "cape": r.cape,
+            "weathercode": r.weathercode,
             "timezone": r.timezone,
             "fetched_at": now,
         }
@@ -133,6 +135,8 @@ def upsert_forecast(session, lat: float, lon: float, rows: list[forecast_client.
             "apparent_temperature_c": stmt.excluded.apparent_temperature_c,
             "uv_index": stmt.excluded.uv_index,
             "uv_index_clear_sky": stmt.excluded.uv_index_clear_sky,
+            "cape": stmt.excluded.cape,
+            "weathercode": stmt.excluded.weathercode,
             "timezone": stmt.excluded.timezone,
             "fetched_at": stmt.excluded.fetched_at,
         },

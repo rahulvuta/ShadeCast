@@ -88,7 +88,11 @@ def test_quebec_wildfires_match_expected_with_fires():
     assert abs(r.lat - 49.05) < 0.01
     assert abs(r.lon - (-76.98)) < 0.01
     assert len(r.fires) >= 5
-    assert r.smoke.smoke_pressure > 10.0
+    # CAMS PM2.5 at the focus hour — FIRMS heat detections must not inflate smoke.
+    assert r.air is not None and r.air.pm2_5 is not None
+    from api.engine.smoke import pm25_to_smoke_pressure
+
+    assert r.smoke.smoke_pressure == pm25_to_smoke_pressure(r.air.pm2_5)
     assert r.actual_vs_expected is not None
     assert r.actual_vs_expected.status == "pass"
     assert r.current.verdict in ("STOP", "RESTRICT")
@@ -151,25 +155,19 @@ def test_real_concordance_spearman_from_bundles():
         # Pair each forecast hour's smoke with AQ us_aqi
         from api.engine.smoke import assess_smoke
 
-        for i, fr in enumerate(inj.forecast_rows):
+        for i, _fr in enumerate(inj.forecast_rows):
             if i % 3 != 0:
                 continue
             aq = inj.aq_rows[i] if i < len(inj.aq_rows) else None
             if aq is None or aq.us_aqi is None:
                 continue
-            smoke = assess_smoke(
-                e.lat,
-                e.lon,
-                inj.fire_inputs,
-                wind_from_deg=fr.wind_direction_deg or 0.0,
-                wind_speed_kmh=fr.wind_speed_kmh,
-            )
+            smoke = assess_smoke(pm2_5=aq.pm2_5)
             xs.append(smoke.smoke_pressure)
             ys.append(aq.us_aqi)
     assert len(xs) >= 20
     rho = spearman_rank(xs, ys)
-    # With empty FIRMS, smoke is flat → Spearman may be near 0 / undefined.
-    # Still a real-data result; just assert it is a finite float in [-1, 1].
+    # CAMS PM2.5 vs US AQI on the same hours — a real-data rank correlation,
+    # not FIRMS heat and not ground-truth PM2.5.
     assert isinstance(rho, float)
     assert -1.0 <= rho <= 1.0
     print(f"real_bundle_spearman n={len(xs)} rho={rho:.4f}")

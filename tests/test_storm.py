@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from api.clients.nws import NwsAlert
 from api.engine.air import assess_air
@@ -14,12 +14,14 @@ from api.engine.storm import (
     HARD_STOP_EVENTS,
     StormBand,
     alert_rank,
+    alerts_active_at,
     assess_storm,
     is_hard_stop_event,
     is_relevant_event,
     is_watch_event,
     is_warning_event,
     lightning_from_model,
+    storm_from_weathercode,
 )
 from api.integrity.types import ConfidenceLevel
 
@@ -193,3 +195,103 @@ def test_absent_storm_matches_legacy_compound():
             assert none.verdict == legacy.verdict == explicit.verdict
             assert none.load_score == explicit.load_score
             assert none.interactions == explicit.interactions
+
+
+def test_weathercode_thunderstorm_is_model_hard_stop():
+    band, lightning, cls = storm_from_weathercode(95)
+    assert lightning is True
+    assert cls == "lightning"
+    storm = assess_storm([], weathercode=95)
+    assert storm.hard_stop is True
+    assert storm.source == "open-meteo"
+    assert storm.hazard_class == "lightning"
+    load = assess_environmental_load(
+        heat_band=HeatBand.SAFE,
+        smoke_pressure=0.0,
+        air=assess_air(smoke_pressure=0.0, us_aqi=20.0),
+        storm=storm,
+        confidence=ConfidenceLevel.HIGH,
+    )
+    assert load.verdict == Verdict.STOP
+
+
+def test_tornado_warning_still_nws_hard_stop():
+    storm = assess_storm([_alert("Tornado Warning")], weathercode=0)
+    assert storm.source == "nws"
+    assert storm.hard_stop is True
+    assert "tornado" in storm.hazard_classes
+
+
+def test_flash_flood_warning_floors_restrict():
+    storm = assess_storm([_alert("Flash Flood Warning")])
+    assert storm.hard_stop is False
+    assert storm.storm_band == StormBand.WARNING
+    quiet = assess_environmental_load(
+        heat_band=HeatBand.SAFE,
+        smoke_pressure=0.0,
+        air=assess_air(smoke_pressure=0.0, us_aqi=20.0),
+        confidence=ConfidenceLevel.HIGH,
+        storm=storm,
+    )
+    assert quiet.verdict == Verdict.RESTRICT
+    assert "storm_warning_floor" in quiet.interactions
+    cautioned = assess_environmental_load(
+        heat_band=HeatBand.EXTREME_CAUTION,
+        smoke_pressure=0.0,
+        air=assess_air(smoke_pressure=0.0, us_aqi=20.0),
+        confidence=ConfidenceLevel.HIGH,
+        storm=storm,
+    )
+    assert cautioned.verdict == Verdict.STOP
+    assert "storm_flood_stop" in cautioned.interactions
+
+
+def test_watch_does_not_stop():
+    storm = assess_storm([_alert("Tornado Watch")])
+    assert storm.hard_stop is False
+    load = assess_environmental_load(
+        heat_band=HeatBand.SAFE,
+        smoke_pressure=0.0,
+        air=assess_air(smoke_pressure=0.0, us_aqi=20.0),
+        confidence=ConfidenceLevel.HIGH,
+        storm=storm,
+    )
+    assert load.verdict != Verdict.STOP
+
+
+def test_alerts_active_at_respects_onset_expires():
+    later = NOW + timedelta(hours=8)
+    alert = _alert("Tornado Warning")
+    alert = NwsAlert(
+        alert_id=alert.alert_id,
+        event=alert.event,
+        severity=alert.severity,
+        urgency=alert.urgency,
+        certainty=alert.certainty,
+        onset=later,
+        expires=later + timedelta(hours=2),
+        headline=alert.headline,
+        description=alert.description,
+        area=alert.area,
+        web=alert.web,
+    )
+    assert alerts_active_at([alert], NOW) == []
+    assert len(alerts_active_at([alert], later + timedelta(minutes=10))) == 1
+
+
+def test_weathercode_heavy_rain_is_warning_not_hard_stop():
+    band, lightning, cls = storm_from_weathercode(65)
+    assert lightning is False
+    assert cls == "flood"
+    assert band == StormBand.WARNING
+    storm = assess_storm([], weathercode=65)
+    assert storm.hard_stop is False
+    assert storm.source == "open-meteo"
+    load = assess_environmental_load(
+        heat_band=HeatBand.SAFE,
+        smoke_pressure=0.0,
+        air=assess_air(smoke_pressure=0.0, us_aqi=20.0),
+        confidence=ConfidenceLevel.HIGH,
+        storm=storm,
+    )
+    assert load.verdict == Verdict.RESTRICT

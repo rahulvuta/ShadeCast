@@ -31,6 +31,9 @@ Trigger = Literal[
     "high_uv",
     "high_wind",
     "storm",
+    "tornado",
+    "flood",
+    "winter",
     "overnight",
     "youth",
     "sensitive",
@@ -108,6 +111,7 @@ def derive_triggers(
     lightning_risk: bool = False,
     overnight: bool = False,
     include_fallback: bool = True,
+    hazard_classes: list[str] | None = None,
 ) -> list[Trigger]:
     triggers: list[Trigger] = []
     if verdict in ("RESTRICT", "STOP") and heat_band in ("DANGER", "EXTREME_DANGER"):
@@ -124,6 +128,15 @@ def derive_triggers(
         triggers.append("high_wind")
     if lightning_risk or (storm_band and storm_band in ("WATCH", "WARNING", "HARD_STOP")):
         triggers.append("storm")
+    classes = set(hazard_classes or [])
+    if "tornado" in classes:
+        triggers.append("tornado")
+    if "flood" in classes:
+        triggers.append("flood")
+    if "winter" in classes:
+        triggers.append("winter")
+    if "wind" in classes:
+        triggers.append("high_wind")
     if overnight:
         triggers.append("overnight")
     if profile == "athlete":
@@ -211,6 +224,7 @@ def select_clothing(
     storm_band: str | None = None,
     lightning_risk: bool = False,
     overnight: bool = False,
+    hazard_classes: list[str] | None = None,
 ) -> list[SelectedAction]:
     """All matching clothing/PPE rows, grouped later by body_zone in the UI."""
     triggers = derive_triggers(
@@ -226,6 +240,7 @@ def select_clothing(
         lightning_risk=lightning_risk,
         overnight=overnight,
         include_fallback=False,
+        hazard_classes=hazard_classes,
     )
     matched = [
         a
@@ -251,6 +266,7 @@ def select_actions(
     overnight: bool = False,
     llm_chosen_ids: list[str] | None = None,
     n: int = 4,
+    hazard_classes: list[str] | None = None,
 ) -> list[SelectedAction]:
     triggers = derive_triggers(
         verdict=verdict,
@@ -264,6 +280,7 @@ def select_actions(
         storm_band=storm_band,
         lightning_risk=lightning_risk,
         overnight=overnight,
+        hazard_classes=hazard_classes,
     )
     candidates = _operational_candidates(filter_candidates(triggers, audience=profile))
     if not candidates:

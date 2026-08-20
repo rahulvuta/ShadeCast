@@ -275,6 +275,33 @@ actions:
     source_url: https://www.weather.gov/safety/flood
     source_name: NWS Flood Safety
 
+  - id: storm_tornado_shelter
+    trigger: tornado
+    audience: [general]
+    priority: 4
+    title: Shelter on the lowest floor
+    body: Leave vehicles and open areas. Move the crew into a sturdy building, lowest floor, interior room. Cover heads. Stay until the warning expires.
+    source_url: https://www.weather.gov/safety/tornado
+    source_name: NWS Tornado Safety
+
+  - id: storm_flood_leave_low
+    trigger: flood
+    audience: [general]
+    priority: 5
+    title: Leave washes and low ground
+    body: Do not drive or walk through flooded roads. Move crews and equipment off washes, underpasses, and low-lying work areas until water recedes.
+    source_url: https://www.weather.gov/safety/flood
+    source_name: NWS Flood Safety
+
+  - id: storm_winter_shorten
+    trigger: winter
+    audience: [general, over_65]
+    priority: 14
+    title: Shorten exposure in winter storms
+    body: Cut outdoor time, use traction footwear, and watch for hypothermia and frostbite. Wet clothing loses heat fast — rotate dry layers.
+    source_url: https://www.weather.gov/safety/winter
+    source_name: NWS Winter Weather Safety
+
   - id: clothing_overnight_layers
     trigger: overnight
     audience: [general, over_65, children]

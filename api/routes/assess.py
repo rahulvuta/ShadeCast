@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from api.db import get_db
 from api.freshness import SOURCES, build_freshness
 from api.models import FireDetection
-from api.schemas import AssessResponse, FirePoint, FiresResponse
+from api.schemas import AirGridCellOut, AirGridResponse, AssessResponse, FirePoint, FiresResponse
 from api.services.assess import build_assessment
 
 router = APIRouter(prefix="/api")
@@ -165,4 +165,41 @@ def fires(
         count=len(points),
         data_freshness=build_freshness([("NASA FIRMS", fetched)]),
         sources=SOURCES,
+    )
+
+
+@router.get("/air-grid", response_model=AirGridResponse)
+def air_grid(
+    lat: float = Query(..., ge=-90, le=90),
+    lon: float = Query(..., ge=-180, le=180),
+    start_date: str | None = Query(None, description="Historical YYYY-MM-DD"),
+    end_date: str | None = Query(None, description="Historical YYYY-MM-DD"),
+    db: Session = Depends(get_db),
+) -> AirGridResponse:
+    from api.services.air_grid import load_air_grid
+
+    cells, hour, cached = load_air_grid(
+        db,
+        lat,
+        lon,
+        start_date=start_date,
+        end_date=end_date,
+        allow_network=True,
+    )
+    return AirGridResponse(
+        lat=lat,
+        lon=lon,
+        cells=[
+            AirGridCellOut(
+                latitude=c.latitude,
+                longitude=c.longitude,
+                pm2_5=c.pm2_5,
+                us_aqi=c.us_aqi,
+                dust=c.dust,
+                pm10_wildfires=c.pm10_wildfires,
+            )
+            for c in cells
+        ],
+        valid_hour=hour,
+        served_from_cache=cached,
     )

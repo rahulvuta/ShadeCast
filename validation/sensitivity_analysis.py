@@ -24,7 +24,7 @@ from api.engine.smoke import (
     SEARCH_RADIUS_KM,
     UPWIND_HALF_ANGLE_DEG,
     FireDetectionInput,
-    assess_smoke,
+    assess_fire_heat,
 )
 from api.integrity.types import ConfidenceLevel
 
@@ -109,7 +109,7 @@ def sensitivity_smoke_geometry() -> SensitivityResult:
     """Perturb decay / cone / radius and see if smoke_pressure ranking flips."""
     fires = [FireDetectionInput(latitude=34.1, longitude=-117.3, frp=100.0)]
     user_lat, user_lon = 34.05, -117.25
-    baseline = assess_smoke(
+    baseline = assess_fire_heat(
         user_lat, user_lon, fires, wind_from_deg=180.0, wind_speed_kmh=15.0
     ).smoke_pressure
 
@@ -121,7 +121,7 @@ def sensitivity_smoke_geometry() -> SensitivityResult:
     for dlat in (-0.05, 0.0, 0.05, 0.1, 0.2):
         trials += 1
         moved = [FireDetectionInput(latitude=34.1 + dlat, longitude=-117.3, frp=100.0)]
-        p = assess_smoke(
+        p = assess_fire_heat(
             user_lat, user_lon, moved, wind_from_deg=180.0, wind_speed_kmh=15.0
         ).smoke_pressure
         # "Flip" = pressure changes by >50% relative — coarse stability metric

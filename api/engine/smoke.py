@@ -1,7 +1,8 @@
-"""Satellite-derived smoke pressure proxy — NOT measured PM2.5, NOT AQI.
+"""Smoke pressure from Open-Meteo CAMS PM2.5, plus FIRMS heat-detection geometry.
 
-Given user coordinate, FIRMS detections, and meteorological wind (direction
-FROM which the wind blows), score upwind fire radiative power with distance decay.
+`assess_smoke` maps modelled PM2.5 (µg/m³) onto the 0–100 smoke_pressure scale.
+FIRMS FRP is a thermal anomaly (wildfire, flare, factory exhaust) — scored
+separately by `assess_fire_heat` for concordance, never as smoke.
 """
 
 from __future__ import annotations
@@ -44,6 +45,21 @@ SMOKE_THRESHOLDS = {
     "high": 60.0,
 }
 
+SMOKE_NOTE = (
+    "CAMS PM2.5 via Open-Meteo Air Quality — modelled particulates "
+    "(wildfire smoke, dust, and urban aerosol), not FIRMS fire heat "
+    "and not a ground-station measurement."
+)
+
+# EPA AQI PM2.5 concentration breakpoints (µg/m³) → 0–100 smoke_pressure.
+_PM25_BANDS = (
+    (0.0, 12.0, 0.0, 10.0),
+    (12.0, 35.5, 10.0, 30.0),
+    (35.5, 55.5, 30.0, 60.0),
+    (55.5, 150.5, 60.0, 85.0),
+    (150.5, 250.5, 85.0, 100.0),
+)
+
 
 @dataclass(frozen=True)
 class FireDetectionInput:
@@ -58,10 +74,7 @@ class SmokeResult:
     label: str  # low | moderate | high | very_high
     upwind_count: int
     considered_count: int
-    note: str = (
-        "Satellite-derived proxy for smoke likelihood from upwind FIRMS detections; "
-        "not a measured PM2.5 concentration and not an AQI number."
-    )
+    note: str = SMOKE_NOTE
 
 
 def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -178,19 +191,58 @@ def label_smoke(pressure: float) -> str:
     return "low"
 
 
+def pm25_to_smoke_pressure(pm2_5: float) -> float:
+    """Map µg/m³ PM2.5 onto the existing 0–100 smoke_pressure scale."""
+    x = max(0.0, float(pm2_5))
+    for lo, hi, a, b in _PM25_BANDS:
+        if x <= hi:
+            span = hi - lo
+            t = 0.0 if span <= 0 else (x - lo) / span
+            return round(min(100.0, a + t * (b - a)), 1)
+    return 100.0
+
+
 def assess_smoke(
+    *,
+    pm2_5: float | None,
+    pm10_wildfires: float | None = None,
+) -> SmokeResult:
+    """0–100 smoke_pressure from CAMS PM2.5 (or wildfire PM10 when present)."""
+    conc = None
+    if pm10_wildfires is not None and pm10_wildfires > 0:
+        conc = pm10_wildfires
+    elif pm2_5 is not None:
+        conc = pm2_5
+    if conc is None:
+        return SmokeResult(
+            smoke_pressure=0.0,
+            label="low",
+            upwind_count=0,
+            considered_count=0,
+            note=SMOKE_NOTE,
+        )
+    pressure = pm25_to_smoke_pressure(conc)
+    return SmokeResult(
+        smoke_pressure=pressure,
+        label=label_smoke(pressure),
+        upwind_count=0,
+        considered_count=0,
+        note=SMOKE_NOTE,
+    )
+
+
+def assess_fire_heat(
     user_lat: float,
     user_lon: float,
     fires: Sequence[FireDetectionInput],
     wind_from_deg: float,
     wind_speed_kmh: float | None = None,
 ) -> SmokeResult:
-    """Compute 0–100 smoke_pressure from upwind FIRMS detections within 300 km.
+    """0–100 thermal-anomaly score from upwind FIRMS FRP. Not smoke.
 
-    wind_speed is accepted for future weighting but does not gate inclusion —
-    calm conditions still carry plume risk over hours.
+    Used only for FIRMS vs CAMS concordance (fresh heat vs model lag).
     """
-    _ = wind_speed_kmh  # reserved
+    _ = wind_speed_kmh
     raw = 0.0
     upwind_n = 0
     considered = 0
@@ -205,8 +257,6 @@ def assess_smoke(
         raw += detection_weight(frp, d)
         upwind_n += 1
 
-    # Compress unbounded sum into 0–100 with a soft cap. Hand-tuned.
-    # A single nearby intense fire (frp~50 at 10km) ≈ weight ~40; score maps via 100*(1-e^(-x/40)).
     pressure = 100.0 * (1.0 - math.exp(-raw / 40.0))
     pressure = max(0.0, min(100.0, pressure))
     return SmokeResult(
@@ -214,4 +264,8 @@ def assess_smoke(
         label=label_smoke(pressure),
         upwind_count=upwind_n,
         considered_count=considered,
+        note=(
+            "FIRMS thermal detections (FRP), not smoke. Concordance only — "
+            "factory exhaust and flares can appear here."
+        ),
     )

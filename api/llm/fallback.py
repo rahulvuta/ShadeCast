@@ -152,6 +152,42 @@ def render_fallback_brief(engine: dict[str, Any], lang: Lang = "en") -> BriefRes
     actions = _ACTIONS.get(lang, _ACTIONS["en"])
     warnings = _WARNINGS.get(lang, _WARNINGS["en"])
 
+    storm = engine.get("storm") or {}
+    lightning = bool(storm.get("lightning_risk") or storm.get("hard_stop"))
+    if lightning and verdict == "STOP":
+        if lang == "es":
+            lines_stop = "Pare el trabajo afuera. Relampagos o alerta oficial — refugio, no metal."
+            actions_stop = [
+                "Deje herramientas de metal y busque un edificio solido.",
+                "No trabaje en areas abiertas ni vehiculos.",
+                "Espere a que pase la tormenta antes de volver.",
+            ]
+        elif lang == "vi":
+            lines_stop = "Ngung viec ngoai troi. Set hoac canh bao chinh thuc — vao nha, tranh kim loai."
+            actions_stop = [
+                "Bo dung cu kim loai va vao nha kiên co.",
+                "Khong lam viec o cho trong hoac trong xe.",
+                "Cho bao xong roi moi ra ngoai.",
+            ]
+        else:
+            lines_stop = "Stop outdoor work. Lightning or official warning — shelter, no metal tools."
+            actions_stop = [
+                "Put down metal tools and move the crew into a sturdy building.",
+                "Stay off open ground, ridges, and vehicles until the storm passes.",
+                "Wait for the warning or thunder to end before resuming work.",
+            ]
+        return BriefResponse(
+            verdict_line=lines_stop,
+            three_actions=actions_stop,
+            schedule_sentence=sched_sentence,
+            warning_signs=list(warnings),
+            language=lang,
+            used_fallback=True,
+            cached=False,
+            data_freshness=build_freshness([]),
+            sources=SOURCES,
+        )
+
     return BriefResponse(
         verdict_line=lines.get(verdict, lines["CAUTION"]),
         three_actions=list(actions.get(verdict, actions["CAUTION"])),

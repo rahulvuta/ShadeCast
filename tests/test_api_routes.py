@@ -52,3 +52,8 @@ def test_fires_bbox_validation():
     assert res.status_code == 400
     res2 = client.get("/api/fires?bbox=-180,-90,180,90")  # too wide
     assert res2.status_code == 400
+
+
+def test_air_grid_validation():
+    res = client.get("/api/air-grid")
+    assert res.status_code == 422

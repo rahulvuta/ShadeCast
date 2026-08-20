@@ -1,18 +1,15 @@
 import { useId, useState } from 'react'
 import {
   MAP_FIRE_FETCH_RADIUS_KM,
-  SEARCH_RADIUS_KM,
-  UPWIND_HALF_ANGLE_DEG,
   type AnnotatedDetection,
 } from '../lib/smokeGeometry'
-import { metersPerPixel, projectToViewport, upwindWedgePath } from '../lib/mercator'
+import { metersPerPixel, projectToViewport } from '../lib/mercator'
 
 export function detectionLabel(d: AnnotatedDetection): string {
   return [
-    `FRP ${d.frp ?? 'n/a'}`,
+    `Heat detection FRP ${d.frp ?? 'n/a'}`,
     `${d.distanceKm.toFixed(0)} km`,
     `bearing ${d.bearingDeg.toFixed(0)}°`,
-    d.upwind ? `weight ${d.weight.toFixed(2)}` : 'outside cone (no weight)',
   ].join(' · ')
 }
 
@@ -23,8 +20,7 @@ function markerRadiusPx(d: AnnotatedDetection): number {
 }
 
 function markerFill(d: AnnotatedDetection): string {
-  if (d.upwind) return '#D55E00'
-  if (d.withinRadius) return '#E69F00'
+  if (d.withinRadius) return '#D55E00'
   return '#9CA3AF'
 }
 
@@ -42,7 +38,7 @@ export function SmokeScopeOverlay({
   zoom,
   width,
   height,
-  windFromDeg,
+  windFromDeg: _windFromDeg,
   annotated,
   legend,
   onSelectDetection,
@@ -63,8 +59,6 @@ export function SmokeScopeOverlay({
   const cy = height / 2
   const mpp = metersPerPixel(lat, zoom)
   const fetchR = (MAP_FIRE_FETCH_RADIUS_KM * 1000) / mpp
-  const searchR = (SEARCH_RADIUS_KM * 1000) / mpp
-  const wedge = upwindWedgePath(cx, cy, searchR, windFromDeg, UPWIND_HALF_ANGLE_DEG)
 
   function activate(d: AnnotatedDetection) {
     const label = detectionLabel(d)
@@ -83,7 +77,7 @@ export function SmokeScopeOverlay({
         aria-labelledby={titleId}
         style={{ pointerEvents: 'none' }}
       >
-        <title id={titleId}>Map of fire detections with upwind smoke cone</title>
+        <title id={titleId}>Map of FIRMS heat detections over CAMS air quality</title>
 
         {/* Fetch-radius ring */}
         <circle
@@ -91,33 +85,11 @@ export function SmokeScopeOverlay({
           cy={cy}
           r={fetchR}
           fill="#888888"
-          fillOpacity={0.05}
+          fillOpacity={0.04}
           stroke="#666666"
           strokeWidth={2}
           strokeDasharray="8 6"
           strokeOpacity={0.7}
-        />
-
-        {/* Search-radius ring */}
-        <circle
-          cx={cx}
-          cy={cy}
-          r={searchR}
-          fill="#56B4E9"
-          fillOpacity={0.14}
-          stroke="#0072B2"
-          strokeWidth={2.5}
-          strokeOpacity={0.9}
-        />
-
-        {/* Upwind wedge */}
-        <path
-          d={wedge}
-          fill="#D55E00"
-          fillOpacity={0.3}
-          stroke="#D55E00"
-          strokeWidth={3}
-          strokeOpacity={0.95}
         />
 
         {/* Detections */}

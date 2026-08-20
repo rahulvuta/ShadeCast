@@ -182,6 +182,8 @@ def forecast_from_jsonable(rows: list[dict[str, Any]]) -> list[ForecastRow]:
                 uv_index=r.get("uv_index"),
                 uv_index_clear_sky=r.get("uv_index_clear_sky"),
                 timezone=r.get("timezone") or "UTC",
+                cape=r.get("cape"),
+                weathercode=r.get("weathercode"),
             )
         )
     return out

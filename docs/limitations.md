@@ -2,9 +2,11 @@
 
 This document is linked from the README and the app footer. Judges should open it.
 
-## 1. Smoke pressure is not PM2.5
+## 1. Smoke pressure is modelled PM2.5, not FIRMS heat
 
-ShadeCast's smoke term is a **satellite-derived proxy** built from NASA FIRMS active-fire detections, wind direction, fire radiative power (FRP), and distance decay. It is **not** a measured PM2.5 concentration. We never render it as an AQI number or use AQI color scales.
+ShadeCast's smoke term is **Open-Meteo CAMS PM2.5** (µg/m³ mapped onto a 0–100 `smoke_pressure` scale). It is **modelled particulates** — wildfire smoke, dust, and urban aerosol — not a ground-station measurement and **not** NASA FIRMS fire radiative power (FRP).
+
+FIRMS dots on the map are **heat detections** (thermal anomalies: wildfire, flare, factory exhaust). The FRP score is used only for **concordance** with CAMS (fresh heat vs a lagged air-quality field). We never render `smoke_pressure` as an AQI number.
 
 ## 2. Heat index is a screening tool, not WBGT
 
@@ -40,7 +42,7 @@ When live feeds are slow or down, the API serves the last good Postgres row and 
 
 Open-Meteo's Air Quality API is free for **non-commercial** use (10,000 calls/day, no uptime guarantee). ShadeCast caches hourly responses in Postgres and pulls via the cron ingest job so call volume stays far under the free-tier limit. Do not treat this feed as a paid SLA.
 
-The underlying CAMS models update roughly every **24 hours** at ~45 km (global) / ~11 km (Europe). That slow refresh is why NASA FIRMS remains essential for near-real-time wildfire smoke — a new ignition can appear in FIRMS hours before CAMS reflects it. `us_aqi` and `european_aqi` are different scales and must never be mixed; ShadeCast defaults to `us_aqi`.
+The underlying CAMS models update roughly every **24 hours** at ~45 km (global) / ~11 km (Europe). That slow refresh is why NASA FIRMS heat detections remain useful for **lag concordance** — a new ignition can appear in FIRMS hours before CAMS PM2.5 rises. FIRMS is **not** the smoke term. `us_aqi` and `european_aqi` are different scales and must never be mixed; ShadeCast defaults to `us_aqi`.
 
 ## 10. UV minutes-to-burn is educational, not clinical
 
@@ -81,7 +83,7 @@ The web service worker caches the app shell and **per-URL** `/api/assess` respon
 
 ## 14b. Basemap tiles (OpenStreetMap)
 
-The smoke-algorithm panel uses a static mosaic of [OpenStreetMap](https://www.openstreetmap.org/copyright) raster tiles (`tile.openstreetmap.org`) with an SVG geometry overlay — not a WebGL map library. We only request tiles for the viewport actually displayed (typically ~6–12 tiles), show visible attribution, and degrade to a neutral background with readable rings/markers if tiles fail. Bulk prefetch / regional tile warming is not done. **At real product scale a self-hosted or commercial tile provider would be required**; OSM's public tile servers are suitable for this demo only.
+The air-quality map uses a static mosaic of [OpenStreetMap](https://www.openstreetmap.org/copyright) raster tiles (`tile.openstreetmap.org`) with CAMS cell and FIRMS heat overlays — not a WebGL map library. We only request tiles for the viewport actually displayed (typically ~6–12 tiles), show visible attribution, and degrade to a neutral background with readable rings/markers if tiles fail. Bulk prefetch / regional tile warming is not done. **At real product scale a self-hosted or commercial tile provider would be required**; OSM's public tile servers are suitable for this demo only.
 
 ## 15. Time Machine historical replay
 
@@ -89,7 +91,7 @@ The smoke-algorithm panel uses a static mosaic of [OpenStreetMap](https://www.op
 
 **Provenance:** weather from `archive-api.open-meteo.com`; air quality from Open-Meteo AQ with `start_date`/`end_date`. FIRMS NRT does not retain 2023 detections; those bundles use an **empty archive fixture** (labeled in `validation/fixtures/`) — not a claim that no fires existed. Weather-archive UV is typically null; Time Machine backfills UV from the AQ archive and selects a daytime (10–16 local) focus hour for the current snapshot while still returning the full hourly day.
 
-**Concordance** of `smoke_pressure` vs CAMS AQI on real bundle hours is a **consistency study** (satellite/model vs model), **not** ground-truth validation against measured PM2.5. See `docs/validation.md`. Ground-station validation remains future work.
+**Concordance** of FIRMS heat detections vs CAMS AQI on real bundle hours is a **consistency study** (satellite heat vs air-quality model), **not** ground-truth validation against measured PM2.5. See `docs/validation.md`. Ground-station validation remains future work.
 
 **Quebec wildfires Time Machine:** placed at Lebel-sur-Quévillon (evacuated June 2023) with archive weather/AQ and a hand-authored FIRMS fixture. Live FIRMS NRT still cannot retain 2023 for other events.
 
@@ -103,9 +105,11 @@ Alert arrival is **not instantaneous**. We fetch `/alerts/active` live per asses
 
 A miss reports **which kind** of miss it is. `outside_us` means weather.gov gave a definitive answer for that coordinate; `pending` means the lookup itself did not complete (throttled, network error, or a first visit that has not resolved yet) and will retry on the next assess. A transient failure is never presented as absent coverage. NWS also asks clients to re-check `/points` periodically because a coordinate's grid or office can change, so the mapping carries a 30-day TTL — and a failed re-check keeps the cached mapping rather than downgrading the location.
 
-## 17. Storm signals outside the US are model probabilities
+## 17. Storm signals: NWS typed floors, Open-Meteo when NWS is missing
 
-Outside NWS, storm/lightning uses Open-Meteo convective fields (`cape`, `precipitation_probability`). That is a **model proxy**, not an official warning. `thunderstorm_probability` is advertised on the forecast API but was null in probes for Phoenix, Seattle, and Oaxaca — we do not use it. Tornado/severe-thunderstorm **warnings** therefore cannot fire outside NWS coverage.
+Inside NWS coverage, alert **type** sets crew precautions and a **verdict floor**. Tornado warning and severe thunderstorm warning remain HARD_STOP. Flash-flood, high-wind, and winter **warnings** floor at RESTRICT (flash flood becomes STOP if the hour is already CAUTION+). Watches still escalate one level. Extreme-heat and air-quality alerts are display-only — heat and air engines own those scores. Alerts are filtered **per hour** with `onset` / `expires`.
+
+Outside NWS (`outside_us` / `pending` / historical), storms use Open-Meteo **weathercode** plus CAPE and precipitation probability. Thunder codes 95–99 are a model HARD_STOP; heavy rain (65 / 82) and snow codes are WARNING floors with flood/winter precautions. That is a **model proxy**, not an official warning. `thunderstorm_probability` is advertised on the forecast API but was null in probes for Phoenix, Seattle, and Oaxaca — we do not use it. Tornado/severe-thunderstorm **warnings** therefore cannot fire outside NWS coverage.
 
 ## 18. Clothing and PPE are library lookups, not a kit engine
 

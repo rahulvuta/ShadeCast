@@ -25,7 +25,11 @@ export function StormAlertBanner({
     warnings[0]
   if (!primary && !storm?.hard_stop) return null
 
-  const event = primary?.event ?? storm?.headline_quote ?? 'Official warning'
+  const event =
+    primary?.event ??
+    storm?.headline_event ??
+    storm?.headline_quote ??
+    (storm?.source === 'open-meteo' ? 'Model thunderstorm / heavy rain' : 'Official warning')
   const headline = primary?.headline ?? storm?.headline_quote
   const expires = formatExpiry(primary?.expires)
   const href = primary?.web
@@ -37,7 +41,7 @@ export function StormAlertBanner({
       className="rounded border-4 border-[var(--stop)] bg-[var(--stop-bg)] px-4 py-3 text-[var(--ink)]"
     >
       <p className="text-[0.65rem] font-bold uppercase tracking-wide text-[var(--stop)]">
-        Official NWS warning
+        {storm?.source === 'open-meteo' ? 'Model storm (Open-Meteo)' : 'Official NWS warning'}
       </p>
       <p className="mt-1 text-lg font-black tracking-tight">{event}</p>
       {headline && <p className="mt-1 text-sm leading-snug">{headline}</p>}

@@ -83,6 +83,8 @@ class ForecastHour(Base):
     apparent_temperature_c: Mapped[float | None] = mapped_column(Float, nullable=True)
     uv_index: Mapped[float | None] = mapped_column(Float, nullable=True)
     uv_index_clear_sky: Mapped[float | None] = mapped_column(Float, nullable=True)
+    cape: Mapped[float | None] = mapped_column(Float, nullable=True)
+    weathercode: Mapped[int | None] = mapped_column(Integer, nullable=True)
     timezone: Mapped[str | None] = mapped_column(String(64), nullable=True)
     fetched_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -332,6 +334,24 @@ class NwsObservationHour(Base):
     wind_direction_deg: Mapped[float | None] = mapped_column(Float, nullable=True)
     precipitation_probability: Mapped[float | None] = mapped_column(Float, nullable=True)
     short_forecast: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class AirQualityGridCache(Base):
+    """Cached Open-Meteo multi-point CAMS samples for the map overlay."""
+
+    __tablename__ = "air_quality_grid_cache"
+    __table_args__ = (
+        UniqueConstraint("lat_round", "lon_round", "hour_key", name="uq_air_quality_grid"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    lat_round: Mapped[float] = mapped_column(Float, nullable=False)
+    lon_round: Mapped[float] = mapped_column(Float, nullable=False)
+    hour_key: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    payload: Mapped[str] = mapped_column(Text, nullable=False)
     fetched_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

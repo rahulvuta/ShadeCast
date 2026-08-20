@@ -20,12 +20,13 @@ from api.engine.compound import Verdict
 from api.engine.environmental_load import assess_environmental_load, stack_from_waterfall
 from api.engine.explain import explain_from_drivers
 from api.engine.heat import Workload, assess_heat, celsius_to_fahrenheit
-from api.engine.nws_blend import blend_forecast_hours
+from api.engine.nws_blend import blend_forecast_hours, hour_key as nws_hour_key
 from api.engine.schedule import build_multiday_schedule, build_schedule, shift_planner
 from api.engine.sensitivity import SensitivityProfile
-from api.engine.smoke import FireDetectionInput, assess_smoke
-from api.engine.storm import assess_storm, is_watch_event, is_warning_event
+from api.engine.smoke import FireDetectionInput, assess_fire_heat, assess_smoke
+from api.engine.storm import alerts_active_at, assess_storm, is_watch_event, is_warning_event
 from api.engine.uv import assess_uv
+from api.engine.weather import humidity_band, weather_label
 from api.freshness import SOURCES, build_freshness
 from api.integrity.bundle import make_bundle
 from api.integrity.checks import (
@@ -73,6 +74,21 @@ from api.schemas import (
 from api.services.diff import diff_assessments
 from api.services.nws import MSG_PENDING, MSG_UNAVAILABLE
 from api.services.historical_bundle import actual_vs_expected as _actual_vs_expected
+
+
+def _hour_precaution(storm) -> str | None:
+    classes = storm.hazard_classes or ()
+    if storm.lightning_risk or "lightning" in classes:
+        return "Lightning — stop outdoor work"
+    if "tornado" in classes:
+        return "Tornado — shelter lowest floor"
+    if "flood" in classes:
+        return "Flood — leave low ground"
+    if "wind" in classes:
+        return "High wind — no elevated work"
+    if "winter" in classes:
+        return "Winter storm — traction, shorten exposure"
+    return None
 
 
 def _wants_corrupt(lat: float, lon: float, force_corrupt: bool) -> bool:
@@ -571,6 +587,8 @@ def build_assessment(
                     uv_index=r.uv_index,
                     uv_index_clear_sky=r.uv_index_clear_sky,
                     timezone=r.timezone or "UTC",
+                    cape=getattr(r, "cape", None),
+                    weathercode=getattr(r, "weathercode", None),
                 )
                 for r in db_rows
             ]
@@ -672,7 +690,7 @@ def build_assessment(
             nws_slice = None
 
     wind_from = current_row.wind_direction_deg or 0.0
-    smoke = assess_smoke(
+    fire_heat = assess_fire_heat(
         lat,
         lon,
         fire_inputs,
@@ -759,11 +777,13 @@ def build_assessment(
     )
     pm_safe = pm_raw if pm_raw is not None and 0.0 <= pm_raw <= 1000.0 else None
 
+    smoke = assess_smoke(pm2_5=pm_safe)
     air_now = assess_air(
         smoke_pressure=smoke.smoke_pressure,
         us_aqi=us_aqi_safe,
         pm2_5=pm_safe,
         dominant_pollutant=cur_aq.dominant_pollutant if cur_aq else None,
+        fire_heat_pressure=fire_heat.smoke_pressure,
     )
 
     # Guaranteed by _nearest_usable_hour
@@ -779,10 +799,11 @@ def build_assessment(
         full_sun=full_sun,
     )
     storm_now = assess_storm(
-        nws_slice.alerts if nws_slice is not None else [],
+        alerts_active_at(nws_slice.alerts if nws_slice is not None else [], current_row.valid_at),
         cape=current_row.cape,
         precipitation_probability=current_row.precipitation_probability,
         wind_gusts_kmh=current_row.wind_gusts_kmh,
+        weathercode=current_row.weathercode,
     )
     load = assess_environmental_load(
         heat_band=cur_heat.effective_band,
@@ -800,6 +821,11 @@ def build_assessment(
     adj_current: str | None = load.verdict.value
     if conf_result.level == ConfidenceLevel.UNUSABLE:
         adj_current = None
+
+    nws_by_hour = {}
+    if nws_slice is not None and nws_slice.hours:
+        nws_by_hour = {nws_hour_key(h.valid_at): h for h in nws_slice.hours}
+    nws_alerts_all = nws_slice.alerts if nws_slice is not None else []
 
     daily_verdicts: list = []
     hourly_out: list[HourlyAssessment] = []
@@ -826,27 +852,23 @@ def build_assessment(
                 acclimatized=acclimatized,
                 full_sun=cloud_h is None or cloud_h < 50.0,
             )
-            hour_smoke = assess_smoke(
-                lat,
-                lon,
-                fire_inputs,
-                wind_from_deg=r.wind_direction_deg or wind_from,
-                wind_speed_kmh=r.wind_speed_kmh,
-            )
             aq = _aq_for(r.valid_at)
             hour_uv, _hour_cs = _uv_for_hour(r, aq)
             aq_u = aq.us_aqi if aq and aq.us_aqi is not None and 0.0 <= aq.us_aqi <= 500.0 else None
             aq_pm = aq.pm2_5 if aq and aq.pm2_5 is not None and 0.0 <= aq.pm2_5 <= 1000.0 else None
+            hour_smoke = assess_smoke(pm2_5=aq_pm)
             air_h = assess_air(
                 smoke_pressure=hour_smoke.smoke_pressure,
                 us_aqi=aq_u,
                 pm2_5=aq_pm,
+                fire_heat_pressure=fire_heat.smoke_pressure,
             )
             hour_storm = assess_storm(
-                nws_slice.alerts if nws_slice is not None else [],
+                alerts_active_at(nws_alerts_all, r.valid_at),
                 cape=r.cape,
                 precipitation_probability=r.precipitation_probability,
                 wind_gusts_kmh=r.wind_gusts_kmh,
+                weathercode=r.weathercode,
             )
             hour_load = assess_environmental_load(
                 heat_band=heat.effective_band,
@@ -861,6 +883,11 @@ def build_assessment(
                 storm=hour_storm,
             )
             day_pairs.append((r.valid_at.hour, hour_load.verdict))
+            nws_h = nws_by_hour.get(nws_hour_key(r.valid_at))
+            wx_text, wx_src = weather_label(
+                weathercode=r.weathercode,
+                nws_short_forecast=getattr(nws_h, "short_forecast", None) if nws_h else None,
+            )
             hourly_out.append(
                 HourlyAssessment(
                     hour=r.valid_at.hour,
@@ -883,6 +910,15 @@ def build_assessment(
                     load_score=hour_load.load_score,
                     driver_stack=stack_from_waterfall(hour_load.waterfall, hour_load.load_score),
                     interactions=list(hour_load.interactions),
+                    relative_humidity=r.relative_humidity,
+                    humidity_band=humidity_band(r.relative_humidity),
+                    weather_text=wx_text,
+                    weather_source=wx_src,
+                    precipitation_probability=r.precipitation_probability,
+                    weathercode=r.weathercode,
+                    storm_band=hour_storm.storm_band.value,
+                    lightning_risk=hour_storm.lightning_risk,
+                    precaution=_hour_precaution(hour_storm),
                 )
             )
         daily_verdicts.append((day, day_pairs))
@@ -957,6 +993,7 @@ def build_assessment(
         storm_band=storm_now.storm_band.value,
         lightning_risk=storm_now.lightning_risk,
         overnight=any(w.daypart == "overnight" for w in windows),
+        hazard_classes=list(storm_now.hazard_classes),
     )
     clothing = select_clothing(
         verdict=adj_current,
@@ -970,6 +1007,7 @@ def build_assessment(
         storm_band=storm_now.storm_band.value,
         lightning_risk=storm_now.lightning_risk,
         overnight=any(w.daypart == "overnight" for w in windows),
+        hazard_classes=list(storm_now.hazard_classes),
     )
     prior_payload = prior_cached.model_dump() if prior_cached is not None else None
     # Build a lightweight current dict for diff before full response
@@ -1196,7 +1234,10 @@ def build_assessment(
             hard_stop=storm_now.hard_stop,
             watch_note=storm_now.watch_note,
             headline_quote=storm_now.headline_quote,
+            headline_event=storm_now.headline_event,
             source=storm_now.source,
+            hazard_class=storm_now.hazard_class,
+            hazard_classes=list(storm_now.hazard_classes),
         ),
     )
 

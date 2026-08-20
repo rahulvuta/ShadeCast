@@ -5,13 +5,13 @@ EPA AQI categories (US):
   151–200 Unhealthy, 201–300 Very Unhealthy, 301–500 Hazardous
   Source: https://www.airnow.gov/aqi/aqi-basics/
 
-Concordance states compare satellite-derived smoke_pressure (FIRMS) against
-modelled US AQI / PM2.5 (CAMS via Open-Meteo):
+Concordance states compare FIRMS thermal detections against modelled
+US AQI / PM2.5 (CAMS via Open-Meteo):
 
   AGREE        — both quiet, or both elevated in the same direction
-  FIRMS_LEADS  — smoke_pressure elevated while AQI stays low
-                 (fresh local fire plume not yet in the CAMS field)
-  MODEL_LEADS  — AQI elevated while smoke_pressure stays low
+  FIRMS_LEADS  — nearby FIRMS heat while AQI stays low
+                 (fresh local fire not yet in the CAMS field)
+  MODEL_LEADS  — AQI elevated while FIRMS is quiet
                  (traffic / industry / dust / aged regional haze — not corruption)
 
 Documented thresholds (defensible fixed constants; Phase 5 sensitivity-tests them):
@@ -67,12 +67,12 @@ def band_for_aqi(us_aqi: float) -> AQIBand:
 
 
 def classify_concordance(
-    smoke_pressure: float,
+    fire_heat_pressure: float,
     us_aqi: float | None,
     *,
     pm25: float | None = None,
 ) -> Concordance:
-    """Classify FIRMS vs CAMS agreement.
+    """Classify FIRMS thermal detections vs CAMS agreement.
 
     When us_aqi is missing, fall back to a coarse PM2.5→AQI proxy
     (EPA breakpoint approximation: 35.5 µg/m³ ≈ AQI 100, 55.5 ≈ 150).
@@ -94,8 +94,8 @@ def classify_concordance(
     if aqi is None:
         return Concordance.AGREE
 
-    smoke_hi = smoke_pressure >= SMOKE_ELEVATED
-    smoke_lo = smoke_pressure < SMOKE_QUIET
+    smoke_hi = fire_heat_pressure >= SMOKE_ELEVATED
+    smoke_lo = fire_heat_pressure < SMOKE_QUIET
     aqi_hi = aqi >= AQI_ELEVATED
     aqi_lo = aqi < AQI_QUIET
 
@@ -114,7 +114,8 @@ class AirAssessment:
     concordance: Concordance
     dominant_pollutant: str | None = None
     note: str = (
-        "Concordance compares FIRMS smoke_pressure to CAMS US AQI. "
+        "Concordance compares FIRMS thermal detections to CAMS US AQI. "
+        "FIRMS_LEADS means nearby heat while the air-quality model is still quiet. "
         "MODEL_LEADS (high AQI, quiet FIRMS) is signal — traffic/industry/dust — "
         "not data corruption."
     )
@@ -126,12 +127,14 @@ def assess_air(
     us_aqi: float | None,
     pm2_5: float | None = None,
     dominant_pollutant: str | None = None,
+    fire_heat_pressure: float | None = None,
 ) -> AirAssessment:
     band = band_for_aqi(us_aqi) if us_aqi is not None else None
+    heat = fire_heat_pressure if fire_heat_pressure is not None else smoke_pressure
     return AirAssessment(
         us_aqi=us_aqi,
         pm2_5=pm2_5,
         aqi_band=band,
-        concordance=classify_concordance(smoke_pressure, us_aqi, pm25=pm2_5),
+        concordance=classify_concordance(heat, us_aqi, pm25=pm2_5),
         dominant_pollutant=dominant_pollutant,
     )
