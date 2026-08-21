@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react'
 import type { AssessResponse } from '../types'
 import type { SelectedShift } from '../lib/shiftWindow'
 import { selectedKey, shiftBounds } from '../lib/shiftWindow'
@@ -96,61 +97,6 @@ export function DiffStrip({ summary }: { summary?: string | null }) {
       <span className="font-semibold">What changed: </span>
       {summary.replace(/^What changed:\s*/i, '')}
     </aside>
-  )
-}
-
-export function FiveDayStrip({
-  days,
-  selectedDay,
-  onSelect,
-  embedded = false,
-}: {
-  days: NonNullable<AssessResponse['days']>
-  selectedDay: string | null
-  onSelect: (day: string) => void
-  embedded?: boolean
-}) {
-  if (!days.length) return null
-  const body = (
-    <>
-      <h2
-        id="fiveday-heading"
-        className={embedded ? 'dash-section-label mb-2' : 'text-sm font-bold uppercase tracking-wide text-[var(--muted)]'}
-      >
-        5-day outlook
-      </h2>
-      <div className="flex gap-1.5 overflow-x-auto pb-0.5" role="list">
-        {days.map((d) => {
-          const active = selectedDay === d.day
-          return (
-            <button
-              key={d.day}
-              type="button"
-              role="listitem"
-              onClick={() => onSelect(d.day)}
-              aria-pressed={active}
-              className={`touch-target min-w-[5.5rem] shrink-0 rounded border px-2.5 py-2 text-left ${
-                active
-                  ? 'btn-selected'
-                  : 'border-[var(--border)] bg-[var(--panel)] hover:border-[var(--ink)]'
-              }`}
-            >
-              <p className="text-[0.65rem] font-semibold opacity-80">{d.day.slice(5)}</p>
-              <p className="mt-0.5 text-sm font-black">{d.worst_verdict}</p>
-              <p className="mt-0.5 text-[0.65rem] opacity-80">{d.total_safe_hours.toFixed(1)}h safe</p>
-            </button>
-          )
-        })}
-      </div>
-    </>
-  )
-
-  if (embedded) return <div>{body}</div>
-
-  return (
-    <section aria-labelledby="fiveday-heading" className="dash-panel p-4">
-      {body}
-    </section>
   )
 }
 
@@ -269,9 +215,32 @@ export function ShiftPlanner({
   days?: string[]
 }) {
   const hours = Math.min(12, Math.max(1, requiredHours))
+  const [draft, setDraft] = useState(String(hours))
+  const hoursRef = useRef(hours)
+
+  useEffect(() => {
+    hoursRef.current = hours
+    setDraft(String(hours))
+  }, [hours])
+
+  function commitHours(n: number) {
+    const next = Math.min(12, Math.max(1, Math.round(n)))
+    if (next === hoursRef.current) {
+      setDraft(String(next))
+      return
+    }
+    hoursRef.current = next
+    setDraft(String(next))
+    onRequiredHours(next)
+  }
 
   function stepHours(delta: number) {
-    onRequiredHours(Math.min(12, Math.max(1, hours + delta)))
+    commitHours(hoursRef.current + delta)
+  }
+
+  function commitDraft() {
+    const parsed = Number.parseInt(draft, 10)
+    commitHours(Number.isFinite(parsed) ? parsed : hours)
   }
 
   return (
@@ -285,37 +254,53 @@ export function ShiftPlanner({
             Best block per time of day when conditions allow.
           </p>
         </div>
-        <div
-          className={`flex items-center gap-1 rounded border border-[var(--border)] bg-[var(--chip-bg)] p-0.5 transition-opacity ${refreshing ? 'opacity-70' : ''}`}
-        >
+        <div className="flex items-center gap-1 rounded border border-[var(--border)] bg-[var(--chip-bg)] p-0.5">
           <span className="px-2 text-[0.65rem] font-semibold uppercase tracking-wide text-[var(--muted)]">
             Block
           </span>
           <button
             type="button"
             onClick={() => stepHours(-1)}
-            disabled={hours <= 1 || refreshing}
+            disabled={hours <= 1}
             aria-label="Shorter block"
             className="touch-target flex h-8 w-8 items-center justify-center rounded text-sm font-bold disabled:opacity-40"
           >
             −
           </button>
-          <span
-            className="flex min-w-[2rem] items-center justify-center gap-1.5 text-center text-sm font-bold tabular-nums"
-            aria-live="polite"
-          >
-            {refreshing && <span className="loading-spinner loading-spinner-sm" aria-hidden />}
-            {hours}h
-          </span>
+          <label className="flex min-w-[3.25rem] items-center justify-center gap-0.5">
+            <span className="sr-only">Shift length in hours</span>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={1}
+              max={12}
+              step={1}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onBlur={commitDraft}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  ;(e.currentTarget as HTMLInputElement).blur()
+                }
+              }}
+              className="w-8 bg-transparent text-center text-sm font-bold tabular-nums text-[var(--ink)] outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+              aria-live="polite"
+            />
+            <span className="text-sm font-bold" aria-hidden>
+              h
+            </span>
+          </label>
           <button
             type="button"
             onClick={() => stepHours(1)}
-            disabled={hours >= 12 || refreshing}
+            disabled={hours >= 12}
             aria-label="Longer block"
             className="touch-target flex h-8 w-8 items-center justify-center rounded text-sm font-bold disabled:opacity-40"
           >
             +
           </button>
+          {refreshing && <span className="loading-spinner loading-spinner-sm mr-1" aria-hidden />}
         </div>
       </div>
 

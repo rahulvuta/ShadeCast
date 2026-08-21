@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { fetchAssess, fetchBrief, fetchEvents, fetchGeocode, type GeocodeHit, type HistoricalEventSummary } from './api'
+import {
+  fetchAssess,
+  fetchBrief,
+  fetchEvents,
+  fetchGeocode,
+  isAbortError,
+  type GeocodeHit,
+  type HistoricalEventSummary,
+} from './api'
 import { ActionCards } from './components/ActionCards'
 import { ClothingPanel } from './components/ClothingPanel'
 import { BriefingCard } from './components/BriefingCard'
@@ -151,12 +159,12 @@ export default function App() {
   const bootDone = useRef(false)
   const commitGen = useRef(0)
   const settingsRefreshGen = useRef(0)
+  const settingsAbort = useRef<AbortController | null>(null)
   const pendingTabRef = useRef<{ gen: number; tab: LocationTab } | null>(null)
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? null
   const onIntegrityTab = activeTabId === INTEGRITY_TAB_ID
   const assess = onIntegrityTab ? integrity.assess : activeTab?.assess ?? null
-  const selectedDay = activeTab?.selectedDay ?? null
   const locLabel = onIntegrityTab
     ? integrity.label || BOOT_LOC.label
     : activeTab?.label ?? BOOT_LOC.label
@@ -328,7 +336,7 @@ export default function App() {
   )
 
   const refreshLocationTab = useCallback(
-    async (target: LocationTab) => {
+    async (target: LocationTab, signal?: AbortSignal) => {
       const gen = ++commitGen.current
       try {
         const a = await fetchAssess({
@@ -341,6 +349,7 @@ export default function App() {
           corrupt: corruptDemo && !target.eventId,
           event: target.eventId,
           hourOffset,
+          signal,
         })
         if (gen !== commitGen.current) return
 
@@ -384,7 +393,8 @@ export default function App() {
               : t,
           ),
         )
-      } catch {
+      } catch (e) {
+        if (isAbortError(e)) return
         /* keep existing tab data on refresh failure */
       }
     },
@@ -414,12 +424,17 @@ export default function App() {
     prevSettings.current = settingsKey
     if (onIntegrityTab || !activeTab) return
 
+    settingsAbort.current?.abort()
+    const ac = new AbortController()
+    settingsAbort.current = ac
     const gen = ++settingsRefreshGen.current
     setSettingsRefreshing(true)
-    void refreshLocationTab(activeTab).finally(() => {
+    void refreshLocationTab(activeTab, ac.signal).finally(() => {
       if (gen === settingsRefreshGen.current) setSettingsRefreshing(false)
     })
   }, [settingsKey, onIntegrityTab, activeTab, refreshLocationTab])
+
+  useEffect(() => () => settingsAbort.current?.abort(), [])
 
   const applyLocation = useCallback(
     (next: ActiveLocation) => {
@@ -997,11 +1012,7 @@ export default function App() {
 
                 <TimelinePanel
                   hourly={assess.hourly}
-                  days={assess.days}
-                  selectedDay={selectedDay}
-                  onSelectDay={setSelectedDay}
                   textMode={textMode}
-                  todayIso={assess.days?.[0]?.day ?? null}
                   hardStop={assess.schedule.hard_stop_window}
                   bestWork={assess.schedule.best_work_window}
                   scrubHour={scrubHour}

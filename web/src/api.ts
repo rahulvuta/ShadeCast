@@ -25,8 +25,14 @@ export function formatApiError(statusText: string, body: string): string {
   return trimmed.length > 400 ? `${trimmed.slice(0, 400)}…` : trimmed
 }
 
-async function getJson<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`)
+export function isAbortError(err: unknown): boolean {
+  return err instanceof DOMException
+    ? err.name === 'AbortError'
+    : err instanceof Error && err.name === 'AbortError'
+}
+
+async function getJson<T>(path: string, signal?: AbortSignal): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, signal ? { signal } : undefined)
   if (!res.ok) {
     const text = await res.text()
     throw new Error(formatApiError(res.statusText, text))
@@ -44,6 +50,7 @@ export function fetchAssess(opts: {
   corrupt?: boolean
   event?: string | null
   hourOffset?: number | null
+  signal?: AbortSignal
 }): Promise<AssessResponse> {
   const q = new URLSearchParams({
     workload: opts.workload,
@@ -59,7 +66,7 @@ export function fetchAssess(opts: {
     q.set('lon', String(opts.lon))
   }
   if (opts.corrupt) q.set('corrupt', 'true')
-  return getJson(`/api/assess?${q}`)
+  return getJson(`/api/assess?${q}`, opts.signal)
 }
 
 export type HistoricalEventSummary = {
