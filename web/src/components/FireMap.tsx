@@ -295,8 +295,8 @@ export function FireMap({
       </div>
       <p className="text-xs text-[var(--muted)] mt-1">{legend}</p>
       <p className="type-micro text-[var(--muted)] mt-1 normal-case tracking-normal font-normal">
-        Dashed ring = CAMS field extent ({CAMS_VIEW_RADIUS_KM} km). Shaded disc = Open-Meteo CAMS
-        PM2.5 / US AQI (~45 km native cells, ~24 h lag). Not FIRMS fire detections. {windLabel}
+        Dashed ring = CAMS field extent ({CAMS_VIEW_RADIUS_KM} km). Shaded disc = regional Open-Meteo
+        CAMS PM2.5 / US AQI (~45 km model, ~24 h lag). Not sample-site markers. {windLabel}
       </p>
 
       {open && !textMode && (

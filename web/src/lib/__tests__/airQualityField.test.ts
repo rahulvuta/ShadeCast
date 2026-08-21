@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cellScore, insideRadiusKm, type AirGridCell } from '../../components/AirQualityOverlay'
+import { cellScore, insideRadiusKm, interpolateField, type AirGridCell } from '../../components/AirQualityOverlay'
 
 function cell(partial: Partial<AirGridCell>): AirGridCell {
   return {
@@ -49,5 +49,39 @@ describe('insideRadiusKm', () => {
   it('excludes a point beyond the radius', () => {
     const farLat = lat + 130 / kmPerDegLat
     expect(insideRadiusKm(farLat, lon, lat, lon, radiusKm)).toBe(false)
+  })
+})
+
+describe('interpolateField', () => {
+  const lat = 34
+  const lon = -117
+  const radiusKm = 110
+  const step = 0.4
+
+  function grid(centerValue: number, otherValue: number) {
+    const samples: { lat: number; lon: number; v: number }[] = []
+    for (let i = -2; i <= 2; i++) {
+      for (let j = -2; j <= 2; j++) {
+        samples.push({
+          lat: lat + i * step,
+          lon: lon + j * step,
+          v: i === 0 && j === 0 ? centerValue : otherValue,
+        })
+      }
+    }
+    return samples
+  }
+
+  it('does not punch a site-shaped hole at a single milder cell', () => {
+    const hit = interpolateField(lat, lon, grid(80, 500), lat, lon, radiusKm)
+    expect(hit).not.toBeNull()
+    // Regional hazardous field wins; the 80 cell is not shown as a station.
+    expect(hit!.v).toBeGreaterThan(300)
+  })
+
+  it('keeps a uniformly heavy field heavy', () => {
+    const hit = interpolateField(lat, lon, grid(500, 500), lat, lon, radiusKm)
+    expect(hit).not.toBeNull()
+    expect(hit!.v).toBeCloseTo(500, 5)
   })
 })

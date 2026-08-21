@@ -28,10 +28,12 @@ const AQI_STOPS: Array<{ aqi: number; r: number; g: number; b: number; a: number
   { aqi: 300, r: 114, g: 40, b: 114, a: 185 },
 ]
 
-const CONTOURS = [50, 100, 150, 200]
 const SCALE = 3
 const EARTH_RADIUS_KM = 6371
 const EDGE_FADE = 0.08
+/** Native CAMS global cell (~45 km). Blend at this scale so cell centers are not visible sites. */
+const CAMS_CELL_DEG = 0.4
+const BLEND_SIGMA_DEG = CAMS_CELL_DEG * 1.35
 
 export function cellScore(cell: AirGridCell): number | null {
   if (cell.us_aqi != null && Number.isFinite(cell.us_aqi)) return cell.us_aqi
@@ -96,7 +98,7 @@ function samplesFromCells(cells: AirGridCell[]): Sample[] {
   return out
 }
 
-function interpolateIdw(
+export function interpolateField(
   lat: number,
   lon: number,
   samples: Sample[],
@@ -112,14 +114,14 @@ function interpolateIdw(
   const fade = dist > fadeStart ? Math.max(0, 1 - (dist - fadeStart) / (radiusKm - fadeStart)) : 1
 
   const cos = Math.cos((lat * Math.PI) / 180)
+  const twoSigma2 = 2 * BLEND_SIGMA_DEG * BLEND_SIGMA_DEG
   let num = 0
   let den = 0
   for (const s of samples) {
     const dlat = lat - s.lat
     const dlon = (lon - s.lon) * cos
     const d2 = dlat * dlat + dlon * dlon
-    if (d2 < 1e-12) return { v: s.v, fade }
-    const w = 1 / d2
+    const w = Math.exp(-d2 / twoSigma2)
     num += w * s.v
     den += w
   }
@@ -140,22 +142,6 @@ function viewportToLatLon(
   return worldPxToLatLon(center.x + (px - width / 2), center.y + (py - height / 2), zoom)
 }
 
-function edgeCross(
-  ax: number,
-  ay: number,
-  av: number,
-  bx: number,
-  by: number,
-  bv: number,
-  level: number,
-): { x: number; y: number } | null {
-  const aHit = av >= level
-  const bHit = bv >= level
-  if (aHit === bHit || av < 0 || bv < 0) return null
-  const t = (level - av) / (bv - av)
-  return { x: ax + (bx - ax) * t, y: ay + (by - ay) * t }
-}
-
 function radiusPx(lat: number, zoom: number, radiusKm: number): number {
   return (radiusKm * 1000) / metersPerPixel(lat, zoom)
 }
@@ -174,22 +160,16 @@ function paintField(
   const h = Math.max(1, Math.ceil(height / SCALE))
   const img = ctx.createImageData(w, h)
   const data = img.data
-  const field = new Float32Array(w * h)
 
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       const px = (x + 0.5) * SCALE
       const py = (y + 0.5) * SCALE
       const ll = viewportToLatLon(px, py, lat, lon, zoom, width, height)
-      const hit = interpolateIdw(ll.lat, ll.lon, samples, lat, lon, radiusKm)
-      const idx = y * w + x
-      if (!hit) {
-        field[idx] = -1
-        continue
-      }
-      field[idx] = hit.v
+      const hit = interpolateField(ll.lat, ll.lon, samples, lat, lon, radiusKm)
+      if (!hit) continue
       const [r, g, b, a] = colorForAqi(hit.v, hit.fade)
-      const o = idx * 4
+      const o = (y * w + x) * 4
       data[o] = r
       data[o + 1] = g
       data[o + 2] = b
@@ -216,41 +196,6 @@ function paintField(
   ctx.arc(cx, cy, r, 0, Math.PI * 2)
   ctx.clip()
   ctx.drawImage(off, 0, 0, width, height)
-
-  ctx.lineWidth = 1.15
-  ctx.lineJoin = 'round'
-  ctx.lineCap = 'round'
-  for (const level of CONTOURS) {
-    const [cr, cg, cb] = colorForAqi(level)
-    ctx.strokeStyle = `rgba(${Math.max(0, cr - 40)},${Math.max(0, cg - 40)},${Math.max(0, cb - 40)},0.5)`
-    ctx.beginPath()
-    for (let y = 0; y < h - 1; y++) {
-      for (let x = 0; x < w - 1; x++) {
-        const v00 = field[y * w + x]!
-        const v10 = field[y * w + x + 1]!
-        const v01 = field[(y + 1) * w + x]!
-        const v11 = field[(y + 1) * w + x + 1]!
-        const x0 = x * SCALE
-        const y0 = y * SCALE
-        const x1 = x0 + SCALE
-        const y1 = y0 + SCALE
-        const pts = [
-          edgeCross(x0, y0, v00, x1, y0, v10, level),
-          edgeCross(x1, y0, v10, x1, y1, v11, level),
-          edgeCross(x0, y1, v01, x1, y1, v11, level),
-          edgeCross(x0, y0, v00, x0, y1, v01, level),
-        ].filter((p): p is { x: number; y: number } => p != null)
-        if (pts.length < 2) continue
-        ctx.moveTo(pts[0]!.x, pts[0]!.y)
-        ctx.lineTo(pts[1]!.x, pts[1]!.y)
-        if (pts[2]) {
-          ctx.moveTo(pts[2].x, pts[2].y)
-          ctx.lineTo((pts[3] ?? pts[0]!).x, (pts[3] ?? pts[0]!).y)
-        }
-      }
-    }
-    ctx.stroke()
-  }
   ctx.restore()
 }
 
