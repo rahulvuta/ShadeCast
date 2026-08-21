@@ -54,11 +54,36 @@ function windowQuality(meanRank: number): { label: string; tone: 'go' | 'caution
   return { label: 'Marginal', tone: 'marginal' }
 }
 
-const QUALITY_CLASS: Record<ReturnType<typeof windowQuality>['tone'], string> = {
+type QualityTone = ReturnType<typeof windowQuality>['tone']
+
+const QUALITY_CLASS: Record<QualityTone, string> = {
   go: 'border-[var(--go)]/35 bg-[var(--go-bg)] text-[var(--go)]',
   caution: 'border-[var(--caution)]/40 bg-[var(--caution-bg)] text-[var(--caution)]',
   restrict: 'border-[var(--restrict)]/35 bg-[var(--restrict-bg)] text-[var(--restrict)]',
   marginal: 'border-[var(--border)] bg-[var(--panel)] text-[var(--muted)]',
+}
+
+const QUALITY_RAIL: Record<QualityTone, string> = {
+  go: 'bg-[var(--go)]',
+  caution: 'bg-[var(--caution)]',
+  restrict: 'bg-[var(--restrict)]',
+  marginal: 'bg-[var(--muted)]',
+}
+
+const QUALITY_WASH: Record<QualityTone, string> = {
+  go: 'border-[var(--go)] bg-[var(--go-bg)]',
+  caution: 'border-[var(--caution)] bg-[var(--caution-bg)]',
+  restrict: 'border-[var(--restrict)] bg-[var(--restrict-bg)]',
+  marginal: 'border-[var(--ink)] bg-[var(--panel)]',
+}
+
+const DAYPART_CHIP: Record<string, string> = {
+  overnight: 'border-[var(--border)] bg-[var(--chip-bg)] text-[var(--muted)]',
+  morning: 'border-[color-mix(in_srgb,var(--oi-sky)_40%,var(--border))] bg-[color-mix(in_srgb,var(--oi-sky)_18%,transparent)] text-[var(--oi-sky)]',
+  afternoon:
+    'border-[color-mix(in_srgb,var(--oi-yellow)_50%,var(--border))] bg-[var(--oi-yellow)] text-[#111111]',
+  evening:
+    'border-[color-mix(in_srgb,var(--restrict)_40%,var(--border))] bg-[var(--restrict-bg)] text-[var(--restrict)]',
 }
 
 export function DiffStrip({ summary }: { summary?: string | null }) {
@@ -323,19 +348,24 @@ export function ShiftPlanner({
                   endHour: w.end_hour,
                 }
                 const active = selected != null && selectedKey(selected) === selectedKey(key)
+                const daypartId = w.daypart || daypartFromHour(w.start_hour)
                 return (
                   <li key={`${w.day}-${w.start_hour}-${w.end_hour}`}>
                     <button
                       type="button"
-                      className={`w-full rounded-md border px-3 py-2.5 text-left ${
+                      className={`flex w-full overflow-hidden rounded-md border text-left text-[var(--ink)] ${
                         active
-                          ? 'btn-selected border-[var(--ink)]'
+                          ? QUALITY_WASH[quality.tone]
                           : 'border-[var(--border)] bg-[var(--panel)] hover:border-[var(--ink)]'
                       }`}
                       onClick={() => onSelect?.(key)}
                       aria-pressed={active}
                     >
-                      <div className="flex items-start gap-2.5">
+                      <span
+                        className={`w-1 shrink-0 ${QUALITY_RAIL[quality.tone]} ${active ? '' : 'opacity-45'}`}
+                        aria-hidden
+                      />
+                      <div className="flex min-w-0 flex-1 items-start gap-2.5 px-3 py-2.5">
                         <span
                           className="btn-selected mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[0.65rem] font-bold"
                           aria-hidden
@@ -346,7 +376,9 @@ export function ShiftPlanner({
                           <p className="text-xs font-semibold text-[var(--muted)]">{dayLabel}</p>
                           <p className="mt-0.5 text-sm font-bold tracking-tight text-[var(--ink)]">{timeRange}</p>
                           <div className="mt-2 flex flex-wrap items-center gap-2">
-                            <span className="rounded border border-[var(--border)] bg-[var(--chip-bg)] px-2 py-0.5 text-[0.65rem] font-semibold text-[var(--muted)]">
+                            <span
+                              className={`rounded border px-2 py-0.5 text-[0.65rem] font-semibold ${DAYPART_CHIP[daypartId] ?? DAYPART_CHIP.overnight}`}
+                            >
                               {daypartLabel(w)}
                             </span>
                             <span className="rounded border border-[var(--border)] bg-[var(--chip-bg)] px-2 py-0.5 text-[0.65rem] font-semibold text-[var(--muted)]">

@@ -15,6 +15,7 @@ export function BriefingCard({
   function plainText(): string {
     if (!brief) return ''
     return [
+      'Shift summary',
       brief.verdict_line,
       '',
       'Actions:',
@@ -41,7 +42,7 @@ export function BriefingCard({
     <section aria-labelledby="brief-heading">
       <div className="flex items-start justify-between gap-2">
         <h2 id="brief-heading" className="dash-section-label">
-          Crew briefing
+          Shift summary
         </h2>
         <button
           type="button"
@@ -52,36 +53,54 @@ export function BriefingCard({
           {copied ? 'Copied' : 'Copy'}
         </button>
       </div>
-      {loading && <p className="mt-2 text-xs text-[var(--muted)]">Writing briefing…</p>}
+      {loading && <p className="mt-2 text-xs text-[var(--muted)]">Writing summary…</p>}
       {!loading && error && (
         <p className="mt-2 text-xs text-[var(--oi-vermillion)]">{error}</p>
       )}
       {!loading && !error && !brief && (
         <p className="mt-2 text-xs text-[var(--muted)]">
-          No briefing available yet. Retry after the assessment loads.
+          No shift summary available yet. Retry after the assessment loads.
         </p>
       )}
       {!loading && brief && (
-        <div className="mt-2 space-y-2 text-xs leading-relaxed">
-          <p className="text-sm font-bold">{brief.verdict_line}</p>
-          <ol className="list-decimal pl-4 space-y-1">
-            {brief.three_actions.map((a) => (
-              <li key={a}>{a}</li>
+        <div className="mt-3 space-y-3">
+          <p className="text-base font-bold leading-snug tracking-tight text-[var(--ink)]">
+            {brief.verdict_line}
+          </p>
+          <ol className="space-y-2">
+            {brief.three_actions.map((a, i) => (
+              <li
+                key={a}
+                className="flex items-start gap-2.5 rounded border border-[var(--border)] bg-[var(--panel)] px-3 py-2"
+              >
+                <span
+                  className="btn-selected mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[0.65rem] font-bold"
+                  aria-hidden
+                >
+                  {i + 1}
+                </span>
+                <p className="min-w-0 flex-1 text-xs leading-relaxed text-[var(--ink)]">{a}</p>
+              </li>
             ))}
           </ol>
-          <p>{brief.schedule_sentence}</p>
-          <div>
-            <p className="font-semibold text-[0.65rem] uppercase tracking-wide text-[var(--muted)]">
-              Warning signs
-            </p>
-            <ul className="list-disc pl-4 mt-0.5">
-              {brief.warning_signs.map((w) => (
-                <li key={w}>{w}</li>
-              ))}
-            </ul>
+          <p className="rounded border border-[var(--border)] bg-[var(--chip-bg)] px-3 py-2 text-xs leading-relaxed text-[var(--ink)]">
+            {brief.schedule_sentence}
+          </p>
+          <div className="flex overflow-hidden rounded border border-[var(--restrict)]/35 bg-[var(--restrict-bg)]">
+            <span className="w-1 shrink-0 bg-[var(--restrict)]" aria-hidden />
+            <div className="min-w-0 flex-1 px-3 py-2">
+              <p className="text-[0.65rem] font-bold uppercase tracking-wide text-[var(--restrict)]">
+                Warning signs
+              </p>
+              <ul className="mt-1.5 space-y-1 text-xs leading-relaxed text-[var(--ink)]">
+                {brief.warning_signs.map((w) => (
+                  <li key={w}>{w}</li>
+                ))}
+              </ul>
+            </div>
           </div>
           {brief.used_fallback && (
-            <p className="text-[0.65rem] text-[var(--muted)]">Template briefing (LLM offline).</p>
+            <p className="text-[0.65rem] text-[var(--muted)]">Template summary (LLM offline).</p>
           )}
         </div>
       )}

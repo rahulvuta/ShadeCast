@@ -4,10 +4,24 @@ import { buildShiftSheet, type ShiftSheetInput } from './shiftSheet'
 
 export type { ShiftSheetInput }
 
+/** Okabe–Ito verdict RGB for print (matches CSS tokens). */
+const RATING_RGB: Record<string, [number, number, number]> = {
+  GO: [0, 158, 115],
+  CAUTION: [230, 159, 0],
+  RESTRICT: [213, 94, 0],
+  STOP: [90, 45, 82],
+}
+
 function wrapText(doc: jsPDF, text: string, x: number, y: number, maxW: number, lineH = 4.2): number {
   const lines = doc.splitTextToSize(text, maxW) as string[]
   doc.text(lines, x, y)
   return y + lines.length * lineH
+}
+
+function setRatingColor(doc: jsPDF, rating: string) {
+  const rgb = RATING_RGB[rating.toUpperCase()]
+  if (rgb) doc.setTextColor(rgb[0], rgb[1], rgb[2])
+  else doc.setTextColor(0)
 }
 
 /**
@@ -22,7 +36,8 @@ export async function downloadShiftSheetPdf(input: ShiftSheetInput): Promise<voi
   const margin = 14
   const contentW = pageW - margin * 2
   const bottom = pageH - 18
-  let y = 14
+  const headerH = 22
+  let y = headerH + 8
 
   const need = (h: number) => {
     if (y + h > bottom) {
@@ -31,16 +46,16 @@ export async function downloadShiftSheetPdf(input: ShiftSheetInput): Promise<voi
     }
   }
 
+  doc.setFillColor(14, 17, 22)
+  doc.rect(0, 0, pageW, headerH, 'F')
+  doc.setTextColor(232, 237, 242)
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(16)
-  doc.text(sheet.title, margin, y)
-  y += 6
+  doc.text(sheet.title, margin, 10)
   doc.setFont('helvetica', 'normal')
-  doc.setFontSize(9)
-  doc.setTextColor(60)
-  doc.text(sheet.subtitle, margin, y)
+  doc.setFontSize(8)
+  doc.text(sheet.subtitle, margin, 16.5)
   doc.setTextColor(0)
-  y += 8
 
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(11)
@@ -130,7 +145,9 @@ export async function downloadShiftSheetPdf(input: ShiftSheetInput): Promise<voi
       doc.text(h.air, cols.air, y)
       doc.text(h.wind.slice(0, 12), cols.wind, y)
       doc.setFont('helvetica', 'bold')
+      setRatingColor(doc, h.rating)
       doc.text(h.rating, cols.rating, y)
+      doc.setTextColor(0)
       doc.setFont('helvetica', 'normal')
       doc.text(`${h.workMinutes}/${h.restMinutes}`, cols.mins, y)
       y += 3.6

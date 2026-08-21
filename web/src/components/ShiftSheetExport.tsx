@@ -3,6 +3,36 @@ import type { AssessResponse, SensitivityProfile, Workload } from '../types'
 import { buildShiftSheet, formatShiftSheetText } from '../lib/shiftSheet'
 import type { SelectedShift } from '../lib/shiftWindow'
 
+const VERDICT_CHIP: Record<string, string> = {
+  GO: 'border-[var(--go)]/35 bg-[var(--go-bg)] text-[var(--go)]',
+  CAUTION: 'border-[var(--caution)]/40 bg-[var(--caution-bg)] text-[var(--caution)]',
+  RESTRICT: 'border-[var(--restrict)]/35 bg-[var(--restrict-bg)] text-[var(--restrict)]',
+  STOP: 'border-[var(--stop)]/40 bg-[var(--stop-bg)] text-[var(--stop)]',
+}
+
+const VERDICT_RAIL: Record<string, string> = {
+  GO: 'bg-[var(--go)]',
+  CAUTION: 'bg-[var(--caution)]',
+  RESTRICT: 'bg-[var(--restrict)]',
+  STOP: 'bg-[var(--stop)]',
+}
+
+function verdictChip(value: string): string {
+  return VERDICT_CHIP[value.toUpperCase()] ?? 'border-[var(--border)] bg-[var(--chip-bg)] text-[var(--ink)]'
+}
+
+function verdictRail(value: string): string {
+  return VERDICT_RAIL[value.toUpperCase()] ?? 'bg-[var(--muted)]'
+}
+
+function Chip({ children }: { children: string }) {
+  return (
+    <span className="rounded border border-[var(--border)] bg-[var(--chip-bg)] px-2 py-0.5 text-[0.65rem] font-semibold text-[var(--ink)]">
+      {children}
+    </span>
+  )
+}
+
 export function ShiftSheetExport({
   assess,
   locationLabel,
@@ -142,86 +172,121 @@ export function ShiftSheetExport({
 
       <article
         aria-label="Shift sheet preview"
-        className="mt-4 rounded border border-[var(--border)] bg-[var(--bg)] p-4 sm:p-5"
+        className="mt-4 overflow-hidden rounded border border-[var(--border)] bg-[var(--bg)]"
       >
-        <header className="border-b border-[var(--border)] pb-3">
-          <p className="text-sm font-bold tracking-tight">{sheet.title}</p>
+        <header className="border-b border-[var(--border)]">
+          <div className="h-1 bg-[var(--ink)]" aria-hidden />
+          <div className="p-4 sm:p-5">
+          <p className="dash-section-label">{sheet.title}</p>
           <p className="mt-0.5 text-xs text-[var(--muted)]">{sheet.subtitle}</p>
-          <h3 className="mt-3 text-base font-bold">{sheet.locationLabel}</h3>
-          <p className="mt-1 text-xs">Date range: {sheet.dateRange}</p>
-          <p className="text-xs">{sheet.metaLine}</p>
-          <p className="text-xs">{sheet.todayLine}</p>
+          <h3 className="mt-3 text-lg font-bold tracking-tight">{sheet.locationLabel}</h3>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            <Chip>{`Date range: ${sheet.dateRange}`}</Chip>
+            {sheet.metaLine.split(' · ').map((part) => (
+              <Chip key={part}>{part}</Chip>
+            ))}
+          </div>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {sheet.todayLine.split(' · ').map((part) => (
+              <Chip key={part}>{part}</Chip>
+            ))}
+          </div>
+          </div>
         </header>
 
+        <div className="p-4 sm:p-5">
         {sheet.chosenHeader && (
-          <section className="mt-4" aria-labelledby="shift-sheet-chosen">
-            <h4 id="shift-sheet-chosen" className="text-sm font-bold">
-              Chosen shift
-            </h4>
-            <p className="mt-1 text-xs font-semibold">{sheet.chosenHeader}</p>
-            <p className="text-xs">
-              Worst hour: {sheet.chosenWorst ?? '—'} · Safe outdoor minutes:{' '}
-              {sheet.chosenSafeMinutes ?? 0}
-            </p>
+          <section
+            className={`flex overflow-hidden rounded border ${verdictChip(sheet.chosenWorst ?? 'GO')}`}
+            aria-labelledby="shift-sheet-chosen"
+          >
+            <span className={`w-1 shrink-0 ${verdictRail(sheet.chosenWorst ?? 'GO')}`} aria-hidden />
+            <div className="min-w-0 flex-1 px-3 py-2.5">
+              <h4 id="shift-sheet-chosen" className="dash-section-label">
+                Chosen shift
+              </h4>
+              <p className="mt-1 text-sm font-bold text-[var(--ink)]">{sheet.chosenHeader}</p>
+              <p className="mt-0.5 text-xs text-[var(--muted)]">
+                Worst hour: {sheet.chosenWorst ?? '—'} · Safe outdoor minutes:{' '}
+                {sheet.chosenSafeMinutes ?? 0}
+              </p>
+            </div>
           </section>
         )}
 
         {sheet.stormLines.length > 0 && (
-          <section className="mt-4" aria-labelledby="shift-sheet-storm">
-            <h4 id="shift-sheet-storm" className="text-sm font-bold">
-              Storm / precautions
-            </h4>
-            <ul className="mt-1 list-disc pl-4 text-xs">
-              {sheet.stormLines.map((line) => (
-                <li key={line}>{line}</li>
-              ))}
-            </ul>
+          <section
+            className={`${sheet.chosenHeader ? 'mt-4' : ''} flex overflow-hidden rounded border border-[var(--restrict)]/35 bg-[var(--restrict-bg)]`}
+            aria-labelledby="shift-sheet-storm"
+          >
+            <span className="w-1 shrink-0 bg-[var(--restrict)]" aria-hidden />
+            <div className="min-w-0 flex-1 px-3 py-2.5">
+              <h4 id="shift-sheet-storm" className="dash-section-label text-[var(--restrict)]">
+                Storm / precautions
+              </h4>
+              <ul className="mt-1.5 space-y-1 text-xs leading-relaxed text-[var(--ink)]">
+                {sheet.stormLines.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            </div>
           </section>
         )}
 
         {sheet.hourRows.length > 0 && (
           <section className="mt-4" aria-labelledby="shift-sheet-hours">
-            <h4 id="shift-sheet-hours" className="text-sm font-bold">
+            <h4 id="shift-sheet-hours" className="dash-section-label">
               Hour forecast
             </h4>
             <div className="mt-2 overflow-x-auto">
               <table className="w-full min-w-[40rem] text-left text-xs">
                 <thead>
-                  <tr className="border-b border-[var(--border)]">
-                    <th className="py-1 pr-2 font-semibold">Time</th>
-                    <th className="py-1 pr-2 font-semibold">Weather</th>
-                    <th className="py-1 pr-2 font-semibold">Heat / RH</th>
-                    <th className="py-1 pr-2 font-semibold">UV</th>
-                    <th className="py-1 pr-2 font-semibold">Air</th>
-                    <th className="py-1 pr-2 font-semibold">Wind</th>
-                    <th className="py-1 pr-2 font-semibold">Rating</th>
-                    <th className="py-1 font-semibold">Work min</th>
+                  <tr className="sticky top-0 border-b border-[var(--border)] bg-[var(--panel)]">
+                    <th className="py-1.5 pr-2 font-semibold">Time</th>
+                    <th className="py-1.5 pr-2 font-semibold">Weather</th>
+                    <th className="py-1.5 pr-2 font-semibold">Heat / RH</th>
+                    <th className="py-1.5 pr-2 font-semibold">UV</th>
+                    <th className="py-1.5 pr-2 font-semibold">Air</th>
+                    <th className="py-1.5 pr-2 font-semibold">Wind</th>
+                    <th className="py-1.5 pr-2 font-semibold">Rating</th>
+                    <th className="py-1.5 font-semibold">Work min</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {sheet.hourRows.map((h) => (
-                    <tr key={`${h.day}-${h.time}`} className="border-b border-[var(--border)]">
-                      <td className="py-1 pr-2 tabular-nums whitespace-nowrap">
+                  {sheet.hourRows.map((h, i) => (
+                    <tr
+                      key={`${h.day}-${h.time}`}
+                      className={`border-b border-[var(--border)] ${i % 2 === 1 ? 'bg-[var(--panel)]' : ''}`}
+                    >
+                      <td className="py-1.5 pr-2 tabular-nums whitespace-nowrap">
                         {h.time}
                         <span className="block text-[0.6rem] text-[var(--muted)]">{h.day}</span>
                       </td>
-                      <td className="py-1 pr-2">
+                      <td className="py-1.5 pr-2">
                         {h.weather}
                         {h.precaution ? (
-                          <span className="block text-[0.6rem] font-semibold">{h.precaution}</span>
+                          <span className="block text-[0.6rem] font-semibold text-[var(--restrict)]">
+                            {h.precaution}
+                          </span>
                         ) : null}
                       </td>
-                      <td className="py-1 pr-2 whitespace-nowrap">
+                      <td className="py-1.5 pr-2 whitespace-nowrap">
                         {h.heat}
                         <span className="block text-[0.6rem] text-[var(--muted)]">
                           RH {h.humidityBand}
                         </span>
                       </td>
-                      <td className="py-1 pr-2 tabular-nums">{h.uv}</td>
-                      <td className="py-1 pr-2 tabular-nums">{h.air}</td>
-                      <td className="py-1 pr-2 tabular-nums">{h.wind}</td>
-                      <td className="py-1 pr-2 font-bold">{h.rating}</td>
-                      <td className="py-1 tabular-nums">
+                      <td className="py-1.5 pr-2 tabular-nums">{h.uv}</td>
+                      <td className="py-1.5 pr-2 tabular-nums">{h.air}</td>
+                      <td className="py-1.5 pr-2 tabular-nums">{h.wind}</td>
+                      <td className="py-1.5 pr-2">
+                        <span
+                          className={`inline-block rounded border px-1.5 py-0.5 text-[0.65rem] font-bold uppercase tracking-wide ${verdictChip(h.rating)}`}
+                        >
+                          {h.rating}
+                        </span>
+                      </td>
+                      <td className="py-1.5 tabular-nums">
                         {h.workMinutes}/{h.restMinutes}
                       </td>
                     </tr>
@@ -233,7 +298,7 @@ export function ShiftSheetExport({
         )}
 
         <section className="mt-4" aria-labelledby="shift-sheet-days">
-          <h4 id="shift-sheet-days" className="text-sm font-bold">
+          <h4 id="shift-sheet-days" className="dash-section-label">
             5-day overview
           </h4>
           {sheet.days.length === 0 ? (
@@ -242,22 +307,31 @@ export function ShiftSheetExport({
             <div className="mt-2 overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead>
-                  <tr className="border-b border-[var(--border)]">
-                    <th className="py-1 pr-3 font-semibold">Day</th>
-                    <th className="py-1 pr-3 font-semibold">Safe h</th>
-                    <th className="py-1 pr-3 font-semibold">Worst</th>
-                    <th className="py-1 pr-3 font-semibold">Hard-stop</th>
-                    <th className="py-1 font-semibold">Best work</th>
+                  <tr className="sticky top-0 border-b border-[var(--border)] bg-[var(--panel)]">
+                    <th className="py-1.5 pr-3 font-semibold">Day</th>
+                    <th className="py-1.5 pr-3 font-semibold">Safe h</th>
+                    <th className="py-1.5 pr-3 font-semibold">Worst</th>
+                    <th className="py-1.5 pr-3 font-semibold">Hard-stop</th>
+                    <th className="py-1.5 font-semibold">Best work</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {sheet.days.map((d) => (
-                    <tr key={d.day} className="border-b border-[var(--border)]">
-                      <td className="py-1 pr-3 tabular-nums">{d.day}</td>
-                      <td className="py-1 pr-3 tabular-nums">{d.safeHours}</td>
-                      <td className="py-1 pr-3">{d.worst}</td>
-                      <td className="py-1 pr-3">{d.hardStop}</td>
-                      <td className="py-1">{d.bestWork}</td>
+                  {sheet.days.map((d, i) => (
+                    <tr
+                      key={d.day}
+                      className={`border-b border-[var(--border)] ${i % 2 === 1 ? 'bg-[var(--panel)]' : ''}`}
+                    >
+                      <td className="py-1.5 pr-3 tabular-nums">{d.day}</td>
+                      <td className="py-1.5 pr-3 tabular-nums">{d.safeHours}</td>
+                      <td className="py-1.5 pr-3">
+                        <span
+                          className={`inline-block rounded border px-1.5 py-0.5 text-[0.65rem] font-bold uppercase tracking-wide ${verdictChip(d.worst)}`}
+                        >
+                          {d.worst}
+                        </span>
+                      </td>
+                      <td className="py-1.5 pr-3">{d.hardStop}</td>
+                      <td className="py-1.5">{d.bestWork}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -267,7 +341,7 @@ export function ShiftSheetExport({
         </section>
 
         <section className="mt-4" aria-labelledby="shift-sheet-windows">
-          <h4 id="shift-sheet-windows" className="text-sm font-bold">
+          <h4 id="shift-sheet-windows" className="dash-section-label">
             {sheet.otherWindowsLine ? 'Other dayparts' : 'Ranked shift windows'}
           </h4>
           {sheet.windowsEmpty ? (
@@ -305,7 +379,7 @@ export function ShiftSheetExport({
         </section>
 
         <section className="mt-4" aria-labelledby="shift-sheet-actions">
-          <h4 id="shift-sheet-actions" className="text-sm font-bold">
+          <h4 id="shift-sheet-actions" className="dash-section-label">
             Top action items
           </h4>
           {sheet.actionsEmpty ? (
@@ -325,7 +399,7 @@ export function ShiftSheetExport({
 
         {sheet.clothing.length > 0 && (
           <section className="mt-4" aria-labelledby="shift-sheet-clothing">
-            <h4 id="shift-sheet-clothing" className="text-sm font-bold">
+            <h4 id="shift-sheet-clothing" className="dash-section-label">
               Clothing and PPE
             </h4>
             <div className="mt-2 grid gap-2 sm:grid-cols-2">
@@ -370,6 +444,7 @@ export function ShiftSheetExport({
             </figure>
           )}
         </footer>
+        </div>
       </article>
     </section>
   )
