@@ -4,7 +4,6 @@ import {
   CORRUPT_DEMO,
   DEMO_LOCATIONS,
   SENSITIVITY_PROFILES,
-  type Lang,
   type SensitivityProfile,
   type Workload,
 } from '../types'
@@ -34,7 +33,6 @@ export function SidebarControls({
   latInput,
   lonInput,
   workload,
-  lang,
   profile,
   acclimatized,
   historicalEvents,
@@ -43,7 +41,6 @@ export function SidebarControls({
   onLatInput,
   onLonInput,
   onWorkload,
-  onLang,
   onProfile,
   onAcclimatized,
   onApplyLocation,
@@ -51,7 +48,7 @@ export function SidebarControls({
   onRunSearch,
   onGoLatLon,
 }: {
-  loc: ActiveLocation
+  loc: ActiveLocation | null
   corruptDemo: boolean
   searchQuery: string
   searchHits: GeocodeHit[]
@@ -60,7 +57,6 @@ export function SidebarControls({
   latInput: string
   lonInput: string
   workload: Workload
-  lang: Lang
   profile: SensitivityProfile
   acclimatized: boolean
   historicalEvents: HistoricalEventSummary[]
@@ -69,7 +65,6 @@ export function SidebarControls({
   onLatInput: (v: string) => void
   onLonInput: (v: string) => void
   onWorkload: (v: Workload) => void
-  onLang: (v: Lang) => void
   onProfile: (v: SensitivityProfile) => void
   onAcclimatized: (v: boolean) => void
   onApplyLocation: (next: ActiveLocation) => void
@@ -87,6 +82,7 @@ export function SidebarControls({
         <div className="flex flex-wrap gap-1.5">
           {[...DEMO_LOCATIONS, ...(corruptDemo ? [CORRUPT_DEMO] : [])].map((d) => {
             const active =
+              loc != null &&
               !activeEventId &&
               Math.abs(loc.lat - d.lat) < 0.01 &&
               Math.abs(loc.lon - d.lon) < 0.01
@@ -206,39 +202,31 @@ export function SidebarControls({
         </button>
       </form>
 
-      <p className="text-[0.7rem] text-[var(--muted)] leading-snug">
-        Active: <strong className="text-[var(--ink)]">{loc.label}</strong>
-        <br />
-        {loc.lat.toFixed(3)}, {loc.lon.toFixed(3)}
-        {activeEventId ? ' · historical' : ''}
-      </p>
+      {loc ? (
+        <p className="text-[0.7rem] text-[var(--muted)] leading-snug">
+          Active: <strong className="text-[var(--ink)]">{loc.label}</strong>
+          <br />
+          {loc.lat.toFixed(3)}, {loc.lon.toFixed(3)}
+          {activeEventId ? ' · historical' : ''}
+        </p>
+      ) : (
+        <p className="text-[0.7rem] text-[var(--muted)] leading-snug">
+          No location selected — pick a demo, search, or enter coordinates.
+        </p>
+      )}
 
-      <div className="grid grid-cols-2 gap-2">
-        <label className="block text-xs font-semibold">
-          Workload
-          <select
-            className={field}
-            value={workload}
-            onChange={(e) => onWorkload(e.target.value as Workload)}
-          >
-            <option value="light">Light</option>
-            <option value="moderate">Moderate</option>
-            <option value="heavy">Heavy</option>
-          </select>
-        </label>
-        <label className="block text-xs font-semibold">
-          Language
-          <select
-            className={field}
-            value={lang}
-            onChange={(e) => onLang(e.target.value as Lang)}
-          >
-            <option value="en">English</option>
-            <option value="es">Spanish</option>
-            <option value="vi">Vietnamese</option>
-          </select>
-        </label>
-      </div>
+      <label className="block text-xs font-semibold">
+        Workload
+        <select
+          className={field}
+          value={workload}
+          onChange={(e) => onWorkload(e.target.value as Workload)}
+        >
+          <option value="light">Light</option>
+          <option value="moderate">Moderate</option>
+          <option value="heavy">Heavy</option>
+        </select>
+      </label>
 
       <label className="block text-xs font-semibold">
         Who is this for?

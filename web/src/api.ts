@@ -1,4 +1,4 @@
-import type { AssessResponse, BriefResponse, FirePoint, Lang, SensitivityProfile, Workload } from './types'
+import type { AssessResponse, BriefResponse, FirePoint, SensitivityProfile, Workload } from './types'
 import { firesBboxString } from './lib/smokeGeometry'
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? ''
@@ -133,7 +133,6 @@ export function fetchGeocode(q: string): Promise<{ results: GeocodeHit[]; cached
 export async function fetchBrief(opts: {
   lat: number
   lon: number
-  lang: Lang
   workload: Workload
   acclimatized: boolean
   profile?: SensitivityProfile
@@ -145,7 +144,7 @@ export async function fetchBrief(opts: {
     body: JSON.stringify({
       lat: opts.lat,
       lon: opts.lon,
-      lang: opts.lang,
+      lang: 'en',
       workload: opts.workload,
       acclimatized: opts.acclimatized,
       profile: opts.profile ?? 'general',

@@ -42,9 +42,7 @@ import {
   type LocationTab,
 } from './tabs/types'
 import {
-  DEMO_LOCATIONS,
   type BriefResponse,
-  type Lang,
   type SensitivityProfile,
   type Verdict,
   type Workload,
@@ -72,7 +70,7 @@ function parseProfile(raw: string | null): SensitivityProfile | null {
   return null
 }
 
-function initialLocation(): ActiveLocation {
+function parseDeepLinkLocation(): ActiveLocation | null {
   const params = new URLSearchParams(window.location.search)
   const lat = Number(params.get('lat'))
   const lon = Number(params.get('lon'))
@@ -82,7 +80,8 @@ function initialLocation(): ActiveLocation {
     lat >= -90 &&
     lat <= 90 &&
     lon >= -180 &&
-    lon <= 180
+    lon <= 180 &&
+    !(lat === 0 && lon === 0)
   ) {
     const roundedLat = Math.round(lat * 1000) / 1000
     const roundedLon = Math.round(lon * 1000) / 1000
@@ -92,14 +91,10 @@ function initialLocation(): ActiveLocation {
       label: `${roundedLat.toFixed(3)}, ${roundedLon.toFixed(3)}`,
     }
   }
-  return {
-    lat: DEMO_LOCATIONS[1].lat,
-    lon: DEMO_LOCATIONS[1].lon,
-    label: DEMO_LOCATIONS[1].label,
-  }
+  return null
 }
 
-const BOOT_LOC = typeof window !== 'undefined' ? initialLocation() : DEMO_LOCATIONS[1]
+const DEEP_LINK_LOC = typeof window !== 'undefined' ? parseDeepLinkLocation() : null
 
 function initialWorkload(): Workload {
   return parseWorkload(new URLSearchParams(window.location.search).get('workload')) ?? 'moderate'
@@ -126,14 +121,13 @@ export default function App() {
   const [searchHits, setSearchHits] = useState<GeocodeHit[]>([])
   const [searchBusy, setSearchBusy] = useState(false)
   const [searchError, setSearchError] = useState<string | null>(null)
-  const [latInput, setLatInput] = useState(() => String(BOOT_LOC.lat))
-  const [lonInput, setLonInput] = useState(() => String(BOOT_LOC.lon))
+  const [latInput, setLatInput] = useState(() => (DEEP_LINK_LOC ? String(DEEP_LINK_LOC.lat) : ''))
+  const [lonInput, setLonInput] = useState(() => (DEEP_LINK_LOC ? String(DEEP_LINK_LOC.lon) : ''))
   const [workload, setWorkload] = useState<Workload>(() => initialWorkload())
   const [acclimatized, setAcclimatized] = useState(false)
   const [profile, setProfile] = useState<SensitivityProfile>(() => initialProfile())
   const [requiredHours, setRequiredHours] = useState(4)
   const [selectedShift, setSelectedShift] = useState<SelectedShift | null>(null)
-  const [lang, setLang] = useState<Lang>('en')
   const [historicalEvents, setHistoricalEvents] = useState<HistoricalEventSummary[]>([])
   const [hourOffset] = useState<number | null>(null)
   const [focusHour, setFocusHour] = useState<{ day: string | null; hour: number } | null>(null)
@@ -165,11 +159,10 @@ export default function App() {
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? null
   const onIntegrityTab = activeTabId === INTEGRITY_TAB_ID
   const assess = onIntegrityTab ? integrity.assess : activeTab?.assess ?? null
-  const locLabel = onIntegrityTab
-    ? integrity.label || BOOT_LOC.label
-    : activeTab?.label ?? BOOT_LOC.label
-  const locLat = onIntegrityTab ? integrity.lat || BOOT_LOC.lat : activeTab?.lat ?? BOOT_LOC.lat
-  const locLon = onIntegrityTab ? integrity.lon || BOOT_LOC.lon : activeTab?.lon ?? BOOT_LOC.lon
+  const locationReady = Boolean(activeTab || integrity.label)
+  const locLabel = activeTab?.label ?? (integrity.label || 'Pick a location')
+  const locLat = activeTab?.lat ?? (integrity.label ? integrity.lat : null)
+  const locLon = activeTab?.lon ?? (integrity.label ? integrity.lon : null)
   const activeEventId = onIntegrityTab ? integrity.eventId : activeTab?.eventId ?? null
 
   const placeKey = `${assess?.lat ?? ''}|${assess?.lon ?? ''}|${activeEventId ?? ''}`
@@ -201,11 +194,9 @@ export default function App() {
     return hoursInShift(pool ?? [], selectedShift)
   }, [assess, selectedShift])
 
-  const sidebarLoc: ActiveLocation = {
-    lat: locLat,
-    lon: locLon,
-    label: locLabel,
-  }
+  const sidebarLoc: ActiveLocation | null = locationReady
+    ? { lat: locLat!, lon: locLon!, label: locLabel }
+    : null
 
   useEffect(() => {
     void fetchEvents()
@@ -401,19 +392,28 @@ export default function App() {
     [workload, acclimatized, profile, requiredHours, corruptDemo, hourOffset],
   )
 
-  // Boot: open first tab from URL / default demo
+  // Boot: only auto-load when the URL names a place (?lat/&lon or ?event).
   useEffect(() => {
     if (bootDone.current) return
     bootDone.current = true
-    const event = new URLSearchParams(window.location.search).get('event')
-    void commitAssess({
-      lat: BOOT_LOC.lat,
-      lon: BOOT_LOC.lon,
-      label: event
-        ? event
-        : BOOT_LOC.label,
-      eventId: event,
-    })
+    const params = new URLSearchParams(window.location.search)
+    const event = params.get('event')
+    const urlLoc = parseDeepLinkLocation()
+    if (event) {
+      void commitAssess({
+        lat: urlLoc?.lat ?? 0,
+        lon: urlLoc?.lon ?? 0,
+        label: event,
+        eventId: event,
+      })
+    } else if (urlLoc) {
+      void commitAssess({
+        lat: urlLoc.lat,
+        lon: urlLoc.lon,
+        label: urlLoc.label,
+        eventId: null,
+      })
+    }
   }, [commitAssess])
 
   // Refresh active tab when shared settings change (after boot)
@@ -451,23 +451,33 @@ export default function App() {
   const applyHistoricalEvent = useCallback(
     (eventId: string | null) => {
       if (!eventId) {
-        void commitAssess({
-          lat: BOOT_LOC.lat,
-          lon: BOOT_LOC.lon,
-          label: BOOT_LOC.label,
+        pendingTabRef.current = null
+        setScreeningDone(false)
+        if (tabs.length > 0) {
+          setActiveTabId(tabs[tabs.length - 1]!.id)
+          return
+        }
+        setActiveTabId(INTEGRITY_TAB_ID)
+        setIntegrity({
+          label: '',
+          lat: 0,
+          lon: 0,
           eventId: null,
+          loading: false,
+          error: null,
+          assess: null,
         })
         return
       }
       const ev = historicalEvents.find((e) => e.id === eventId)
       void commitAssess({
-        lat: ev?.lat ?? locLat,
-        lon: ev?.lon ?? locLon,
+        lat: ev?.lat ?? locLat ?? 0,
+        lon: ev?.lon ?? locLon ?? 0,
         label: ev?.label ?? eventId,
         eventId,
       })
     },
-    [commitAssess, historicalEvents, locLat, locLon],
+    [commitAssess, historicalEvents, locLat, locLon, tabs],
   )
 
   useEffect(() => {
@@ -481,7 +491,6 @@ export default function App() {
     void fetchBrief({
       lat: assess.lat,
       lon: assess.lon,
-      lang,
       workload,
       acclimatized,
       profile,
@@ -508,7 +517,7 @@ export default function App() {
     return () => {
       cancelled = true
     }
-  }, [onIntegrityTab, assess, lang, workload, acclimatized, profile, shiftHours])
+  }, [onIntegrityTab, assess, workload, acclimatized, profile, shiftHours])
 
   const focusedRow = useMemo(() => {
     if (!assess || !focusHour) return null
@@ -574,10 +583,14 @@ export default function App() {
       params.set('event', activeEventId)
       params.delete('lat')
       params.delete('lon')
-    } else {
+    } else if (locLat != null && locLon != null) {
       params.delete('event')
       params.set('lat', String(locLat))
       params.set('lon', String(locLon))
+    } else {
+      params.delete('event')
+      params.delete('lat')
+      params.delete('lon')
     }
     params.set('workload', workload)
     params.set('profile', profile)
@@ -620,9 +633,6 @@ export default function App() {
       setActiveTabId(INTEGRITY_TAB_ID)
       setIntegrity((s) => ({
         ...s,
-        label: s.label || 'Invalid coordinates',
-        lat: s.lat || locLat,
-        lon: s.lon || locLon,
         loading: false,
         error: 'Latitude must be between -90 and 90',
         assess: null,
@@ -633,9 +643,6 @@ export default function App() {
       setActiveTabId(INTEGRITY_TAB_ID)
       setIntegrity((s) => ({
         ...s,
-        label: s.label || 'Invalid coordinates',
-        lat: s.lat || locLat,
-        lon: s.lon || locLon,
         loading: false,
         error: 'Longitude must be between -180 and 180',
         assess: null,
@@ -693,7 +700,6 @@ export default function App() {
     latInput,
     lonInput,
     workload,
-    lang,
     profile,
     acclimatized,
     historicalEvents,
@@ -702,7 +708,6 @@ export default function App() {
     onLatInput: setLatInput,
     onLonInput: setLonInput,
     onWorkload: setWorkload,
-    onLang: setLang,
     onProfile: setProfile,
     onAcclimatized: setAcclimatized,
     onApplyLocation: applyLocation,

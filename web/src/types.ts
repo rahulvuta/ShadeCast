@@ -1,6 +1,5 @@
 export type Verdict = 'GO' | 'CAUTION' | 'RESTRICT' | 'STOP'
 export type Workload = 'light' | 'moderate' | 'heavy'
-export type Lang = 'en' | 'es' | 'vi'
 export type ConfidenceLevel = 'HIGH' | 'MODERATE' | 'LOW' | 'UNUSABLE'
 export type SensitivityProfile =
   | 'general'
