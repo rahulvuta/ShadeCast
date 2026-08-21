@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { fetchAssess, fetchBrief, fetchEvents, fetchFires, fetchGeocode, type GeocodeHit, type HistoricalEventSummary } from './api'
+import { fetchAssess, fetchBrief, fetchEvents, fetchGeocode, type GeocodeHit, type HistoricalEventSummary } from './api'
 import { ActionCards } from './components/ActionCards'
 import { ClothingPanel } from './components/ClothingPanel'
 import { BriefingCard } from './components/BriefingCard'
@@ -24,7 +24,6 @@ import { UVPanel } from './components/UVPanel'
 import { VerdictCard } from './components/VerdictCard'
 import { verdictPalette, type VerdictKey } from './design/tokens'
 import { useThemeMode } from './design/useThemeMode'
-import { MAP_FIRE_FETCH_RADIUS_KM } from './lib/smokeGeometry'
 import { hoursInShift, type SelectedShift } from './lib/shiftWindow'
 import {
   INTEGRITY_TAB_ID,
@@ -37,7 +36,6 @@ import {
 import {
   DEMO_LOCATIONS,
   type BriefResponse,
-  type FirePoint,
   type Lang,
   type SensitivityProfile,
   type Verdict,
@@ -156,8 +154,6 @@ export default function App() {
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? null
   const onIntegrityTab = activeTabId === INTEGRITY_TAB_ID
   const assess = onIntegrityTab ? integrity.assess : activeTab?.assess ?? null
-  const fires = activeTab?.fires ?? []
-  const firesError = activeTab?.firesError ?? null
   const selectedDay = activeTab?.selectedDay ?? null
   const locLabel = onIntegrityTab
     ? integrity.label || BOOT_LOC.label
@@ -267,20 +263,6 @@ export default function App() {
 
         if (isUnusable(a)) return
 
-        let nextFires: FirePoint[] = []
-        let nextFiresError: string | null = null
-        if (a.is_historical) {
-          nextFires = a.fires ?? []
-        } else {
-          try {
-            const f = await fetchFires(lat, lon, MAP_FIRE_FETCH_RADIUS_KM)
-            nextFires = f.fires
-          } catch (e) {
-            nextFiresError = e instanceof Error ? e.message : 'Fire detections unavailable'
-          }
-        }
-        if (gen !== commitGen.current) return
-
         const tab: LocationTab = {
           id: newTabId(),
           label,
@@ -288,8 +270,8 @@ export default function App() {
           lon,
           eventId: target.eventId,
           assess: a,
-          fires: nextFires,
-          firesError: nextFiresError,
+          fires: [],
+          firesError: null,
           selectedDay: a.days?.[0]?.day ?? null,
         }
 
@@ -367,20 +349,6 @@ export default function App() {
           return
         }
 
-        let nextFires: FirePoint[] = []
-        let nextFiresError: string | null = null
-        if (a.is_historical) {
-          nextFires = a.fires ?? []
-        } else {
-          try {
-            const f = await fetchFires(lat, lon, MAP_FIRE_FETCH_RADIUS_KM)
-            nextFires = f.fires
-          } catch (e) {
-            nextFiresError = e instanceof Error ? e.message : 'Fire detections unavailable'
-          }
-        }
-        if (gen !== commitGen.current) return
-
         setTabs((prev) =>
           prev.map((t) =>
             t.id === target.id
@@ -390,8 +358,8 @@ export default function App() {
                   lat,
                   lon,
                   assess: a,
-                  fires: nextFires,
-                  firesError: nextFiresError,
+                  fires: [],
+                  firesError: null,
                   selectedDay: a.days?.[0]?.day ?? t.selectedDay,
                 }
               : t,
@@ -982,17 +950,11 @@ export default function App() {
                     windFromDeg={displayWind}
                     windSpeedKmh={displayWindSpeed}
                     smokePressure={mapSmoke}
-                    fires={fires}
                     textMode={textMode}
                     defaultOpen={true}
                     historicalStart={assess.historical_event?.start_date ?? null}
                     historicalEnd={assess.historical_event?.end_date ?? null}
                   />
-                  {firesError && (
-                    <p className="px-3 py-2 type-micro text-[var(--muted)] normal-case tracking-normal font-normal">
-                      Fire detections unavailable
-                    </p>
-                  )}
                 </div>
 
                 <HourlyShiftForecast hours={shiftHours} textMode={textMode} />

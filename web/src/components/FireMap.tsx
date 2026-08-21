@@ -1,15 +1,11 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { FirePoint } from '../types'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { fetchAirGrid, type AirGridCell } from '../api'
-import {
-  SEARCH_RADIUS_KM,
-  MAP_FIRE_FETCH_RADIUS_KM,
-  annotateDetections,
-} from '../lib/smokeGeometry'
 import { zoomToFitRadius } from '../lib/mercator'
 import { TileMosaic } from './TileMosaic'
-import { SmokeScopeOverlay } from './SmokeScopeOverlay'
-import { AirQualityOverlay } from './AirQualityOverlay'
+import { AirQualityOverlay, cellScore } from './AirQualityOverlay'
+
+/** Fit the 5×5 CAMS grid (~0.8° / ~90 km from centre to edge). */
+const CAMS_VIEW_RADIUS_KM = 110
 
 function prefersReducedMotion(): boolean {
   return typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -45,7 +41,7 @@ function attachWindOverlay(
   canvas.style.position = 'absolute'
   canvas.style.inset = '0'
   canvas.style.pointerEvents = 'none'
-  canvas.style.zIndex = '1'
+  canvas.style.zIndex = '2'
   container.appendChild(canvas)
 
   function spawn() {
@@ -135,13 +131,26 @@ function attachWindOverlay(
   }
 }
 
+function summaryLine(cells: AirGridCell[], smokePressure: number): string {
+  const scores = cells.map(cellScore).filter((v): v is number => v != null)
+  if (scores.length === 0) {
+    return `CAMS field ${smokePressure.toFixed(0)}/100 at the crew point. Modelled particulates, not satellite fire dots.`
+  }
+  const min = Math.min(...scores)
+  const max = Math.max(...scores)
+  const atCrew = smokePressure.toFixed(0)
+  if (Math.abs(max - min) < 8) {
+    return `CAMS US AQI about ${Math.round((min + max) / 2)} across this view · smoke ${atCrew}/100 at the crew point.`
+  }
+  return `CAMS US AQI ${Math.round(min)}–${Math.round(max)} in this view · smoke ${atCrew}/100 at the crew point.`
+}
+
 export function FireMap({
   lat,
   lon,
   windFromDeg,
   windSpeedKmh = null,
   smokePressure = 0,
-  fires,
   textMode,
   defaultOpen = true,
   historicalStart = null,
@@ -152,7 +161,6 @@ export function FireMap({
   windFromDeg: number | null
   windSpeedKmh?: number | null
   smokePressure?: number
-  fires: FirePoint[]
   textMode: boolean
   defaultOpen?: boolean
   historicalStart?: string | null
@@ -167,15 +175,11 @@ export function FireMap({
   const [cells, setCells] = useState<AirGridCell[]>([])
 
   const wind = windFromDeg ?? 0
-  const annotated = useMemo(
-    () => annotateDetections(lat, lon, fires, wind),
-    [lat, lon, fires, wind],
-  )
-  const legend = `${fires.length} FIRMS heat detections in view · CAMS air overlay ${smokePressure.toFixed(0)}/100 at the crew point. Heat detections are thermal anomalies, not smoke.`
+  const legend = summaryLine(cells, smokePressure)
 
   const baseZoom =
     size.width > 0 && size.height > 0
-      ? zoomToFitRadius(lat, MAP_FIRE_FETCH_RADIUS_KM, size.width, size.height, 48)
+      ? zoomToFitRadius(lat, CAMS_VIEW_RADIUS_KM, size.width, size.height, 48)
       : 6
   const zoom = Math.max(1, Math.min(12, baseZoom + zoomOffset))
 
@@ -265,9 +269,11 @@ export function FireMap({
     windFromDeg == null
       ? 'Wind n/a'
       : `Wind from ${Math.round(windFromDeg)}° · ${windSpeedKmh != null ? `${Math.round(windSpeedKmh)} km/h` : 'speed n/a'}`
-  const withinCount = annotated.filter((d) => d.withinRadius).length
-  const distantCount = annotated.filter((d) => !d.withinRadius).length
   const ready = size.width > 0 && size.height > 0
+  const scored = cells
+    .map((c) => ({ c, score: cellScore(c) }))
+    .filter((row) => row.score != null)
+    .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
 
   return (
     <section aria-labelledby="map-heading" className="flex h-full min-h-[inherit] flex-col p-3.5 sm:p-4">
@@ -275,7 +281,7 @@ export function FireMap({
         <div>
           <p className="dash-section-label">Air quality map</p>
           <h2 id="map-heading" className="text-sm font-bold mt-0.5">
-            CAMS particulates · FIRMS heat detections
+            CAMS particulate field
           </h2>
         </div>
         <button
@@ -288,16 +294,9 @@ export function FireMap({
         </button>
       </div>
       <p className="text-xs text-[var(--muted)] mt-1">{legend}</p>
-      <p className="mt-1 text-sm font-semibold text-[var(--ink)]">
-        {fires.length === 0
-          ? 'No FIRMS heat detections in this area right now'
-          : `${fires.length} heat detections · ${withinCount} within ${SEARCH_RADIUS_KM} km${
-              distantCount > 0 ? ` · ${distantCount} farther out` : ''
-            }`}
-      </p>
       <p className="type-micro text-[var(--muted)] mt-1 normal-case tracking-normal font-normal">
-        Dashed ring = {MAP_FIRE_FETCH_RADIUS_KM} km heat-detection visibility · colored cells =
-        Open-Meteo CAMS PM2.5 / US AQI (~45 km, ~24 h lag) · {windLabel}
+        Shaded field = Open-Meteo CAMS PM2.5 / US AQI (~45 km cells, ~24 h lag), interpolated like
+        a weather map. Not FIRMS fire detections. {windLabel}
       </p>
 
       {open && !textMode && (
@@ -330,17 +329,7 @@ export function FireMap({
                   height={size.height}
                   cells={cells}
                 />
-                <div ref={windHostRef} className="pointer-events-none absolute inset-0 z-[1]" />
-                <SmokeScopeOverlay
-                  lat={lat}
-                  lon={lon}
-                  zoom={zoom}
-                  width={size.width}
-                  height={size.height}
-                  windFromDeg={wind}
-                  annotated={annotated}
-                  legend={legend}
-                />
+                <div ref={windHostRef} className="pointer-events-none absolute inset-0 z-[2]" />
               </>
             )}
           </div>
@@ -400,12 +389,16 @@ export function FireMap({
 
       {open && textMode && (
         <ul className="mt-2 max-h-64 overflow-auto text-xs space-y-1">
-          {annotated.slice(0, 50).map((f, i) => (
-            <li key={`${f.latitude}-${f.longitude}-${i}`}>
-              {f.latitude.toFixed(3)}, {f.longitude.toFixed(3)} · FRP {f.frp ?? 'n/a'} ·{' '}
-              {f.distanceKm.toFixed(0)} km
-            </li>
-          ))}
+          {scored.length === 0 ? (
+            <li>No CAMS cells loaded.</li>
+          ) : (
+            scored.slice(0, 25).map(({ c, score }) => (
+              <li key={`${c.latitude}-${c.longitude}`}>
+                {c.latitude.toFixed(3)}, {c.longitude.toFixed(3)} · US AQI {score != null ? Math.round(score) : '—'}
+                {c.pm2_5 != null ? ` · PM2.5 ${c.pm2_5.toFixed(1)}` : ''}
+              </li>
+            ))
+          )}
         </ul>
       )}
     </section>

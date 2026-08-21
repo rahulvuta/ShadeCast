@@ -16,7 +16,8 @@ export function HowWeCalculate() {
         <p>
           <strong className="text-[var(--ink)]">Smoke:</strong> CAMS PM2.5 via Open-Meteo
           (modelled particulates — wildfire smoke, dust, and urban aerosol). Not FIRMS FRP and
-          not a ground monitor. NASA FIRMS dots on the map are heat detections only.
+          not a ground monitor. The map shades CAMS as a weather-style field, not FIRMS fire
+          dots.
         </p>
         <p>
           <strong className="text-[var(--ink)]">Storms:</strong> US NWS alerts set verdict floors

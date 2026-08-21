@@ -6,7 +6,7 @@ This document is linked from the README and the app footer. Judges should open i
 
 ShadeCast's smoke term is **Open-Meteo CAMS PM2.5** (µg/m³ mapped onto a 0–100 `smoke_pressure` scale). It is **modelled particulates** — wildfire smoke, dust, and urban aerosol — not a ground-station measurement and **not** NASA FIRMS fire radiative power (FRP).
 
-FIRMS dots on the map are **heat detections** (thermal anomalies: wildfire, flare, factory exhaust). The FRP score is used only for **concordance** with CAMS (fresh heat vs a lagged air-quality field). We never render `smoke_pressure` as an AQI number.
+The map shades Open-Meteo CAMS PM2.5 / US AQI as a weather-style field (interpolated ~45 km cells). NASA FIRMS is **not** drawn on the map. The FRP score is used only for **concordance** with CAMS (fresh heat vs a lagged air-quality field). We never render `smoke_pressure` as an AQI number.
 
 ## 2. Heat index is a screening tool, not WBGT
 
@@ -83,7 +83,7 @@ The web service worker caches the app shell and **per-URL** `/api/assess` respon
 
 ## 14b. Basemap tiles (OpenStreetMap)
 
-The air-quality map uses a static mosaic of [OpenStreetMap](https://www.openstreetmap.org/copyright) raster tiles (`tile.openstreetmap.org`) with CAMS cell and FIRMS heat overlays — not a WebGL map library. We only request tiles for the viewport actually displayed (typically ~6–12 tiles), show visible attribution, and degrade to a neutral background with readable rings/markers if tiles fail. Bulk prefetch / regional tile warming is not done. **At real product scale a self-hosted or commercial tile provider would be required**; OSM's public tile servers are suitable for this demo only.
+The air-quality map uses a static mosaic of [OpenStreetMap](https://www.openstreetmap.org/copyright) raster tiles (`tile.openstreetmap.org`) with a CAMS particulate field overlay — not a WebGL map library. We only request tiles for the viewport actually displayed (typically ~6–12 tiles), show visible attribution, and degrade to a neutral background if tiles fail. Bulk prefetch / regional tile warming is not done. **At real product scale a self-hosted or commercial tile provider would be required**; OSM's public tile servers are suitable for this demo only.
 
 ## 15. Time Machine historical replay
 
