@@ -51,6 +51,20 @@ SMOKE_NOTE = (
     "and not a ground-station measurement."
 )
 
+# Hourly PM2.5 can exceed 1000 µg/m³ in extreme wildfire and dust.
+# 10000 is a garbage ceiling (unit mix-up / sentinel), not an EPA cap.
+PM25_HARD_MAX = 10000.0
+
+
+def usable_pm25(pm2_5: float | None) -> float | None:
+    """Keep real extreme concentrations; drop only missing, negative, or absurd values."""
+    if pm2_5 is None:
+        return None
+    if pm2_5 < 0.0 or pm2_5 > PM25_HARD_MAX:
+        return None
+    return pm2_5
+
+
 # EPA AQI PM2.5 concentration breakpoints (µg/m³) → 0–100 smoke_pressure.
 _PM25_BANDS = (
     (0.0, 12.0, 0.0, 10.0),

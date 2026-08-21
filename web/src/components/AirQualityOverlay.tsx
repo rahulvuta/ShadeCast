@@ -1,5 +1,10 @@
 import { useEffect, useRef } from 'react'
-import { latLonToWorldPx, projectToViewport, worldPxToLatLon } from '../lib/mercator'
+import {
+  latLonToWorldPx,
+  metersPerPixel,
+  projectToViewport,
+  worldPxToLatLon,
+} from '../lib/mercator'
 
 export type AirGridCell = {
   latitude: number
@@ -25,7 +30,8 @@ const AQI_STOPS: Array<{ aqi: number; r: number; g: number; b: number; a: number
 
 const CONTOURS = [50, 100, 150, 200]
 const SCALE = 3
-const GRID_STEP_DEG = 0.4
+const EARTH_RADIUS_KM = 6371
+const EDGE_FADE = 0.08
 
 export function cellScore(cell: AirGridCell): number | null {
   if (cell.us_aqi != null && Number.isFinite(cell.us_aqi)) return cell.us_aqi
@@ -38,6 +44,25 @@ export function cellScore(cell: AirGridCell): number | null {
     return Math.min(300, 200 + (pm - 150.5) / 2)
   }
   return null
+}
+
+export function distanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const dLat = ((lat2 - lat1) * Math.PI) / 180
+  const dLon = ((lon2 - lon1) * Math.PI) / 180
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) ** 2
+  return 2 * EARTH_RADIUS_KM * Math.asin(Math.min(1, Math.sqrt(a)))
+}
+
+export function insideRadiusKm(
+  lat: number,
+  lon: number,
+  centerLat: number,
+  centerLon: number,
+  radiusKm: number,
+): boolean {
+  return distanceKm(lat, lon, centerLat, centerLon) <= radiusKm
 }
 
 function colorForAqi(aqi: number, alphaScale = 1): [number, number, number, number] {
@@ -75,29 +100,30 @@ function interpolateIdw(
   lat: number,
   lon: number,
   samples: Sample[],
+  centerLat: number,
+  centerLon: number,
+  radiusKm: number,
 ): { v: number; fade: number } | null {
   if (samples.length === 0) return null
+  const dist = distanceKm(lat, lon, centerLat, centerLon)
+  if (dist > radiusKm) return null
+
+  const fadeStart = radiusKm * (1 - EDGE_FADE)
+  const fade = dist > fadeStart ? Math.max(0, 1 - (dist - fadeStart) / (radiusKm - fadeStart)) : 1
+
   const cos = Math.cos((lat * Math.PI) / 180)
   let num = 0
   let den = 0
-  let nearest = Infinity
   for (const s of samples) {
     const dlat = lat - s.lat
     const dlon = (lon - s.lon) * cos
     const d2 = dlat * dlat + dlon * dlon
-    if (d2 < 1e-12) return { v: s.v, fade: 1 }
-    if (d2 < nearest) nearest = d2
+    if (d2 < 1e-12) return { v: s.v, fade }
     const w = 1 / d2
     num += w * s.v
     den += w
   }
   if (den <= 0) return null
-  const distDeg = Math.sqrt(nearest)
-  const cover = GRID_STEP_DEG * 0.85
-  if (distDeg > cover) return null
-  const fade = distDeg > GRID_STEP_DEG * 0.55
-    ? 1 - (distDeg - GRID_STEP_DEG * 0.55) / (cover - GRID_STEP_DEG * 0.55)
-    : 1
   return { v: num / den, fade }
 }
 
@@ -130,6 +156,10 @@ function edgeCross(
   return { x: ax + (bx - ax) * t, y: ay + (by - ay) * t }
 }
 
+function radiusPx(lat: number, zoom: number, radiusKm: number): number {
+  return (radiusKm * 1000) / metersPerPixel(lat, zoom)
+}
+
 function paintField(
   ctx: CanvasRenderingContext2D,
   samples: Sample[],
@@ -138,6 +168,7 @@ function paintField(
   zoom: number,
   width: number,
   height: number,
+  radiusKm: number,
 ) {
   const w = Math.max(1, Math.ceil(width / SCALE))
   const h = Math.max(1, Math.ceil(height / SCALE))
@@ -150,7 +181,7 @@ function paintField(
       const px = (x + 0.5) * SCALE
       const py = (y + 0.5) * SCALE
       const ll = viewportToLatLon(px, py, lat, lon, zoom, width, height)
-      const hit = interpolateIdw(ll.lat, ll.lon, samples)
+      const hit = interpolateIdw(ll.lat, ll.lon, samples, lat, lon, radiusKm)
       const idx = y * w + x
       if (!hit) {
         field[idx] = -1
@@ -173,17 +204,25 @@ function paintField(
   if (!offCtx) return
   offCtx.putImageData(img, 0, 0)
 
+  const r = radiusPx(lat, zoom, radiusKm)
+  const cx = width / 2
+  const cy = height / 2
+
   ctx.imageSmoothingEnabled = true
   ctx.imageSmoothingQuality = 'high'
   ctx.clearRect(0, 0, width, height)
+  ctx.save()
+  ctx.beginPath()
+  ctx.arc(cx, cy, r, 0, Math.PI * 2)
+  ctx.clip()
   ctx.drawImage(off, 0, 0, width, height)
 
   ctx.lineWidth = 1.15
   ctx.lineJoin = 'round'
   ctx.lineCap = 'round'
   for (const level of CONTOURS) {
-    const [r, g, b] = colorForAqi(level)
-    ctx.strokeStyle = `rgba(${Math.max(0, r - 40)},${Math.max(0, g - 40)},${Math.max(0, b - 40)},0.5)`
+    const [cr, cg, cb] = colorForAqi(level)
+    ctx.strokeStyle = `rgba(${Math.max(0, cr - 40)},${Math.max(0, cg - 40)},${Math.max(0, cb - 40)},0.5)`
     ctx.beginPath()
     for (let y = 0; y < h - 1; y++) {
       for (let x = 0; x < w - 1; x++) {
@@ -212,6 +251,7 @@ function paintField(
     }
     ctx.stroke()
   }
+  ctx.restore()
 }
 
 function Legend() {
@@ -243,6 +283,7 @@ export function AirQualityOverlay({
   width,
   height,
   cells,
+  radiusKm,
 }: {
   lat: number
   lon: number
@@ -250,9 +291,11 @@ export function AirQualityOverlay({
   width: number
   height: number
   cells: AirGridCell[]
+  radiusKm: number
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const crew = projectToViewport(lat, lon, lat, lon, zoom, width, height)
+  const rPx = radiusPx(lat, zoom, radiusKm)
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -266,13 +309,23 @@ export function AirQualityOverlay({
       ctx.clearRect(0, 0, width, height)
       return
     }
-    paintField(ctx, samples, lat, lon, zoom, width, height)
-  }, [lat, lon, zoom, width, height, cells])
+    paintField(ctx, samples, lat, lon, zoom, width, height, radiusKm)
+  }, [lat, lon, zoom, width, height, cells, radiusKm])
 
   return (
     <div className="pointer-events-none absolute inset-0 z-[1]" aria-hidden>
       <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
       <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} className="absolute inset-0">
+        <circle
+          cx={crew.x}
+          cy={crew.y}
+          r={rPx}
+          fill="none"
+          stroke="#666666"
+          strokeWidth={2}
+          strokeDasharray="8 6"
+          strokeOpacity={0.7}
+        />
         <circle cx={crew.x} cy={crew.y} r={10} fill="none" stroke="#0072B2" strokeWidth={3} />
         <circle cx={crew.x} cy={crew.y} r={4} fill="#0072B2" />
       </svg>

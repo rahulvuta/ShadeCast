@@ -141,6 +141,7 @@ export default function App() {
     error: null,
     assess: null,
   })
+  const [screeningDone, setScreeningDone] = useState(false)
   const [brief, setBrief] = useState<BriefResponse | null>(null)
   const [briefLoading, setBriefLoading] = useState(false)
   const [briefError, setBriefError] = useState<string | null>(null)
@@ -150,6 +151,7 @@ export default function App() {
   const bootDone = useRef(false)
   const commitGen = useRef(0)
   const settingsRefreshGen = useRef(0)
+  const pendingTabRef = useRef<{ gen: number; tab: LocationTab } | null>(null)
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? null
   const onIntegrityTab = activeTabId === INTEGRITY_TAB_ID
@@ -203,6 +205,35 @@ export default function App() {
       .catch(() => setHistoricalEvents([]))
   }, [])
 
+  const promotePendingLocation = useCallback(() => {
+    const pending = pendingTabRef.current
+    if (!pending || pending.gen !== commitGen.current) return
+    pendingTabRef.current = null
+    const tab = pending.tab
+    setTabs((prev) => {
+      const idx = prev.findIndex((t) =>
+        sameLocationTab(
+          { lat: t.lat, lon: t.lon, eventId: t.eventId },
+          { lat: tab.lat, lon: tab.lon, eventId: tab.eventId },
+        ),
+      )
+      if (idx >= 0) {
+        const id = prev[idx]!.id
+        const next = [...prev]
+        next[idx] = { ...tab, id }
+        queueMicrotask(() => setActiveTabId(id))
+        return next
+      }
+      queueMicrotask(() => setActiveTabId(tab.id))
+      return [...prev, tab]
+    })
+  }, [])
+
+  const finishIntegrityScreening = useCallback(() => {
+    setScreeningDone(true)
+    promotePendingLocation()
+  }, [promotePendingLocation])
+
   const commitAssess = useCallback(
     async (target: {
       lat: number
@@ -211,6 +242,8 @@ export default function App() {
       eventId: string | null
     }) => {
       const gen = ++commitGen.current
+      pendingTabRef.current = null
+      setScreeningDone(false)
       setActiveTabId(INTEGRITY_TAB_ID)
       setIntegrity({
         label: target.label,
@@ -263,37 +296,23 @@ export default function App() {
 
         if (isUnusable(a)) return
 
-        const tab: LocationTab = {
-          id: newTabId(),
-          label,
-          lat,
-          lon,
-          eventId: target.eventId,
-          assess: a,
-          fires: [],
-          firesError: null,
-          selectedDay: a.days?.[0]?.day ?? null,
+        pendingTabRef.current = {
+          gen,
+          tab: {
+            id: newTabId(),
+            label,
+            lat,
+            lon,
+            eventId: target.eventId,
+            assess: a,
+            fires: [],
+            firesError: null,
+            selectedDay: a.days?.[0]?.day ?? null,
+          },
         }
-
-        setTabs((prev) => {
-          const idx = prev.findIndex((t) =>
-            sameLocationTab(
-              { lat: t.lat, lon: t.lon, eventId: t.eventId },
-              { lat: tab.lat, lon: tab.lon, eventId: tab.eventId },
-            ),
-          )
-          if (idx >= 0) {
-            const id = prev[idx]!.id
-            const next = [...prev]
-            next[idx] = { ...tab, id }
-            queueMicrotask(() => setActiveTabId(id))
-            return next
-          }
-          queueMicrotask(() => setActiveTabId(tab.id))
-          return [...prev, tab]
-        })
       } catch (e) {
         if (gen !== commitGen.current) return
+        pendingTabRef.current = null
         setIntegrity({
           label: target.label,
           lat: target.lat,
@@ -782,7 +801,8 @@ export default function App() {
                       Checking {integrity.label || 'location'} — running integrity checks…
                     </p>
                     <p className="text-xs text-[var(--muted)]">
-                      A location tab opens when checks pass. Unusable inputs stay on this tab.
+                      Stay on this tab while checks run. A location tab opens after the score
+                      settles.
                     </p>
                   </div>
                 )}
@@ -811,13 +831,13 @@ export default function App() {
                 {!integrity.loading && !integrity.error && !integrity.assess && (
                   <div className="dash-panel p-6 text-sm text-[var(--muted)]">
                     Search or pick a demo location. Integrity checks run here first; a location tab
-                    opens when they pass.
+                    opens after the live score settles.
                   </div>
                 )}
 
                 {integrity.assess && (
                   <>
-                    {integrityBlocked && (
+                    {screeningDone && integrityBlocked && (
                       <aside
                         role="status"
                         className="rounded border-2 border-[var(--stop)] bg-[var(--stop-bg)] px-3.5 py-3 text-sm"
@@ -829,7 +849,7 @@ export default function App() {
                         </p>
                       </aside>
                     )}
-                    {!integrityBlocked && (
+                    {screeningDone && !integrityBlocked && (
                       <aside
                         role="status"
                         className="rounded border-2 border-[var(--go)] bg-[var(--go-bg)] px-3.5 py-3 text-sm"
@@ -841,11 +861,20 @@ export default function App() {
                         </p>
                       </aside>
                     )}
-                    <ConfidenceBanner confidence={integrity.assess.data_confidence} />
+                    {!screeningDone && !integrityBlocked && (
+                      <p className="text-xs text-[var(--muted)]">
+                        Watch the live screening. A location tab opens when the confidence score
+                        settles at the top.
+                      </p>
+                    )}
+                    {screeningDone && (
+                      <ConfidenceBanner confidence={integrity.assess.data_confidence} />
+                    )}
                     <IntegrityTheater
                       key={`${integrity.lat}|${integrity.lon}|${integrity.eventId}|${integrity.assess.data_confidence?.score}`}
                       confidence={integrity.assess.data_confidence}
                       forceOpen={true}
+                      onComplete={finishIntegrityScreening}
                     />
                   </>
                 )}

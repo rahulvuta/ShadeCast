@@ -46,7 +46,6 @@ _SOURCE_HINTS: list[tuple[str, str]] = [
     ("us_aqi", "Open-Meteo Air Quality"),
     ("air_quality", "Open-Meteo Air Quality"),
     ("stale_air_quality", "Open-Meteo Air Quality"),
-    ("uv_cross", "Open-Meteo Air Quality"),
     ("aq_uv", "Open-Meteo Air Quality"),
     ("power", "NASA POWER"),
     ("climatology", "NASA POWER"),

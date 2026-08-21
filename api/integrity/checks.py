@@ -13,7 +13,6 @@ impossible data — not for formula quirks or model rounding.
 Documented constants:
 - CLIMATOLOGY_MARGIN_C / CLIMATOLOGY_CRITICAL_C — temp vs POWER mean.
   POWER stores means only; ±15°C is seasonal noise, >40°C is corruption.
-- UV_CROSS_SOURCE_MAX_DELTA = 3.0 — forecast UV vs air-quality UV.
 - HI_VS_APPARENT_*_F — Rothfusz HI vs Open-Meteo apparent (tiered).
 - HI_BELOW_TEMP_*_F — HI below air temp when T>80°F (tiered). Rothfusz
   legitimately yields HI < T at low RH (dry heat); gaps ≤10°F are normal.
@@ -29,6 +28,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Sequence
 
+from api.engine.air import US_AQI_HARD_MAX
+from api.engine.smoke import PM25_HARD_MAX
 from api.integrity.types import IntegrityFinding, Severity
 
 # --- Documented thresholds -------------------------------------------------
@@ -36,8 +37,6 @@ from api.integrity.types import IntegrityFinding, Severity
 CLIMATOLOGY_MARGIN_C = 15.0
 CLIMATOLOGY_ERROR_C = 25.0  # beyond this vs POWER mean → ERROR
 CLIMATOLOGY_CRITICAL_C = 40.0  # beyond this vs POWER mean → CRITICAL
-UV_CROSS_SOURCE_MAX_DELTA = 3.0
-
 # Rothfusz HI vs Open-Meteo apparent temperature (°F), tiered.
 HI_VS_APPARENT_WARN_F = 10.0
 HI_VS_APPARENT_ERROR_F = 20.0
@@ -239,20 +238,23 @@ def check_wind(hours: Sequence[HourlyInputs]) -> list[IntegrityFinding]:
 
 
 def check_pm25(hours: Sequence[HourlyInputs]) -> list[IntegrityFinding]:
+    """Flag unusable PM2.5 only. Concentrations above 1000 µg/m³ occur in
+    extreme wildfire and dust and must not refuse a verdict.
+    """
     out: list[IntegrityFinding] = []
     for h in hours:
         pm = h.pm2_5
         if pm is None:
             continue
-        if pm < 0.0 or pm > 1000.0:
+        if pm < 0.0 or pm > PM25_HARD_MAX:
             out.append(
                 _finding(
                     "pm25_range",
                     Severity.CRITICAL,
-                    f"PM2.5 {pm} µg/m³ outside 0–1000.",
+                    f"PM2.5 {pm} µg/m³ outside 0–{PM25_HARD_MAX:.0f}.",
                     "pm2_5",
                     pm,
-                    "0–1000 µg/m³",
+                    f"0–{PM25_HARD_MAX:.0f} µg/m³ (extreme wildfire/dust allowed)",
                 )
             )
     return out
@@ -279,20 +281,23 @@ def check_uv(hours: Sequence[HourlyInputs]) -> list[IntegrityFinding]:
 
 
 def check_us_aqi(hours: Sequence[HourlyInputs]) -> list[IntegrityFinding]:
+    """Flag unusable AQI only. Values above EPA's published 500 ceiling are real
+    in extreme CAMS dust/smoke (e.g. Iraq) and must not refuse a verdict.
+    """
     out: list[IntegrityFinding] = []
     for h in hours:
         aqi = h.us_aqi
         if aqi is None:
             continue
-        if aqi < 0.0 or aqi > 500.0:
+        if aqi < 0.0 or aqi > US_AQI_HARD_MAX:
             out.append(
                 _finding(
                     "us_aqi_range",
                     Severity.CRITICAL,
-                    f"US AQI {aqi} outside 0–500.",
+                    f"US AQI {aqi} outside 0–{US_AQI_HARD_MAX:.0f}.",
                     "us_aqi",
                     aqi,
-                    "0–500",
+                    f"0–{US_AQI_HARD_MAX:.0f} (CAMS may exceed EPA 500)",
                 )
             )
     return out
@@ -555,42 +560,6 @@ def check_forecast_vs_climatology_temp(
         )
         for f in findings
     ]
-
-
-def check_uv_cross_source(
-    hours: Sequence[HourlyInputs],
-    *,
-    warn: float = UV_CROSS_SOURCE_MAX_DELTA,
-    error: float = 6.0,
-    critical: float = 10.0,
-) -> list[IntegrityFinding]:
-    out: list[IntegrityFinding] = []
-    for h in hours:
-        if h.uv_index is None or h.aq_uv_index is None:
-            continue
-        delta = abs(h.uv_index - h.aq_uv_index)
-        severity = _severity_for_excess(delta, warn=warn, error=error, critical=critical)
-        if severity is None:
-            continue
-        check_id = {
-            Severity.WARNING: "uv_cross_source",
-            Severity.ERROR: "uv_cross_source_large",
-            Severity.CRITICAL: "uv_cross_source_critical",
-        }[severity]
-        out.append(
-            _finding(
-                check_id,
-                severity,
-                (
-                    f"Forecast UV {h.uv_index} diverges from air-quality UV "
-                    f"{h.aq_uv_index} by {delta:.1f}."
-                ),
-                "uv_index",
-                {"forecast_uv": h.uv_index, "aq_uv": h.aq_uv_index, "delta": delta},
-                f"abs(delta) <= {warn} (error {error}, critical {critical})",
-            )
-        )
-    return out
 
 
 def check_hi_vs_apparent(
@@ -1060,7 +1029,6 @@ def run_all_checks(bundle: IntegrityBundle) -> list[IntegrityFinding]:
     findings.extend(check_required_nulls(hours))
     findings.extend(check_missing_hours(hours))
     findings.extend(check_horizon_coverage(hours, bundle.horizon_hours))
-    findings.extend(check_uv_cross_source(hours))
     findings.extend(check_hi_vs_apparent(hours))
     findings.extend(check_hi_gte_air_temp(hours))
     findings.extend(check_dew_point(hours))

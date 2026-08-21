@@ -28,7 +28,7 @@ def test_high_when_clean():
 
 
 def test_moderate_on_warnings():
-    result = aggregate([_f("uv_cross_source", Severity.WARNING, "uv_index")])
+    result = aggregate([_f("uv_above_clear_sky", Severity.WARNING, "uv_index")])
     assert result.level == ConfidenceLevel.MODERATE
     assert result.score < 100
 

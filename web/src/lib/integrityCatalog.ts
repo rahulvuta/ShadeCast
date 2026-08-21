@@ -17,9 +17,9 @@ export const INTEGRITY_CATALOG: CatalogCheck[] = [
   { id: 'rh_range', category: 'range', label: 'Relative humidity in 0–100%' },
   { id: 'wind_negative', category: 'range', label: 'Wind speed non-negative' },
   { id: 'gust_below_sustained', category: 'range', label: 'Gusts ≥ sustained wind' },
-  { id: 'pm25_range', category: 'range', label: 'PM2.5 in 0–1000 µg/m³' },
+  { id: 'pm25_range', category: 'range', label: 'PM2.5 non-negative (extreme wildfire/dust allowed)' },
   { id: 'uv_range', category: 'range', label: 'UV index in 0–15' },
-  { id: 'us_aqi_range', category: 'range', label: 'US AQI in 0–500' },
+  { id: 'us_aqi_range', category: 'range', label: 'US AQI non-negative (CAMS may exceed 500)' },
 
   { id: 'temp_physical_range', category: 'physical', label: 'Temperature within Earth-surface bounds' },
   { id: 'power_sentinel', category: 'physical', label: 'No POWER fill-value sentinel (−999)' },
@@ -28,7 +28,6 @@ export const INTEGRITY_CATALOG: CatalogCheck[] = [
   { id: 'uv_above_clear_sky', category: 'physical', label: 'UV ≤ clear-sky ceiling' },
 
   { id: 'cross_temp_power', category: 'cross-source', label: 'Temp vs POWER climatology' },
-  { id: 'uv_cross_source', category: 'cross-source', label: 'Forecast UV vs air-quality UV' },
   { id: 'hi_vs_apparent', category: 'cross-source', label: 'Rothfusz HI vs apparent temperature' },
   { id: 'nws_temp_divergence', category: 'cross-source', label: 'NWS vs Open-Meteo temperature' },
   { id: 'nws_wind_divergence', category: 'cross-source', label: 'NWS vs Open-Meteo wind' },
@@ -71,7 +70,6 @@ export function catalogIdForFinding(checkId: string): string {
   if (id.startsWith('hi_below_air_temp')) return 'hi_below_air_temp'
   if (id.startsWith('dew_point_above_temp')) return 'dew_point_above_temp'
   if (id.startsWith('uv_above_clear_sky')) return 'uv_above_clear_sky'
-  if (id.startsWith('uv_cross_source')) return 'uv_cross_source'
   if (id.startsWith('hi_vs_apparent')) return 'hi_vs_apparent'
   if (id.startsWith('cross_temp_power')) return 'cross_temp_power'
   if (id.startsWith('nws_temp_divergence')) return 'nws_temp_divergence'

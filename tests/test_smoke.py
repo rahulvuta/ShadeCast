@@ -14,6 +14,7 @@ from api.engine.smoke import (
     initial_bearing_deg,
     is_upwind,
     pm25_to_smoke_pressure,
+    usable_pm25,
 )
 
 
@@ -101,6 +102,14 @@ def test_pm25_maps_to_smoke_pressure():
     assert assess_smoke(pm2_5=80.0).label in ("high", "very_high")
     wild = assess_smoke(pm2_5=8.0, pm10_wildfires=80.0)
     assert wild.smoke_pressure == assess_smoke(pm2_5=80.0).smoke_pressure
+
+
+def test_usable_pm25_keeps_extreme_concentrations():
+    assert usable_pm25(1500.0) == 1500.0
+    assert usable_pm25(0.0) == 0.0
+    assert usable_pm25(None) is None
+    assert usable_pm25(-1.0) is None
+    assert usable_pm25(10001.0) is None
 
 
 def test_high_frp_does_not_raise_cams_smoke():

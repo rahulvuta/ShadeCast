@@ -15,7 +15,7 @@ from api.clients import air_quality as aq_client
 from api.clients import forecast as forecast_client
 from api.clients.firms import round_coord
 from api.config import CORRUPT_DEMO_LOCATION, DEMO_LOCATIONS, get_settings
-from api.engine.air import assess_air
+from api.engine.air import assess_air, usable_us_aqi
 from api.engine.compound import Verdict
 from api.engine.environmental_load import assess_environmental_load, stack_from_waterfall
 from api.engine.explain import explain_from_drivers
@@ -23,7 +23,7 @@ from api.engine.heat import Workload, assess_heat, celsius_to_fahrenheit
 from api.engine.nws_blend import blend_forecast_hours, hour_key as nws_hour_key
 from api.engine.schedule import build_multiday_schedule, build_schedule, shift_planner
 from api.engine.sensitivity import SensitivityProfile
-from api.engine.smoke import FireDetectionInput, assess_fire_heat, assess_smoke
+from api.engine.smoke import FireDetectionInput, assess_fire_heat, assess_smoke, usable_pm25
 from api.engine.storm import alerts_active_at, assess_storm, is_watch_event, is_warning_event
 from api.engine.uv import assess_uv
 from api.engine.weather import humidity_band, weather_label
@@ -772,10 +772,8 @@ def build_assessment(
     rh_safe = rh_raw if rh_raw is not None and 0.0 <= rh_raw <= 100.0 else None
     us_aqi_raw = cur_aq.us_aqi if cur_aq else None
     pm_raw = cur_aq.pm2_5 if cur_aq else None
-    us_aqi_safe = (
-        us_aqi_raw if us_aqi_raw is not None and 0.0 <= us_aqi_raw <= 500.0 else None
-    )
-    pm_safe = pm_raw if pm_raw is not None and 0.0 <= pm_raw <= 1000.0 else None
+    us_aqi_safe = usable_us_aqi(us_aqi_raw)
+    pm_safe = usable_pm25(pm_raw)
 
     smoke = assess_smoke(pm2_5=pm_safe)
     air_now = assess_air(
@@ -854,8 +852,8 @@ def build_assessment(
             )
             aq = _aq_for(r.valid_at)
             hour_uv, _hour_cs = _uv_for_hour(r, aq)
-            aq_u = aq.us_aqi if aq and aq.us_aqi is not None and 0.0 <= aq.us_aqi <= 500.0 else None
-            aq_pm = aq.pm2_5 if aq and aq.pm2_5 is not None and 0.0 <= aq.pm2_5 <= 1000.0 else None
+            aq_u = usable_us_aqi(aq.us_aqi if aq else None)
+            aq_pm = usable_pm25(aq.pm2_5 if aq else None)
             hour_smoke = assess_smoke(pm2_5=aq_pm)
             air_h = assess_air(
                 smoke_pressure=hour_smoke.smoke_pressure,

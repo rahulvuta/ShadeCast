@@ -71,7 +71,7 @@ def test_air_quality_sample_parses():
         if r.pm2_5 is not None:
             assert r.pm2_5 >= 0
         if r.us_aqi is not None:
-            assert 0 <= r.us_aqi <= 500
+            assert r.us_aqi >= 0
         if r.uv_index is not None:
             assert r.uv_index >= 0
 

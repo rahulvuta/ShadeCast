@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cellScore, type AirGridCell } from '../../components/AirQualityOverlay'
+import { cellScore, insideRadiusKm, type AirGridCell } from '../../components/AirQualityOverlay'
 
 function cell(partial: Partial<AirGridCell>): AirGridCell {
   return {
@@ -28,5 +28,26 @@ describe('cellScore', () => {
     const score = cellScore(cell({ pm2_5: 60 }))
     expect(score).not.toBeNull()
     expect(score!).toBeGreaterThan(150)
+  })
+})
+
+describe('insideRadiusKm', () => {
+  const lat = 34
+  const lon = -117
+  const radiusKm = 110
+  const kmPerDegLat = 111.32
+
+  it('includes the crew point', () => {
+    expect(insideRadiusKm(lat, lon, lat, lon, radiusKm)).toBe(true)
+  })
+
+  it('includes a point on the radius', () => {
+    const edgeLat = lat + radiusKm / kmPerDegLat
+    expect(insideRadiusKm(edgeLat, lon, lat, lon, radiusKm)).toBe(true)
+  })
+
+  it('excludes a point beyond the radius', () => {
+    const farLat = lat + 130 / kmPerDegLat
+    expect(insideRadiusKm(farLat, lon, lat, lon, radiusKm)).toBe(false)
   })
 })

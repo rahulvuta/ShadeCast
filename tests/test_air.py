@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
-from api.engine.air import AQIBand, Concordance, band_for_aqi, classify_concordance
+from api.engine.air import (
+    AQIBand,
+    Concordance,
+    band_for_aqi,
+    classify_concordance,
+    usable_us_aqi,
+)
 
 
 def test_epa_aqi_boundaries():
@@ -17,6 +23,16 @@ def test_epa_aqi_boundaries():
     assert band_for_aqi(201) == AQIBand.VERY_UNHEALTHY
     assert band_for_aqi(300) == AQIBand.VERY_UNHEALTHY
     assert band_for_aqi(301) == AQIBand.HAZARDOUS
+    assert band_for_aqi(620) == AQIBand.HAZARDOUS
+
+
+def test_usable_us_aqi_keeps_beyond_epa_ceiling():
+    assert usable_us_aqi(620.0) == 620.0
+    assert usable_us_aqi(500.0) == 500.0
+    assert usable_us_aqi(0.0) == 0.0
+    assert usable_us_aqi(None) is None
+    assert usable_us_aqi(-1.0) is None
+    assert usable_us_aqi(5001.0) is None
 
 
 def test_concordance_agree():

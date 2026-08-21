@@ -47,10 +47,15 @@ def test_wind_negative_and_gust_below_sustained():
 
 def test_pm25_and_aqi_ranges():
     assert any(f.check_id == "pm25_range" for f in check_pm25([_h(pm2_5=-5.0)]))
-    assert any(f.check_id == "pm25_range" for f in check_pm25([_h(pm2_5=1500.0)]))
     assert check_pm25([_h(pm2_5=35.0)]) == []
-    assert any(f.check_id == "us_aqi_range" for f in check_us_aqi([_h(us_aqi=600.0)]))
+    # Extreme wildfire / dust — 1000–1500 µg/m³ is real, not corruption.
+    assert check_pm25([_h(pm2_5=1500.0)]) == []
+    assert any(f.check_id == "pm25_range" for f in check_pm25([_h(pm2_5=10001.0)]))
     assert check_us_aqi([_h(us_aqi=120.0)]) == []
+    # CAMS can exceed EPA's published 500 ceiling (dust storms, e.g. Iraq).
+    assert check_us_aqi([_h(us_aqi=600.0)]) == []
+    assert any(f.check_id == "us_aqi_range" for f in check_us_aqi([_h(us_aqi=-1.0)]))
+    assert any(f.check_id == "us_aqi_range" for f in check_us_aqi([_h(us_aqi=5001.0)]))
 
 
 def test_uv_range_and_clear_sky_tiers():
@@ -293,6 +298,44 @@ def test_low_rh_hi_below_temp_is_not_critical():
     findings = run_all_checks(bundle)
     assert not any(f.severity == Severity.CRITICAL for f in findings)
     assert not any("hi_below_air_temp" in f.check_id for f in findings)
+
+
+def test_forecast_vs_aq_uv_divergence_is_not_an_integrity_finding():
+    """CAMS UV can drop under aerosol while forecast UV stays high. Not corruption."""
+    now = datetime(2024, 7, 1, 12, tzinfo=timezone.utc)
+    hours = [
+        _h(
+            valid_at=now + timedelta(hours=i),
+            temperature_c=32.0,
+            relative_humidity=40.0,
+            wind_speed_kmh=10.0,
+            wind_gusts_kmh=15.0,
+            uv_index=11.0,
+            uv_index_clear_sky=12.0,
+            apparent_temperature_c=34.0,
+            heat_index_f=95.0,
+            temp_f=89.6,
+            pm2_5=1500.0,
+            us_aqi=620.0,
+            aq_uv_index=1.0,
+        )
+        for i in range(24)
+    ]
+    bundle = IntegrityBundle(
+        hours=hours,
+        climatology_temp_c=33.0,
+        firms_fetched_at=now - timedelta(hours=1),
+        forecast_fetched_at=now - timedelta(minutes=30),
+        air_quality_fetched_at=now - timedelta(hours=2),
+        climatology_fetched_at=now - timedelta(days=2),
+        horizon_hours=24,
+        now=now,
+    )
+    findings = run_all_checks(bundle)
+    assert not any("uv_cross" in f.check_id for f in findings)
+    assert not any(f.check_id == "pm25_range" for f in findings)
+    assert not any(f.check_id == "us_aqi_range" for f in findings)
+    assert not any(f.severity in (Severity.CRITICAL, Severity.ERROR) for f in findings)
 
 
 def test_corrupted_feed_triggers_errors():

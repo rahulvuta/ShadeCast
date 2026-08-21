@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { DataConfidence } from '../types'
 import {
   INTEGRITY_CATALOG,
@@ -24,6 +24,10 @@ function formatObserved(v: unknown): string {
 
 type RowState = 'pending' | 'pass' | 'fail'
 
+const CHECK_MS = 80
+const GAUGE_MS = 700
+const SETTLE_MS = 500
+
 /**
  * Integrity theater — staged checklist + confidence gauge.
  * Auto-plays when findings exist (e.g. ?corrupt=1); healthy assessments use an expander.
@@ -31,10 +35,13 @@ type RowState = 'pending' | 'pass' | 'fail'
 export function IntegrityTheater({
   confidence,
   forceOpen = false,
+  onComplete,
 }: {
   confidence: DataConfidence | null | undefined
   /** When true (corrupt demo), expand and animate immediately. */
   forceOpen?: boolean
+  /** Fires after the checklist and score have settled (or immediately if motion is reduced). */
+  onComplete?: () => void
 }) {
   const findings = confidence?.findings ?? []
   const score = confidence?.score ?? 100
@@ -68,18 +75,38 @@ export function IntegrityTheater({
     autoPlay && prefersReducedMotion() ? escalated : false,
   )
   const runKey = `${level}|${score}|${findings.map((f) => f.check_id).join(',')}`
+  const onCompleteRef = useRef(onComplete)
+  onCompleteRef.current = onComplete
+  const autoPlayRef = useRef(autoPlay)
+  autoPlayRef.current = autoPlay
+  const finishedRef = useRef(false)
 
   useEffect(() => {
     if (autoPlay) setOpen(true)
   }, [autoPlay, runKey])
 
   useEffect(() => {
+    finishedRef.current = false
+  }, [runKey])
+
+  useEffect(() => {
     if (!open) return
+
+    let raf = 0
+    let tick = 0
+    let settle = 0
+
+    const finish = () => {
+      if (finishedRef.current) return
+      finishedRef.current = true
+      if (autoPlayRef.current) onCompleteRef.current?.()
+    }
 
     if (prefersReducedMotion()) {
       setRevealed(flatIds.length)
       setGauge(score)
       setShowEscalate(escalated)
+      finish()
       return
     }
 
@@ -88,37 +115,44 @@ export function IntegrityTheater({
     setShowEscalate(false)
 
     let i = 0
-    let raf = 0
-    const tick = window.setInterval(() => {
+    tick = window.setInterval(() => {
       i += 1
       setRevealed(i)
       if (i >= flatIds.length) {
         window.clearInterval(tick)
+        tick = 0
         const start = performance.now()
         const from = 100
         const to = score
-        const dur = 700
+        const afterGauge = () => {
+          setGauge(to)
+          setShowEscalate(escalated)
+          settle = window.setTimeout(finish, SETTLE_MS)
+        }
+        if (from === to) {
+          afterGauge()
+          return
+        }
         const step = (t: number) => {
-          const p = Math.min(1, (t - start) / dur)
+          const p = Math.min(1, (t - start) / GAUGE_MS)
           const eased = 1 - (1 - p) ** 2
           setGauge(Math.round(from + (to - from) * eased))
           if (p < 1) {
             raf = requestAnimationFrame(step)
           } else {
-            setShowEscalate(escalated)
+            afterGauge()
           }
         }
         raf = requestAnimationFrame(step)
       }
-    }, 70)
+    }, CHECK_MS)
 
     return () => {
-      window.clearInterval(tick)
+      if (tick) window.clearInterval(tick)
       cancelAnimationFrame(raf)
+      if (settle) window.clearTimeout(settle)
     }
   }, [open, runKey, flatIds.length, score, escalated])
-
-  if (!confidence) return null
 
   function rowState(checkId: string, index: number): RowState {
     if (index >= revealed) return 'pending'
@@ -139,7 +173,7 @@ export function IntegrityTheater({
           </p>
           <p className="type-micro text-[var(--muted)] normal-case tracking-normal font-normal mt-1">
             Level {level}
-            {confidence.sources_degraded.length > 0
+            {confidence?.sources_degraded.length
               ? ` · degraded: ${confidence.sources_degraded.join(', ')}`
               : ''}
           </p>

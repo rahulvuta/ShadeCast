@@ -4,6 +4,9 @@ EPA AQI categories (US):
   0–50 Good, 51–100 Moderate, 101–150 Unhealthy for Sensitive Groups,
   151–200 Unhealthy, 201–300 Very Unhealthy, 301–500 Hazardous
   Source: https://www.airnow.gov/aqi/aqi-basics/
+  CAMS / Open-Meteo can report US AQI above 500 in extreme dust and smoke
+  (e.g. Iraq). Those stay Hazardous and remain usable — they are not
+  treated as corrupt. Only negative or absurd values are discarded.
 
 Concordance states compare FIRMS thermal detections against modelled
 US AQI / PM2.5 (CAMS via Open-Meteo):
@@ -33,6 +36,19 @@ SMOKE_ELEVATED = SMOKE_THRESHOLDS["moderate"]  # 30
 SMOKE_QUIET = SMOKE_THRESHOLDS["low"]  # 10
 AQI_ELEVATED = 101.0
 AQI_QUIET = 51.0
+
+# EPA's published index tops at 500. CAMS can exceed that in dust storms.
+# 5000 is a garbage ceiling (sentinel / unit mix-up), not an EPA cap.
+US_AQI_HARD_MAX = 5000.0
+
+
+def usable_us_aqi(us_aqi: float | None) -> float | None:
+    """Keep real beyond-500 AQI; drop only missing, negative, or absurd values."""
+    if us_aqi is None:
+        return None
+    if us_aqi < 0.0 or us_aqi > US_AQI_HARD_MAX:
+        return None
+    return us_aqi
 
 
 class AQIBand(str, Enum):
