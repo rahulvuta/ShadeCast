@@ -75,8 +75,9 @@ export function ConditionsChart({
         aqiRaw: h.us_aqi,
         smoke: smokeHazard(h.smoke_pressure),
         smokeRaw: h.smoke_pressure,
-        wind: windHazard(h.wind_gusts_kmh),
-        windRaw: h.wind_gusts_kmh,
+        wind: windHazard(h.wind_speed_kmh),
+        windRaw: h.wind_speed_kmh,
+        gustRaw: h.wind_gusts_kmh,
       })),
     [hours],
   )
@@ -93,7 +94,7 @@ export function ConditionsChart({
               <th className="py-1 pr-2">UV</th>
               <th className="py-1 pr-2">US AQI</th>
               <th className="py-1 pr-2">Smoke</th>
-              <th className="py-1 pr-2">Gusts km/h</th>
+              <th className="py-1 pr-2">Sustained km/h</th>
               <th className="py-1">Verdict</th>
             </tr>
           </thead>
@@ -105,7 +106,7 @@ export function ConditionsChart({
                 <td className="py-1 pr-2 tabular-nums">{h.uv_index ?? '—'}</td>
                 <td className="py-1 pr-2 tabular-nums">{h.us_aqi ?? '—'}</td>
                 <td className="py-1 pr-2 tabular-nums">{h.smoke_pressure.toFixed(0)}</td>
-                <td className="py-1 pr-2 tabular-nums">{h.wind_gusts_kmh ?? '—'}</td>
+                <td className="py-1 pr-2 tabular-nums">{h.wind_speed_kmh ?? '—'}</td>
                 <td className="py-1">{h.verdict}</td>
               </tr>
             ))}
@@ -157,9 +158,11 @@ export function ConditionsChart({
                       const meta = HAZARD_META[key]
                       if (!meta) return null
                       const raw = p.payload[`${key}Raw`]
+                      const gust = key === 'wind' ? p.payload.gustRaw : null
                       return (
                         <p key={key} style={{ color: meta.color }}>
                           {meta.label}: {raw ?? '—'} {meta.unit} ({Number(p.value).toFixed(0)}/100)
+                          {gust != null ? ` · gusts ${gust} km/h` : ''}
                         </p>
                       )
                     })}

@@ -36,6 +36,8 @@ export function VerdictCard({
   interactions,
   inspectingLabel,
   onClearInspect,
+  hardStopLabel = 'Hard-stop',
+  bestWorkLabel = 'Best work',
 }: {
   verdict: Verdict | null
   hardStop: string | null
@@ -50,6 +52,8 @@ export function VerdictCard({
   interactions?: string[]
   inspectingLabel?: string | null
   onClearInspect?: () => void
+  hardStopLabel?: string
+  bestWorkLabel?: string
 }) {
   const displayVerdict = unusable || verdict == null ? null : verdict
   const headerClass = displayVerdict
@@ -117,14 +121,14 @@ export function VerdictCard({
             )}
             <div className="min-w-[10rem] space-y-3">
               <div>
-                <p className="type-micro opacity-85">Hard-stop</p>
+                <p className="type-micro opacity-85">{hardStopLabel}</p>
                 <p className="mt-0.5 text-xl sm:text-2xl font-black tabular-nums leading-tight">
                   {unusable ? 'No trusted schedule' : hardStop ?? 'None'}
                 </p>
               </div>
               {bestWork && !unusable && (
                 <div>
-                  <p className="type-micro opacity-85">Best work</p>
+                  <p className="type-micro opacity-85">{bestWorkLabel}</p>
                   <p className="mt-0.5 text-lg font-bold tabular-nums leading-tight">{bestWork}</p>
                 </div>
               )}
@@ -140,6 +144,9 @@ export function VerdictCard({
         />
         <MetricChip label="Smoke" value={`${smokePressure.toFixed(0)}/100`} />
       </div>
+      <p className="border-b border-[var(--border)] px-4 py-2 text-[0.65rem] leading-snug text-[var(--muted)] sm:px-6">
+        +8°F when cloud cover &lt; 50% (not a shade toggle). Heat index is a screening tool, not WBGT.
+      </p>
 
       {interactions && interactions.length > 0 && (
         <div className="flex flex-wrap gap-1.5 border-b border-[var(--border)] px-4 py-2 sm:px-6">

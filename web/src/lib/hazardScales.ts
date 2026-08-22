@@ -39,7 +39,7 @@ export const HAZARD_META: Record<
     thresholdRaw: 10,
   },
   wind: {
-    label: 'Wind gusts',
+    label: 'Wind (sustained)',
     color: '#56B4E9',
     dash: '1 6',
     unit: 'km/h',

@@ -8,11 +8,13 @@ export function ConditionChartsPanel({
   horizon,
   textMode,
   onSelectHour,
+  selectedDay = null,
 }: {
   hourly: AssessResponse['hourly']
   horizon?: AssessResponse['horizon']
   textMode: boolean
   onSelectHour?: (day: string | null, hour: number) => void
+  selectedDay?: string | null
 }) {
   const [full, setFull] = useState(false)
   const hours = useMemo(() => {
@@ -32,6 +34,7 @@ export function ConditionChartsPanel({
           <p className="mt-0.5 text-xs text-[var(--muted)]">
             Hazard-normalized lines, then how each driver builds the load score. Click an hour to
             inspect it in the verdict card.
+            {selectedDay ? ` Emphasizing ${selectedDay}.` : ''}
           </p>
         </div>
         <button
@@ -40,7 +43,7 @@ export function ConditionChartsPanel({
           aria-pressed={full}
           onClick={() => setFull((v) => !v)}
         >
-          {full ? '24 hours' : '120-hour horizon'}
+          {full ? 'Switch to 24 hours' : 'Switch to 120-hour horizon'}
         </button>
       </div>
       <div className="grid gap-6">

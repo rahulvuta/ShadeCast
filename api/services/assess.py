@@ -25,7 +25,7 @@ from api.engine.schedule import build_multiday_schedule, build_schedule, shift_p
 from api.engine.sensitivity import SensitivityProfile
 from api.engine.smoke import FireDetectionInput, assess_fire_heat, assess_smoke, usable_pm25
 from api.engine.storm import alerts_active_at, assess_storm, is_watch_event, is_warning_event
-from api.engine.uv import assess_uv
+from api.engine.uv import SkinType, assess_uv
 from api.engine.weather import humidity_band, weather_label
 from api.freshness import SOURCES, build_freshness
 from api.integrity.bundle import make_bundle
@@ -447,6 +447,11 @@ def _confidence_out(result, *, verdict_escalated: bool = False) -> DataConfidenc
         verdict_escalated=verdict_escalated,
     )
 
+def _clamp_skin_type(value: int) -> SkinType:
+    n = min(6, max(1, int(value)))
+    return n  # type: ignore[return-value]
+
+
 def build_assessment(
     session: Session,
     lat: float,
@@ -460,6 +465,7 @@ def build_assessment(
     allow_network: bool = True,
     event_id: str | None = None,
     hour_offset: int | None = None,
+    skin_type: int = 3,
 ) -> AssessResponse:
     settings = get_settings()
     historical_meta = None
@@ -477,6 +483,8 @@ def build_assessment(
         sensitivity_profile = hist_injection.event.profile  # type: ignore[assignment]
         allow_network = False
         historical_meta = hist_injection
+
+    skin = _clamp_skin_type(skin_type)
 
     if settings.demo_mode and historical_meta is None:
         cached, _cached_at = _load_assessment_cache(
@@ -763,7 +771,7 @@ def build_assessment(
             sensitivity_profile=sensitivity_profile,
         )
 
-    uv_today = assess_uv(_uv_hours_for_assess(today_rows, _aq_for), skin_type=3)
+    uv_today = assess_uv(_uv_hours_for_assess(today_rows, _aq_for), skin_type=skin)
     cur_aq = _aq_for(current_row.valid_at)
     cur_uv, _cur_uv_cs = _uv_for_hour(current_row, cur_aq)
 
@@ -832,7 +840,7 @@ def build_assessment(
         day_uv = (
             uv_today
             if day == today
-            else assess_uv(_uv_hours_for_assess(rows, _aq_for), skin_type=3)
+            else assess_uv(_uv_hours_for_assess(rows, _aq_for), skin_type=skin)
         )
         day_pairs: list[tuple[int, Verdict]] = []
         for r in rows:

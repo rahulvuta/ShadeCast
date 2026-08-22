@@ -14,7 +14,7 @@ import { BriefingCard } from './components/BriefingCard'
 import { ClimatologyLine } from './components/ClimatologyLine'
 import { ConcordanceBadge } from './components/ConcordanceBadge'
 import { ConfidenceBanner } from './components/ConfidenceBanner'
-import { DiffStrip, ShiftPlanner } from './components/DayStrip'
+import { DiffStrip, FiveDayStrip, ShiftPlanner } from './components/DayStrip'
 import { DriverWaterfall } from './components/DriverWaterfall'
 import { FireMap } from './components/FireMap'
 import { HowWeCalculate } from './components/HowWeCalculate'
@@ -32,7 +32,8 @@ import { UVPanel } from './components/UVPanel'
 import { VerdictCard } from './components/VerdictCard'
 import { verdictPalette, type VerdictKey } from './design/tokens'
 import { useThemeMode } from './design/useThemeMode'
-import { hoursInShift, type SelectedShift } from './lib/shiftWindow'
+import { mergeQuery, parseDeepLinkLocation, parseLatLonInputs, roundCoord } from './lib/coords'
+import { hoursInShift, shiftBounds, type SelectedShift } from './lib/shiftWindow'
 import {
   INTEGRITY_TAB_ID,
   isUnusable,
@@ -70,31 +71,37 @@ function parseProfile(raw: string | null): SensitivityProfile | null {
   return null
 }
 
-function parseDeepLinkLocation(): ActiveLocation | null {
-  const params = new URLSearchParams(window.location.search)
-  const lat = Number(params.get('lat'))
-  const lon = Number(params.get('lon'))
-  if (
-    Number.isFinite(lat) &&
-    Number.isFinite(lon) &&
-    lat >= -90 &&
-    lat <= 90 &&
-    lon >= -180 &&
-    lon <= 180 &&
-    !(lat === 0 && lon === 0)
-  ) {
-    const roundedLat = Math.round(lat * 1000) / 1000
-    const roundedLon = Math.round(lon * 1000) / 1000
-    return {
-      lat: roundedLat,
-      lon: roundedLon,
-      label: `${roundedLat.toFixed(3)}, ${roundedLon.toFixed(3)}`,
-    }
-  }
-  return null
+const DEEP_LINK_LOC = typeof window !== 'undefined' ? parseDeepLinkLocation() : null
+
+function bootSearchParams(): URLSearchParams {
+  return new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '')
 }
 
-const DEEP_LINK_LOC = typeof window !== 'undefined' ? parseDeepLinkLocation() : null
+function initialAcclimatized(): boolean {
+  const v = bootSearchParams().get('acclimatized')
+  return v === '1' || v === 'true'
+}
+
+function initialRequiredHours(): number {
+  const n = Number(bootSearchParams().get('required_hours'))
+  if (!Number.isFinite(n) || n < 1 || n > 12) return 4
+  return n
+}
+
+function initialSkinType(): number {
+  const n = Number(bootSearchParams().get('skin_type'))
+  if (!Number.isFinite(n)) return 3
+  const i = Math.round(n)
+  return i >= 1 && i <= 6 ? i : 3
+}
+
+function initialHourOffset(): number | null {
+  const raw = bootSearchParams().get('hour_offset')
+  if (raw == null || raw.trim() === '') return null
+  const n = Number(raw)
+  if (!Number.isFinite(n) || n < 0) return null
+  return Math.min(200, Math.round(n))
+}
 
 function initialWorkload(): Workload {
   return parseWorkload(new URLSearchParams(window.location.search).get('workload')) ?? 'moderate'
@@ -124,12 +131,13 @@ export default function App() {
   const [latInput, setLatInput] = useState(() => (DEEP_LINK_LOC ? String(DEEP_LINK_LOC.lat) : ''))
   const [lonInput, setLonInput] = useState(() => (DEEP_LINK_LOC ? String(DEEP_LINK_LOC.lon) : ''))
   const [workload, setWorkload] = useState<Workload>(() => initialWorkload())
-  const [acclimatized, setAcclimatized] = useState(false)
+  const [acclimatized, setAcclimatized] = useState(() => initialAcclimatized())
   const [profile, setProfile] = useState<SensitivityProfile>(() => initialProfile())
-  const [requiredHours, setRequiredHours] = useState(4)
+  const [requiredHours, setRequiredHours] = useState(() => initialRequiredHours())
+  const [skinType, setSkinType] = useState(() => initialSkinType())
   const [selectedShift, setSelectedShift] = useState<SelectedShift | null>(null)
   const [historicalEvents, setHistoricalEvents] = useState<HistoricalEventSummary[]>([])
-  const [hourOffset] = useState<number | null>(null)
+  const [hourOffset, setHourOffset] = useState<number | null>(() => initialHourOffset())
   const [focusHour, setFocusHour] = useState<{ day: string | null; hour: number } | null>(null)
 
   const [tabs, setTabs] = useState<LocationTab[]>([])
@@ -155,6 +163,7 @@ export default function App() {
   const settingsRefreshGen = useRef(0)
   const settingsAbort = useRef<AbortController | null>(null)
   const pendingTabRef = useRef<{ gen: number; tab: LocationTab } | null>(null)
+  const skipSettingsOnce = useRef(false)
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? null
   const onIntegrityTab = activeTabId === INTEGRITY_TAB_ID
@@ -164,6 +173,12 @@ export default function App() {
   const locLat = activeTab?.lat ?? (integrity.label ? integrity.lat : null)
   const locLon = activeTab?.lon ?? (integrity.label ? integrity.lon : null)
   const activeEventId = onIntegrityTab ? integrity.eventId : activeTab?.eventId ?? null
+  const tabsRef = useRef(tabs)
+  tabsRef.current = tabs
+  const integrityRef = useRef(integrity)
+  integrityRef.current = integrity
+  const onIntegrityRef = useRef(onIntegrityTab)
+  onIntegrityRef.current = onIntegrityTab
 
   const placeKey = `${assess?.lat ?? ''}|${assess?.lon ?? ''}|${activeEventId ?? ''}`
   const placeKeyRef = useRef(placeKey)
@@ -239,8 +254,11 @@ export default function App() {
       lon: number
       label: string
       eventId: string | null
+      skipCoordFields?: boolean
+      hourOffset?: number | null
     }) => {
       const gen = ++commitGen.current
+      const offset = target.hourOffset !== undefined ? target.hourOffset : hourOffset
       pendingTabRef.current = null
       setScreeningDone(false)
       setActiveTabId(INTEGRITY_TAB_ID)
@@ -253,8 +271,10 @@ export default function App() {
         error: null,
         assess: null,
       })
-      setLatInput(String(target.lat))
-      setLonInput(String(target.lon))
+      if (!target.skipCoordFields) {
+        setLatInput(String(target.lat))
+        setLonInput(String(target.lon))
+      }
       setSearchHits([])
       setSearchError(null)
 
@@ -266,9 +286,10 @@ export default function App() {
           acclimatized,
           profile,
           requiredHours,
+          skinType,
           corrupt: corruptDemo && !target.eventId,
           event: target.eventId,
-          hourOffset,
+          hourOffset: offset,
         })
         if (gen !== commitGen.current) return
 
@@ -323,12 +344,12 @@ export default function App() {
         })
       }
     },
-    [workload, acclimatized, profile, requiredHours, corruptDemo, hourOffset],
+    [workload, acclimatized, profile, requiredHours, skinType, corruptDemo, hourOffset],
   )
 
   const refreshLocationTab = useCallback(
     async (target: LocationTab, signal?: AbortSignal) => {
-      const gen = ++commitGen.current
+      const gen = settingsRefreshGen.current
       try {
         const a = await fetchAssess({
           lat: target.lat,
@@ -337,12 +358,13 @@ export default function App() {
           acclimatized,
           profile,
           requiredHours,
+          skinType,
           corrupt: corruptDemo && !target.eventId,
           event: target.eventId,
           hourOffset,
           signal,
         })
-        if (gen !== commitGen.current) return
+        if (gen !== settingsRefreshGen.current) return
 
         let label = target.label
         let lat = target.lat
@@ -379,7 +401,10 @@ export default function App() {
                   assess: a,
                   fires: [],
                   firesError: null,
-                  selectedDay: a.days?.[0]?.day ?? t.selectedDay,
+                  selectedDay:
+                    t.selectedDay && (a.days ?? []).some((d) => d.day === t.selectedDay)
+                      ? t.selectedDay
+                      : a.days?.[0]?.day ?? t.selectedDay,
                 }
               : t,
           ),
@@ -389,7 +414,7 @@ export default function App() {
         /* keep existing tab data on refresh failure */
       }
     },
-    [workload, acclimatized, profile, requiredHours, corruptDemo, hourOffset],
+    [workload, acclimatized, profile, requiredHours, skinType, corruptDemo, hourOffset],
   )
 
   // Boot: only auto-load when the URL names a place (?lat/&lon or ?event).
@@ -405,6 +430,8 @@ export default function App() {
         lon: urlLoc?.lon ?? 0,
         label: event,
         eventId: event,
+        skipCoordFields: !urlLoc,
+        hourOffset,
       })
     } else if (urlLoc) {
       void commitAssess({
@@ -414,25 +441,51 @@ export default function App() {
         eventId: null,
       })
     }
-  }, [commitAssess])
+  }, [commitAssess, hourOffset])
 
-  // Refresh active tab when shared settings change (after boot)
-  const settingsKey = `${workload}|${acclimatized}|${profile}|${requiredHours}`
+  // Refresh every location tab (or re-assess Integrity) when shared settings change.
+  const settingsKey = `${workload}|${acclimatized}|${profile}|${requiredHours}|${skinType}|${hourOffset ?? ''}`
   const prevSettings = useRef(settingsKey)
   useEffect(() => {
     if (prevSettings.current === settingsKey) return
     prevSettings.current = settingsKey
-    if (onIntegrityTab || !activeTab) return
+    if (skipSettingsOnce.current) {
+      skipSettingsOnce.current = false
+      return
+    }
 
     settingsAbort.current?.abort()
     const ac = new AbortController()
     settingsAbort.current = ac
     const gen = ++settingsRefreshGen.current
     setSettingsRefreshing(true)
-    void refreshLocationTab(activeTab, ac.signal).finally(() => {
+    const finish = () => {
       if (gen === settingsRefreshGen.current) setSettingsRefreshing(false)
-    })
-  }, [settingsKey, onIntegrityTab, activeTab, refreshLocationTab])
+    }
+
+    if (onIntegrityRef.current) {
+      const integ = integrityRef.current
+      if (integ.label && (integ.eventId || integ.assess || integ.loading)) {
+        void commitAssess({
+          lat: integ.lat,
+          lon: integ.lon,
+          label: integ.label,
+          eventId: integ.eventId,
+          skipCoordFields: Boolean(integ.eventId) && integ.lat === 0 && integ.lon === 0 && !integ.assess,
+        }).finally(finish)
+        return
+      }
+      finish()
+      return
+    }
+
+    const currentTabs = tabsRef.current
+    if (currentTabs.length === 0) {
+      finish()
+      return
+    }
+    void Promise.all(currentTabs.map((t) => refreshLocationTab(t, ac.signal))).finally(finish)
+  }, [settingsKey, commitAssess, refreshLocationTab])
 
   useEffect(() => () => settingsAbort.current?.abort(), [])
 
@@ -451,10 +504,21 @@ export default function App() {
   const applyHistoricalEvent = useCallback(
     (eventId: string | null) => {
       if (!eventId) {
+        setHourOffset(null)
         pendingTabRef.current = null
         setScreeningDone(false)
-        if (tabs.length > 0) {
-          setActiveTabId(tabs[tabs.length - 1]!.id)
+        if (locLat != null && locLon != null) {
+          skipSettingsOnce.current = true
+          void commitAssess({
+            lat: locLat,
+            lon: locLon,
+            label:
+              locLabel === 'Pick a location'
+                ? `${locLat.toFixed(3)}, ${locLon.toFixed(3)}`
+                : locLabel,
+            eventId: null,
+            hourOffset: null,
+          })
           return
         }
         setActiveTabId(INTEGRITY_TAB_ID)
@@ -470,14 +534,19 @@ export default function App() {
         return
       }
       const ev = historicalEvents.find((e) => e.id === eventId)
+      const offset = ev?.default_hour_offset ?? 0
+      setHourOffset(offset)
+      skipSettingsOnce.current = true
       void commitAssess({
         lat: ev?.lat ?? locLat ?? 0,
         lon: ev?.lon ?? locLon ?? 0,
         label: ev?.label ?? eventId,
         eventId,
+        skipCoordFields: !ev && (locLat == null || locLon == null),
+        hourOffset: offset,
       })
     },
-    [commitAssess, historicalEvents, locLat, locLon, tabs],
+    [commitAssess, historicalEvents, locLat, locLon, locLabel],
   )
 
   useEffect(() => {
@@ -537,14 +606,28 @@ export default function App() {
   const mapSmoke = assess?.smoke.smoke_pressure ?? 0
   const displayLoadScore = focusedRow?.load_score ?? assess?.environmental_load?.load_score
   const displayInteractions = focusedRow?.interactions ?? assess?.environmental_load?.interactions
-  const displayWind = assess?.current.wind_direction_deg ?? null
-  const displayWindSpeed = assess?.current.wind_speed_kmh ?? null
+  const displayWind = focusedRow?.wind_direction_deg ?? assess?.current.wind_direction_deg ?? null
+  const displayWindSpeed = focusedRow?.wind_speed_kmh ?? assess?.current.wind_speed_kmh ?? null
   const currentHour =
     assess?.hourly.find((h) => h.is_current)?.hour ?? assess?.hourly[0]?.hour ?? null
   const scrubHour = focusHour?.hour ?? currentHour
   const inspectingLabel = focusedRow
     ? `Inspecting ${focusedRow.day ? `${focusedRow.day} ` : ''}${String(focusedRow.hour).padStart(2, '0')}:00`
     : null
+  const todayKey =
+    assess?.hourly.find((h) => h.is_current)?.day ?? assess?.days?.[0]?.day ?? null
+  const selectedDay = onIntegrityTab ? null : (activeTab?.selectedDay ?? todayKey)
+  const dayIsToday = !selectedDay || selectedDay === todayKey
+  const dayHourly = useMemo(() => {
+    if (!assess) return []
+    const pool = assess.horizon?.length ? assess.horizon : assess.hourly
+    if (!selectedDay) return assess.hourly
+    const rows = pool.filter((h) => h.day === selectedDay)
+    return rows.length > 0 ? rows : assess.hourly
+  }, [assess, selectedDay])
+  const requestedShiftHours = selectedShift ? shiftBounds(selectedShift).duration : 0
+  const siteValidAt =
+    assess?.hourly.find((h) => h.is_current)?.valid_at ?? assess?.hourly[0]?.valid_at ?? null
 
   useEffect(() => {
     setFocusHour(null)
@@ -594,6 +677,12 @@ export default function App() {
     }
     params.set('workload', workload)
     params.set('profile', profile)
+    params.set('acclimatized', acclimatized ? '1' : '0')
+    params.set('required_hours', String(requiredHours))
+    params.set('skin_type', String(skinType))
+    if (activeEventId && hourOffset != null) params.set('hour_offset', String(hourOffset))
+    else params.delete('hour_offset')
+    if (theme === 'sunlight' || theme === 'ops') params.set('theme', theme)
     if (textMode) params.set('text', '1')
     else params.delete('text')
     if (corruptDemo) params.set('corrupt', '1')
@@ -601,7 +690,20 @@ export default function App() {
     const qs = params.toString()
     const next = `${window.location.pathname}?${qs}${window.location.hash}`
     window.history.replaceState(null, '', next)
-  }, [locLat, locLon, workload, profile, textMode, corruptDemo, activeEventId])
+  }, [
+    locLat,
+    locLon,
+    workload,
+    profile,
+    acclimatized,
+    requiredHours,
+    skinType,
+    hourOffset,
+    theme,
+    textMode,
+    corruptDemo,
+    activeEventId,
+  ])
 
   async function runSearch(e?: FormEvent) {
     e?.preventDefault()
@@ -627,32 +729,21 @@ export default function App() {
 
   function goLatLon(e?: FormEvent) {
     e?.preventDefault()
-    const lat = Number(latInput)
-    const lon = Number(lonInput)
-    if (!Number.isFinite(lat) || lat < -90 || lat > 90) {
+    const parsed = parseLatLonInputs(latInput, lonInput)
+    if (!parsed.ok) {
       setActiveTabId(INTEGRITY_TAB_ID)
       setIntegrity((s) => ({
         ...s,
         loading: false,
-        error: 'Latitude must be between -90 and 90',
-        assess: null,
-      }))
-      return
-    }
-    if (!Number.isFinite(lon) || lon < -180 || lon > 180) {
-      setActiveTabId(INTEGRITY_TAB_ID)
-      setIntegrity((s) => ({
-        ...s,
-        loading: false,
-        error: 'Longitude must be between -180 and 180',
+        error: parsed.error,
         assess: null,
       }))
       return
     }
     applyLocation({
-      lat: Math.round(lat * 1000) / 1000,
-      lon: Math.round(lon * 1000) / 1000,
-      label: `${lat.toFixed(3)}, ${lon.toFixed(3)}`,
+      lat: roundCoord(parsed.lat),
+      lon: roundCoord(parsed.lon),
+      label: `${parsed.lat.toFixed(3)}, ${parsed.lon.toFixed(3)}`,
     })
   }
 
@@ -702,14 +793,18 @@ export default function App() {
     workload,
     profile,
     acclimatized,
+    skinType,
     historicalEvents,
     activeEventId,
+    hourOffset,
     onSearchQuery: setSearchQuery,
     onLatInput: setLatInput,
     onLonInput: setLonInput,
     onWorkload: setWorkload,
     onProfile: setProfile,
     onAcclimatized: setAcclimatized,
+    onSkinType: setSkinType,
+    onHourOffset: setHourOffset,
     onApplyLocation: applyLocation,
     onSelectHistoricalEvent: applyHistoricalEvent,
     onRunSearch: runSearch,
@@ -793,7 +888,7 @@ export default function App() {
             <span className="type-caption text-[var(--muted)] font-normal">{locLabel}</span>
           </summary>
           <div className="border-t border-[var(--border)] px-3.5 py-3">
-            <SidebarControls {...controlsProps} />
+            <SidebarControls {...controlsProps} idPrefix="mobile" />
           </div>
         </details>
 
@@ -809,7 +904,9 @@ export default function App() {
                 role="status"
                 className="rounded border-2 border-[var(--caution)] bg-[var(--caution-bg)] px-3.5 py-2.5 text-sm"
               >
-                You appear offline. Showing the last cached assessment if available.
+                {locLabel && locLabel !== 'Pick a location'
+                  ? `You appear offline. Showing the last cached assessment for ${locLabel} if available.`
+                  : 'You appear offline. Showing the last cached assessment if available.'}
               </aside>
             )}
 
@@ -869,18 +966,6 @@ export default function App() {
                         </p>
                       </aside>
                     )}
-                    {screeningDone && !integrityBlocked && (
-                      <aside
-                        role="status"
-                        className="rounded border-2 border-[var(--go)] bg-[var(--go-bg)] px-3.5 py-3 text-sm"
-                      >
-                        <p className="font-bold">Integrity checks passed</p>
-                        <p className="mt-1 text-[var(--muted)]">
-                          {integrity.label} opened in a location tab. Switch tabs above to view the
-                          full assessment.
-                        </p>
-                      </aside>
-                    )}
                     {!screeningDone && !integrityBlocked && (
                       <p className="text-xs text-[var(--muted)]">
                         Watch the live screening. A location tab opens when the confidence score
@@ -891,8 +976,9 @@ export default function App() {
                       <ConfidenceBanner confidence={integrity.assess.data_confidence} />
                     )}
                     <IntegrityTheater
-                      key={`${integrity.lat}|${integrity.lon}|${integrity.eventId}|${integrity.assess.data_confidence?.score}`}
+                      key={`${integrity.lat}|${integrity.lon}|${integrity.eventId}|${integrity.assess.data_confidence?.score}|${(integrity.assess.data_confidence?.findings ?? []).map((f) => f.check_id).join(',')}`}
                       confidence={integrity.assess.data_confidence}
+                      nwsActive={integrity.assess.nws_status?.state === 'active'}
                       forceOpen={true}
                       onComplete={finishIntegrityScreening}
                     />
@@ -944,9 +1030,16 @@ export default function App() {
                 )}
 
                 <div className="layout-hero-band space-y-2">
+                  {assess.data_confidence && (
+                    <p className="text-xs text-[var(--muted)]">
+                      Integrity {assess.data_confidence.level} ({assess.data_confidence.score}) —
+                      screening complete.
+                    </p>
+                  )}
                   <StormAlertBanner
                     storm={assess.storm}
                     alerts={assess.active_alerts ?? []}
+                    siteValidAt={siteValidAt}
                   />
                   <StaleBanner
                     freshness={assess.data_freshness}
@@ -960,6 +1053,16 @@ export default function App() {
                       verdict={displayVerdict}
                       hardStop={assess.schedule.hard_stop_window}
                       bestWork={assess.schedule.best_work_window}
+                      hardStopLabel={
+                        inspectingLabel
+                          ? "Today's hard-stop — not this hour"
+                          : 'Hard-stop'
+                      }
+                      bestWorkLabel={
+                        inspectingLabel
+                          ? "Today's best work — not this hour"
+                          : 'Best work'
+                      }
                       heatIndex={displayHeat}
                       smokePressure={displaySmoke}
                       loadScore={displayLoadScore}
@@ -988,7 +1091,9 @@ export default function App() {
                       }
                       usAqi={assess.air?.us_aqi ?? assess.current.us_aqi}
                     />
-                    {assess.uv && <UVPanel uv={assess.uv} />}
+                    {assess.uv && (
+                      <UVPanel uv={assess.uv} skinType={skinType} onSkinType={setSkinType} />
+                    )}
                   </div>
                 </div>
 
@@ -1005,22 +1110,55 @@ export default function App() {
                     historicalEnd={assess.historical_event?.end_date ?? null}
                   />
                 </div>
+                {assess.fires && assess.fires.length > 0 && (
+                  <section className="dash-panel p-3.5">
+                    <h2 className="dash-section-label">FIRMS heat detections (not smoke)</h2>
+                    <p className="mt-1 text-xs text-[var(--muted)]">
+                      Satellite fire radiative power near this historical bundle. Not a smoke field
+                      and not AQI.
+                    </p>
+                    <ul className="mt-2 max-h-40 overflow-auto space-y-1 text-xs">
+                      {assess.fires.slice(0, 40).map((f, i) => (
+                        <li key={`${f.latitude}-${f.longitude}-${f.acq_date}-${f.acq_time}-${i}`}>
+                          {f.latitude.toFixed(3)}, {f.longitude.toFixed(3)} · FRP{' '}
+                          {f.frp != null ? f.frp.toFixed(1) : 'n/a'} · {f.acq_date} {f.acq_time} ·{' '}
+                          {f.satellite}
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                )}
 
-                <HourlyShiftForecast hours={shiftHours} textMode={textMode} />
+                <HourlyShiftForecast
+                  hours={shiftHours}
+                  textMode={textMode}
+                  requestedHours={requestedShiftHours}
+                />
+
+                {(assess.days ?? []).length > 0 && (
+                  <FiveDayStrip
+                    days={assess.days ?? []}
+                    selectedDay={selectedDay}
+                    onSelect={setSelectedDay}
+                  />
+                )}
 
                 <ConditionChartsPanel
-                  hourly={assess.hourly}
+                  hourly={dayHourly.length ? dayHourly : assess.hourly}
                   horizon={assess.horizon}
                   textMode={textMode}
                   onSelectHour={onSelectHour}
+                  selectedDay={selectedDay}
                 />
 
                 <TimelinePanel
-                  hourly={assess.hourly}
+                  hourly={dayHourly.length ? dayHourly : assess.hourly}
                   textMode={textMode}
                   hardStop={assess.schedule.hard_stop_window}
                   bestWork={assess.schedule.best_work_window}
                   scrubHour={scrubHour}
+                  dayIsToday={dayIsToday}
+                  selectedDay={selectedDay}
                 />
 
                 <ShiftSheetExport
@@ -1070,7 +1208,7 @@ export default function App() {
           >
             <div className="hidden lg:block sidebar-module">
               <p className="dash-section-label mb-3">Controls & settings</p>
-              <SidebarControls {...controlsProps} />
+              <SidebarControls {...controlsProps} idPrefix="desktop" />
             </div>
 
             {showLocationContent && assess && (
@@ -1111,21 +1249,11 @@ export default function App() {
               Validation
             </a>
             {' · '}
-            <a className="underline" href="?text=1">
-              Text-only mode
+            <a className="underline" href={mergeQuery({ text: textMode ? null : '1' })}>
+              {textMode ? 'Leave text-only' : 'Text-only mode'}
             </a>
           </p>
           <p>
-            Share this location:{' '}
-            <a
-              className="underline"
-              href={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(window.location.href)}`}
-              target="_blank"
-              rel="noreferrer"
-            >
-              QR code link
-            </a>
-            {' · '}
             Integrity demo: add <code>?corrupt=1</code> to the URL
           </p>
           <p>Not medical advice. Screening tool for crew scheduling only.</p>

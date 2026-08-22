@@ -10,8 +10,8 @@ export function HowWeCalculate() {
       <div className="mt-2 space-y-2 text-xs leading-relaxed text-[var(--muted)]">
         <p>
           <strong className="text-[var(--ink)]">Heat:</strong> NWS Rothfusz heat index with RH
-          adjustments, workload/acclimatization shifts, and a +8°F full-sun screening penalty.
-          Screening tool — not WBGT, not medical advice.
+          adjustments, workload/acclimatization shifts, and +8°F when cloud cover &lt; 50% (not a
+          shade toggle). Screening tool — not WBGT, not medical advice.
         </p>
         <p>
           <strong className="text-[var(--ink)]">Smoke:</strong> CAMS PM2.5 via Open-Meteo

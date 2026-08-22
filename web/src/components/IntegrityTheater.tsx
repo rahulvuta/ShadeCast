@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { DataConfidence } from '../types'
 import {
   INTEGRITY_CATALOG,
+  NWS_CATALOG_IDS,
   catalogIdForFinding,
   groupedCatalog,
 } from '../lib/integrityCatalog'
@@ -22,9 +23,9 @@ function formatObserved(v: unknown): string {
   return String(v)
 }
 
-type RowState = 'pending' | 'pass' | 'fail'
+type RowState = 'pending' | 'pass' | 'fail' | 'na'
 
-const CHECK_MS = 80
+const CHECK_MS = 58
 const GAUGE_MS = 700
 const SETTLE_MS = 500
 
@@ -36,12 +37,15 @@ export function IntegrityTheater({
   confidence,
   forceOpen = false,
   onComplete,
+  nwsActive = true,
 }: {
   confidence: DataConfidence | null | undefined
   /** When true (corrupt demo), expand and animate immediately. */
   forceOpen?: boolean
   /** Fires after the checklist and score have settled (or immediately if motion is reduced). */
   onComplete?: () => void
+  /** When false, NWS catalog rows are N/A rather than OK. */
+  nwsActive?: boolean
 }) {
   const findings = confidence?.findings ?? []
   const score = confidence?.score ?? 100
@@ -156,8 +160,13 @@ export function IntegrityTheater({
 
   function rowState(checkId: string, index: number): RowState {
     if (index >= revealed) return 'pending'
+    if (!nwsActive && NWS_CATALOG_IDS.has(checkId)) return 'na'
     return failMap.has(checkId) ? 'fail' : 'pass'
   }
+
+  const warningOnly =
+    findings.length > 0 &&
+    findings.every((f) => f.severity === 'WARNING' || f.severity === 'INFO')
 
   const gaugeTone =
     gauge >= 80 ? 'var(--go)' : gauge >= 55 ? 'var(--caution)' : gauge >= 30 ? 'var(--restrict)' : 'var(--stop)'
@@ -222,7 +231,9 @@ export function IntegrityTheater({
                         ? 'border-[var(--border)] bg-[var(--panel)] opacity-40'
                         : state === 'pass'
                           ? 'border-[var(--go)]/40 bg-[var(--go-bg)]'
-                          : 'border-[var(--restrict)]/50 bg-[var(--restrict-bg)]'
+                          : state === 'na'
+                            ? 'border-[var(--border)] bg-[var(--chip-bg)]'
+                            : 'border-[var(--restrict)]/50 bg-[var(--restrict-bg)]'
                     }`}
                   >
                     <div className="flex items-start gap-2">
@@ -230,10 +241,15 @@ export function IntegrityTheater({
                         className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-[0.7rem] font-black"
                         aria-hidden
                       >
-                        {state === 'pending' ? '·' : state === 'pass' ? 'OK' : 'X'}
+                        {state === 'pending' ? '·' : state === 'pass' ? 'OK' : state === 'na' ? '—' : 'X'}
                       </span>
                       <div className="min-w-0 flex-1">
                         <p className="font-semibold leading-snug">{check.label}</p>
+                        {state === 'na' && (
+                          <p className="mt-1 text-xs font-normal text-[var(--muted)]">
+                            N/A — NWS not active for this location
+                          </p>
+                        )}
                         {state === 'fail' && finding && (
                           <div className="mt-1 space-y-0.5 text-xs text-[var(--muted)] font-normal">
                             <p className="text-[var(--ink)]">{finding.message}</p>
@@ -261,9 +277,16 @@ export function IntegrityTheater({
         ))}
       </div>
 
+      {warningOnly && revealed >= flatIds.length && (
+        <p className="text-sm text-[var(--muted)]">
+          WARNING-only findings can fail checklist rows. Score and level are not LOW unless an
+          ERROR-class finding is present.
+        </p>
+      )}
+
       {!hasFailures && revealed >= flatIds.length && (
         <p className="text-sm text-[var(--go)] font-semibold">
-          All integrity checks passed — inputs look trustworthy for this assessment.
+          All applicable integrity checks passed — inputs look trustworthy for this assessment.
         </p>
       )}
     </div>

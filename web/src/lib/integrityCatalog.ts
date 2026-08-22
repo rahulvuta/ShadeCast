@@ -46,6 +46,13 @@ export const INTEGRITY_CATALOG: CatalogCheck[] = [
   { id: 'stale_climatology', category: 'staleness', label: 'Climatology freshness' },
 ]
 
+export const NWS_CATALOG_IDS = new Set([
+  'nws_temp_divergence',
+  'nws_wind_divergence',
+  'nws_alert_expired',
+  'nws_missing_grid',
+])
+
 export const CATEGORY_LABELS: Record<IntegrityCategory, string> = {
   range: 'Range',
   physical: 'Physical consistency',

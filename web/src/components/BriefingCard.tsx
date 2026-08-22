@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { BriefResponse } from '../types'
+import { CLIPBOARD_FAIL, copyText } from '../lib/clipboard'
 
 export function BriefingCard({
   brief,
@@ -11,6 +12,7 @@ export function BriefingCard({
   error?: string | null
 }) {
   const [copied, setCopied] = useState(false)
+  const [copyError, setCopyError] = useState<string | null>(null)
 
   function plainText(): string {
     if (!brief) return ''
@@ -29,12 +31,14 @@ export function BriefingCard({
   }
 
   async function copy() {
-    try {
-      await navigator.clipboard.writeText(plainText())
+    setCopyError(null)
+    const ok = await copyText(plainText())
+    if (ok) {
       setCopied(true)
       window.setTimeout(() => setCopied(false), 2000)
-    } catch {
+    } else {
       setCopied(false)
+      setCopyError(CLIPBOARD_FAIL)
     }
   }
 
@@ -53,6 +57,7 @@ export function BriefingCard({
           {copied ? 'Copied' : 'Copy'}
         </button>
       </div>
+      {copyError && <p className="mt-2 text-xs text-[var(--oi-vermillion)]">{copyError}</p>}
 
       {loading && <p className="mt-3 text-sm text-[var(--muted)]">Writing summary…</p>}
       {!loading && error && (

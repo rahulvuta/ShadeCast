@@ -46,7 +46,7 @@ The underlying CAMS models update roughly every **24 hours** at ~45 km (global) 
 
 ## 10. UV minutes-to-burn is educational, not clinical
 
-Minutes-to-burn uses representative Fitzpatrick Minimal Erythemal Dose (MED) values and the WHO UV Index irradiance conversion. Default skin type is **III** and is shown in the UI. Real burn risk varies with altitude, reflection, photosensitizing medication, and application of sunscreen. This is **not** a phototherapy dosing tool.
+Minutes-to-burn uses representative Fitzpatrick Minimal Erythemal Dose (MED) values and the WHO UV Index irradiance conversion. The UI exposes Fitzpatrick types **I–VI** (`skin_type` on `/api/assess` and in the sidebar). Default is **III**. Real burn risk varies with altitude, reflection, photosensitizing medication, and application of sunscreen. This is **not** a phototherapy dosing tool. The UV meter is scaled **0–15** with **11+ labeled Extreme**.
 
 ## 11. Sensitivity profiles are threshold shifts, not diagnoses
 
@@ -81,7 +81,7 @@ CRITICAL is reserved for physically impossible inputs (POWER −999 sentinels, o
 
 `/api/assess` may soft-refresh FIRMS (and forecast/AQ/POWER) for new or stale coordinates, writing into Postgres with fail-soft behavior. Cron remains the primary demo-location ingest. Place search goes through `/api/geocode` (server proxy).
 
-The web service worker caches the app shell and **per-URL** `/api/assess` responses for offline replay of a previously viewed location — not a full PWA product claim.
+The web service worker caches the app shell and **per-URL** `/api/assess` responses for offline replay of a previously viewed location — not a full PWA product claim. Other `/api/*` routes are not cached. Share links persist `lat`/`lon` or `event`, plus `workload`, `profile`, `acclimatized`, `required_hours`, `skin_type`, `theme`, and (for historical replay) `hour_offset`. Text-only mode is `text=1` merged into the current query.
 
 ## 14b. Basemap tiles (OpenStreetMap)
 
@@ -105,7 +105,7 @@ NWS is **additive**: Open-Meteo still drives the global schedule. A 0–6 hour o
 
 Alert arrival is **not instantaneous**. We fetch `/alerts/active` live per assess call with a 5-minute cache floor, behind a per-process token bucket (1/s sustained, burst 5) that backs off when weather.gov returns 403/429. There is still NWS issuance latency, network delay, and that cache floor. Do not treat ShadeCast as a warning-radio replacement.
 
-A miss reports **which kind** of miss it is. `outside_us` means weather.gov gave a definitive answer for that coordinate; `pending` means the lookup itself did not complete (throttled, network error, or a first visit that has not resolved yet) and will retry on the next assess. A transient failure is never presented as absent coverage. NWS also asks clients to re-check `/points` periodically because a coordinate's grid or office can change, so the mapping carries a 30-day TTL — and a failed re-check keeps the cached mapping rather than downgrading the location.
+A miss reports **which kind** of miss it is. `outside_us` means weather.gov gave a definitive answer for that coordinate; `pending` means the lookup itself did not complete (throttled, network error, or a first visit that has not resolved yet) and will retry on the next assess. A transient failure is never presented as absent coverage. NWS also asks clients to re-check `/points` periodically because a coordinate's grid or office can change, so the mapping carries a 30-day TTL — and a failed re-check keeps the cached mapping rather than downgrading the location. Integrity catalog rows that only apply when NWS is live (`nws_temp_divergence`, `nws_wind_divergence`, `nws_alert_expired`, `nws_missing_grid`) show **N/A** when `nws_status.state` is not `active` — they are not marked OK.
 
 ## 17. Storm signals: NWS typed floors, Open-Meteo when NWS is missing
 

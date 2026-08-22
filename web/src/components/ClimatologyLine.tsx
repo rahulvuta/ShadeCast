@@ -40,7 +40,7 @@ export function ClimatologyLine({
     <section aria-labelledby="clim-heading" className="dash-panel flex h-full flex-col p-3.5 sm:p-4">
       <p className="dash-section-label">Climatology & trends</p>
       <h2 id="clim-heading" className="mt-0.5 text-sm font-bold">
-        Today vs NASA POWER
+        Today vs POWER baseline (POWER time is solar LST, not civil TZ)
       </h2>
       {delta != null && (
         <p className={`mt-3 text-3xl font-black tabular-nums tracking-tight ${deltaColor}`}>

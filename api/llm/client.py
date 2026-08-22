@@ -1,6 +1,7 @@
 """Featherless OpenAI-compatible briefing client.
 
-Falls back silently on any failure. Cache keyed by (rounded coords, hour, language, verdict).
+Falls back silently on any failure. Cache keyed by rounded coords, crew-local hour,
+language, verdict, workload, profile, acclimatized, and hourly-verdict fingerprint.
 """
 
 from __future__ import annotations
@@ -31,9 +32,67 @@ logger = logging.getLogger(__name__)
 Lang = Literal["en", "es", "vi"]
 
 
-def _cache_key(lat: float, lon: float, hour: int, lang: str, verdict: str) -> str:
-    raw = f"{round_coord(lat)}:{round_coord(lon)}:{hour}:{lang}:{verdict}"
+def crew_local_hour(engine: dict[str, Any]) -> int:
+    """Crew-site hour from current.valid_at or the is_current hourly row — not API-box now()."""
+    current = engine.get("current") or {}
+    va = current.get("valid_at")
+    parsed = _parse_iso_hour(va)
+    if parsed is not None:
+        return parsed
+    for row in engine.get("hourly") or []:
+        if not row.get("is_current"):
+            continue
+        hour = row.get("hour")
+        if hour is not None:
+            try:
+                return int(hour) % 24
+            except (TypeError, ValueError):
+                pass
+        parsed = _parse_iso_hour(row.get("valid_at"))
+        if parsed is not None:
+            return parsed
+    return 0
+
+
+def _parse_iso_hour(value: object) -> int | None:
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        return dt.hour
+    except (TypeError, ValueError):
+        return None
+
+
+def hourly_verdict_fingerprint(engine: dict[str, Any]) -> str:
+    parts: list[str] = []
+    for row in engine.get("hourly") or []:
+        parts.append(f"{row.get('day', '')}:{row.get('hour')}:{row.get('verdict')}")
+    raw = "|".join(parts)
+    return hashlib.sha256(raw.encode()).hexdigest()[:16]
+
+
+def cache_key(
+    lat: float,
+    lon: float,
+    hour: int,
+    lang: str,
+    verdict: str,
+    *,
+    workload: str = "moderate",
+    profile: str = "general",
+    acclimatized: bool = False,
+    hourly_fingerprint: str = "",
+) -> str:
+    raw = (
+        f"{round_coord(lat)}:{round_coord(lon)}:{hour}:{lang}:{verdict}:"
+        f"{workload}:{profile}:{int(acclimatized)}:{hourly_fingerprint}"
+    )
     return hashlib.sha256(raw.encode()).hexdigest()[:40]
+
+
+def _cache_key(lat: float, lon: float, hour: int, lang: str, verdict: str) -> str:
+    return cache_key(lat, lon, hour, lang, verdict)
 
 
 def _validate_brief(data: dict[str, Any], lang: str, used_fallback: bool, cached: bool) -> BriefResponse:
@@ -60,8 +119,22 @@ def generate_brief(
 ) -> BriefResponse:
     settings = get_settings()
     verdict = (engine.get("current") or {}).get("verdict") or "CAUTION"
-    hour = datetime.now().hour
-    key = _cache_key(lat, lon, hour, lang, verdict)
+    hour = crew_local_hour(engine)
+    workload = str(engine.get("workload") or "moderate")
+    profile = str(engine.get("sensitivity_profile") or engine.get("profile") or "general")
+    acclimatized = bool(engine.get("acclimatized"))
+    fingerprint = hourly_verdict_fingerprint(engine)
+    key = cache_key(
+        lat,
+        lon,
+        hour,
+        lang,
+        str(verdict),
+        workload=workload,
+        profile=profile,
+        acclimatized=acclimatized,
+        hourly_fingerprint=fingerprint,
+    )
 
     existing = session.scalars(select(LlmCall).where(LlmCall.cache_key == key)).first()
     if existing:
@@ -96,7 +169,7 @@ def generate_brief(
                     json={
                         "model": model,
                         "temperature": 0.2,
-                        "max_tokens": 400,
+                        "max_tokens": 800,
                         "messages": messages,
                     },
                 )

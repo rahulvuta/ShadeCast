@@ -29,7 +29,7 @@ function ItemRows({ items }: { items: ActionItem[] }) {
           <KitIcon glyph={kitGlyphFor(a.id)} className="mt-0.5 inline-flex shrink-0 text-[var(--ink)]" />
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold">{a.title}</p>
-            <p className="mt-0.5 truncate text-xs text-[var(--muted)]">{a.body}</p>
+            <p className="mt-0.5 text-xs text-[var(--muted)]">{a.body}</p>
             <WhySource body={a.body} sourceUrl={a.source_url} sourceName={a.source_name} />
           </div>
         </li>
@@ -96,12 +96,10 @@ function BodyFigure({
           style={{ opacity: layer.base || layer.zone === selected ? 1 : 0.55 }}
         />
       ))}
-      <ZoneHit zone="head" label="Head" className="left-[38%] top-[5%] h-[16%] w-[24%]" />
-      <ZoneHit zone="eyes" label="Eyes" className="left-[40%] top-[9%] h-[5%] w-[20%]" />
-      <ZoneHit zone="respiratory" label="Respiratory" className="left-[40%] top-[13%] h-[7%] w-[20%]" />
+      <ZoneHit zone="head" label="Head" className="left-[40%] top-[1%] h-[8%] w-[20%]" />
+      <ZoneHit zone="eyes" label="Eyes" className="left-[42%] top-[10%] h-[4%] w-[16%]" />
+      <ZoneHit zone="respiratory" label="Respiratory" className="left-[43%] top-[14.5%] h-[5%] w-[14%]" />
       <ZoneHit zone="torso" label="Torso" className="left-[30%] top-[20%] h-[32%] w-[40%]" />
-      <ZoneHit zone="hands" label="Hands" className="left-[8%] top-[42%] h-[12%] w-[16%]" />
-      <ZoneHit zone="hands" label="Hands" className="right-[8%] top-[42%] h-[12%] w-[16%]" />
       <ZoneHit zone="feet" label="Feet" className="left-[18%] top-[80%] h-[16%] w-[64%]" />
     </figure>
   )
@@ -144,7 +142,8 @@ export function ClothingPanel({
         Clothing and PPE
       </h2>
       <p className="mt-1 text-xs text-[var(--muted)]">
-        Deterministic kit list from the same sourced library as the action cards. Select a body zone.
+        Jeans and tee are the base silhouette. Recommendations overlay those layers. Hands are not
+        shown as gloves. Select a body zone.
       </p>
 
       {textMode ? (

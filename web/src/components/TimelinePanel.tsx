@@ -8,12 +8,16 @@ export function TimelinePanel({
   hardStop,
   bestWork,
   scrubHour,
+  dayIsToday = true,
+  selectedDay = null,
 }: {
   hourly: AssessResponse['hourly']
   textMode: boolean
   hardStop?: string | null
   bestWork?: string | null
   scrubHour?: number | null
+  dayIsToday?: boolean
+  selectedDay?: string | null
 }) {
   return (
     <section aria-labelledby="timeline-heading" className="dash-panel p-4 sm:p-5">
@@ -22,11 +26,11 @@ export function TimelinePanel({
           Timeline & risk peaks
         </h2>
         <p className="text-xs text-[var(--muted)] mt-0.5">
-          Hour-by-hour work/rest and 24-hour severity for today
+          Hour-by-hour work/rest and 24-hour severity for {dayIsToday ? 'today' : 'this day'}
         </p>
       </div>
 
-      <ScheduleStrip hourly={hourly} embedded />
+      <ScheduleStrip hourly={hourly} embedded dayIsToday={dayIsToday} />
       {!textMode && (
         <div className="mt-4 border-t border-[var(--border)] pt-4">
           <RiskClock
@@ -35,6 +39,7 @@ export function TimelinePanel({
             bestWork={bestWork}
             currentHour={scrubHour}
             embedded
+            selectedDay={selectedDay}
           />
         </div>
       )}

@@ -1,8 +1,9 @@
 import { useMemo, useState, type CSSProperties } from 'react'
-import type { AssessResponse, Verdict } from '../types'
+import type { AssessResponse } from '../types'
 import { HourlyChart } from './HourlyChart'
 import { verdictPalette } from '../design/tokens'
 import { usePrefersReducedMotion } from '../design/usePrefersReducedMotion'
+import { clockHoursForDay } from '../lib/riskClock'
 
 const VERDICT_COLOR: Record<string, string> = {
   GO: verdictPalette.GO.base,
@@ -75,29 +76,22 @@ export function RiskClock({
   bestWork,
   currentHour,
   embedded = false,
+  selectedDay = null,
 }: {
   hourly: AssessResponse['hourly']
   hardStop?: string | null
   bestWork?: string | null
   currentHour?: number | null
   embedded?: boolean
+  selectedDay?: string | null
 }) {
   const [mode, setMode] = useState<'clock' | 'bars'>('clock')
   const reducedMotion = usePrefersReducedMotion()
 
-  const todayHours = useMemo(() => {
-    const byHour = new Map<number, Verdict>()
-    for (const h of hourly) {
-      // Prefer today's is_current day cluster: take first 24 unique hours in order
-      if (!byHour.has(h.hour)) byHour.set(h.hour, h.verdict)
-    }
-    // Build full 24 from available; fill missing as GO lightly
-    const out: { hour: number; verdict: Verdict }[] = []
-    for (let h = 0; h < 24; h++) {
-      out.push({ hour: h, verdict: byHour.get(h) ?? 'GO' })
-    }
-    return out
-  }, [hourly])
+  const todayHours = useMemo(
+    () => clockHoursForDay(hourly, selectedDay),
+    [hourly, selectedDay],
+  )
 
   const needleHour =
     currentHour ??
@@ -127,16 +121,20 @@ export function RiskClock({
           <path
             key={hour}
             d={sectorPath(cx, cy, rInner, rOuter, hour, hour + 1)}
-            fill={VERDICT_COLOR[verdict] ?? '#5A6570'}
-            opacity={reducedMotion ? 0.85 : undefined}
-            className={reducedMotion ? undefined : 'motion-clock-sector'}
+            fill={verdict ? (VERDICT_COLOR[verdict] ?? '#5A6570') : 'var(--chip-bg)'}
+            opacity={verdict ? (reducedMotion ? 0.85 : undefined) : 0.35}
+            className={reducedMotion || !verdict ? undefined : 'motion-clock-sector'}
             style={
-              reducedMotion
+              reducedMotion || !verdict
                 ? undefined
                 : ({ ['--motion-delay' as string]: `${hour * 22}ms` } as CSSProperties)
             }
           >
-            <title>{`${String(hour).padStart(2, '0')}:00 — ${verdict}`}</title>
+            <title>
+              {verdict
+                ? `${String(hour).padStart(2, '0')}:00 — ${verdict}`
+                : `${String(hour).padStart(2, '0')}:00 — no data`}
+            </title>
           </path>
         ))}
         {hard && (
@@ -212,6 +210,9 @@ export function RiskClock({
         </li>
         <li className="flex items-center gap-1">
           <span className="inline-block h-2 w-2 rounded-sm" style={{ background: VERDICT_COLOR.STOP }} /> STOP
+        </li>
+        <li className="flex items-center gap-1">
+          <span className="inline-block h-2 w-2 rounded-sm bg-[var(--chip-bg)] opacity-70" /> no data
         </li>
       </ul>
       <p className="text-center text-[0.65rem] text-[var(--muted)]">

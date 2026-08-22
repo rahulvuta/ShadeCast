@@ -173,6 +173,9 @@ export function FireMap({
   const [size, setSize] = useState({ width: 0, height: 0 })
   const [zoomOffset, setZoomOffset] = useState(0)
   const [cells, setCells] = useState<AirGridCell[]>([])
+  const [gridError, setGridError] = useState<string | null>(null)
+  const [gridLoading, setGridLoading] = useState(false)
+  const [gridReload, setGridReload] = useState(0)
 
   const wind = windFromDeg ?? 0
   const legend = summaryLine(cells, smokePressure)
@@ -222,20 +225,31 @@ export function FireMap({
 
   useEffect(() => {
     let cancelled = false
+    setGridLoading(true)
+    setGridError(null)
     void fetchAirGrid(lat, lon, {
       startDate: historicalStart ?? undefined,
       endDate: historicalEnd ?? undefined,
     })
       .then((res) => {
-        if (!cancelled) setCells(res.cells ?? [])
+        if (!cancelled) {
+          setCells(res.cells ?? [])
+          setGridError(null)
+        }
       })
-      .catch(() => {
-        if (!cancelled) setCells([])
+      .catch((err) => {
+        if (!cancelled) {
+          setCells([])
+          setGridError(err instanceof Error ? err.message : 'Could not load CAMS field')
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setGridLoading(false)
       })
     return () => {
       cancelled = true
     }
-  }, [lat, lon, historicalStart, historicalEnd])
+  }, [lat, lon, historicalStart, historicalEnd, gridReload])
 
   useEffect(() => {
     if (!open || textMode || prefersReducedMotion()) {
@@ -268,7 +282,7 @@ export function FireMap({
   const windLabel =
     windFromDeg == null
       ? 'Wind n/a'
-      : `Wind from ${Math.round(windFromDeg)}° · ${windSpeedKmh != null ? `${Math.round(windSpeedKmh)} km/h` : 'speed n/a'}`
+      : `Wind from ${Math.round(windFromDeg)}° (meteorological). ${windSpeedKmh != null ? `${Math.round(windSpeedKmh)} km/h` : 'speed n/a'}`
   const ready = size.width > 0 && size.height > 0
   const scored = cells
     .map((c) => ({ c, score: cellScore(c) }))
@@ -294,6 +308,21 @@ export function FireMap({
         </button>
       </div>
       <p className="text-xs text-[var(--muted)] mt-1">{legend}</p>
+      {gridError && (
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-[var(--restrict)]">
+          <span>CAMS field failed to load. {gridError}</span>
+          <button
+            type="button"
+            className="touch-target rounded border border-[var(--border)] px-2 py-1 font-semibold text-[var(--ink)]"
+            onClick={() => setGridReload((n) => n + 1)}
+          >
+            Reload field
+          </button>
+        </div>
+      )}
+      {gridLoading && !gridError && (
+        <p className="mt-1 text-xs text-[var(--muted)]">Loading CAMS field…</p>
+      )}
       <p className="type-micro text-[var(--muted)] mt-1 normal-case tracking-normal font-normal">
         Dashed ring = CAMS field extent ({CAMS_VIEW_RADIUS_KM} km). Shaded disc = regional Open-Meteo
         CAMS PM2.5 / US AQI (~45 km model, ~24 h lag). Not sample-site markers. {windLabel}
@@ -375,7 +404,7 @@ export function FireMap({
                 </svg>
               </div>
               <div className="min-w-0">
-                <p className="type-micro text-[var(--muted)]">Wind from</p>
+                <p className="type-micro text-[var(--muted)]">Wind from (meteorological)</p>
                 <p className="text-xl font-bold leading-tight text-[var(--ink)]">
                   {Math.round(windFromDeg)}°
                 </p>

@@ -36,19 +36,32 @@ const FALLBACK_TONE: UvTone = {
   meter: 'bg-[var(--muted)]',
 }
 
+const UV_SCALE_MAX = 15
+
 function uvMeterPct(value: number): number {
-  return Math.max(2, Math.min(100, (value / 12) * 100))
+  return Math.max(2, Math.min(100, (value / UV_SCALE_MAX) * 100))
 }
 
-export function UVPanel({ uv }: { uv: NonNullable<AssessResponse['uv']> }) {
+const SKIN_LABELS = ['I', 'II', 'III', 'IV', 'V', 'VI'] as const
+
+export function UVPanel({
+  uv,
+  skinType,
+  onSkinType,
+}: {
+  uv: NonNullable<AssessResponse['uv']>
+  skinType?: number
+  onSkinType?: (n: number) => void
+}) {
   const tone = UV_TONE[uv.band] ?? FALLBACK_TONE
+  const type = skinType ?? uv.skin_type ?? 3
   const stats = [
     uv.clear_sky_max != null ? { label: 'Clear-sky', value: uv.clear_sky_max.toFixed(1) } : null,
     uv.peak_hour != null
       ? { label: 'Peak', value: `${String(uv.peak_hour).padStart(2, '0')}:00` }
       : null,
     uv.minutes_to_burn != null
-      ? { label: `Burn (type ${uv.skin_type ?? 3})`, value: `~${uv.minutes_to_burn.toFixed(0)} min` }
+      ? { label: `Burn (type ${type})`, value: `~${uv.minutes_to_burn.toFixed(0)} min` }
       : null,
   ].filter((s): s is { label: string; value: string } => s != null)
 
@@ -69,13 +82,34 @@ export function UVPanel({ uv }: { uv: NonNullable<AssessResponse['uv']> }) {
           <div
             className="mt-2 h-1.5 overflow-hidden rounded-full bg-[var(--chip-bg)]"
             role="meter"
-            aria-label={`UV index ${uv.daily_max.toFixed(1)} of 12`}
+            aria-label={`UV index ${uv.daily_max.toFixed(1)} of ${UV_SCALE_MAX}. 11 and above is Extreme.`}
             aria-valuemin={0}
-            aria-valuemax={12}
+            aria-valuemax={UV_SCALE_MAX}
             aria-valuenow={Number(uv.daily_max.toFixed(1))}
           >
             <span className={`block h-full ${tone.meter}`} style={{ width: `${uvMeterPct(uv.daily_max)}%` }} />
           </div>
+          <div className="mt-1 flex justify-between text-[0.6rem] text-[var(--muted)]">
+            <span>0</span>
+            <span>11 Extreme</span>
+            <span>15</span>
+          </div>
+          {onSkinType && (
+            <label className="mt-2 block text-[0.65rem] font-semibold text-[var(--muted)]">
+              Skin type
+              <select
+                className="touch-target mt-1 w-full rounded border border-[var(--border)] bg-[var(--input-bg)] px-2 text-xs text-[var(--ink)]"
+                value={type}
+                onChange={(e) => onSkinType(Number(e.target.value))}
+              >
+                {SKIN_LABELS.map((roman, i) => (
+                  <option key={roman} value={i + 1}>
+                    Type {roman}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           {stats.length > 0 && (
             <dl
               className={`mt-2.5 grid gap-2 ${

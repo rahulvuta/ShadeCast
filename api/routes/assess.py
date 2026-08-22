@@ -42,6 +42,7 @@ def assess(
     hour_offset: int | None = Query(
         None, ge=0, le=200, description="Hour index into historical bundle"
     ),
+    skin_type: int = Query(3, ge=1, le=6, description="Fitzpatrick skin type I–VI"),
     db: Session = Depends(get_db),
 ) -> AssessResponse:
     if event is None and (lat is None or lon is None):
@@ -63,6 +64,7 @@ def assess(
             allow_network=True,
             event_id=event,
             hour_offset=hour_offset,
+            skin_type=skin_type,
         )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -82,6 +84,9 @@ def assess(
                 required_hours=required_hours,
                 force_corrupt=corrupt,
                 allow_network=False,
+                event_id=event,
+                hour_offset=hour_offset,
+                skin_type=skin_type,
             )
         except Exception as exc2:  # noqa: BLE001
             detail = _safe_detail(str(exc))

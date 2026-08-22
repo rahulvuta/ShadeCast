@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { AssessResponse, SensitivityProfile, Workload } from '../types'
 import { buildShiftSheet, formatShiftSheetText } from '../lib/shiftSheet'
 import type { SelectedShift } from '../lib/shiftWindow'
+import { CLIPBOARD_FAIL, copyText } from '../lib/clipboard'
 
 const VERDICT_CHIP: Record<string, string> = {
   GO: 'border-[var(--go)]/35 bg-[var(--go-bg)] text-[var(--go)]',
@@ -96,17 +97,17 @@ export function ShiftSheetExport({
 
   async function onCopy() {
     setError(null)
-    try {
-      await navigator.clipboard.writeText(plainText)
+    const ok = await copyText(plainText)
+    if (ok) {
       setCopied(true)
       setStatus('Shift sheet copied to clipboard')
       window.setTimeout(() => {
         setCopied(false)
         setStatus(null)
       }, 2000)
-    } catch {
+    } else {
       setCopied(false)
-      setError('Could not copy to clipboard')
+      setError(CLIPBOARD_FAIL)
     }
   }
 

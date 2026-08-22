@@ -22,9 +22,11 @@ const VERDICT_CLASS: Record<string, string> = {
 export function HourlyShiftForecast({
   hours,
   textMode,
+  requestedHours = 0,
 }: {
   hours: HourlyAssessment[]
   textMode: boolean
+  requestedHours?: number
 }) {
   if (hours.length === 0) {
     return (
@@ -45,6 +47,11 @@ export function HourlyShiftForecast({
       <p className="mt-1 text-[0.65rem] text-[var(--muted)]">
         Weather from NWS when available, otherwise Open-Meteo. Humidity is low / moderate / high.
       </p>
+      {requestedHours > 0 && hours.length < requestedHours && (
+        <p className="mt-1 text-[0.65rem] font-semibold text-[var(--caution)]">
+          Showing {hours.length} of {requestedHours} hours (horizon ends).
+        </p>
+      )}
       {textMode ? (
         <ul className="mt-2 space-y-1 text-xs">
           {hours.map((h) => (

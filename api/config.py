@@ -40,6 +40,7 @@ class Settings(BaseSettings):
 
     # NWS requires a User-Agent; no API key. Override if a contact email is added later.
     nws_user_agent: str = "ShadeCast/1.0 (+https://github.com/rahulvuta/ShadeCast)"
+    open_api_docs: bool = False
 
     @field_validator("database_url", mode="before")
     @classmethod

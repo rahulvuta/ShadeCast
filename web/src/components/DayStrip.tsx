@@ -100,6 +100,57 @@ export function DiffStrip({ summary }: { summary?: string | null }) {
   )
 }
 
+const VERDICT_PILL: Record<string, string> = {
+  GO: 'border-[var(--go)]/40 bg-[var(--go-bg)] text-[var(--go)]',
+  CAUTION: 'border-[var(--caution)]/40 bg-[var(--caution-bg)] text-[var(--caution)]',
+  RESTRICT: 'border-[var(--restrict)]/40 bg-[var(--restrict-bg)] text-[var(--restrict)]',
+  STOP: 'border-[var(--stop)]/40 bg-[var(--stop-bg)] text-[var(--stop)]',
+}
+
+export function FiveDayStrip({
+  days,
+  selectedDay,
+  onSelect,
+}: {
+  days: NonNullable<AssessResponse['days']>
+  selectedDay: string | null
+  onSelect: (day: string) => void
+}) {
+  if (!days.length) return null
+  return (
+    <section aria-label="Five-day horizon" className="dash-panel p-3.5">
+      <p className="dash-section-label mb-1.5">5-day horizon</p>
+      <p className="mb-2 text-[0.65rem] text-[var(--muted)]">
+        Air-quality forecast ends at 5 days. Selecting a day filters the timeline and risk clock.
+      </p>
+      <ul className="flex gap-1.5 overflow-x-auto pb-1">
+        {days.map((d) => {
+          const active = d.day === selectedDay
+          const tone = VERDICT_PILL[d.worst_verdict] ?? 'border-[var(--border)] bg-[var(--panel)]'
+          return (
+            <li key={d.day} className="shrink-0">
+              <button
+                type="button"
+                aria-pressed={active}
+                onClick={() => onSelect(d.day)}
+                className={`touch-target min-w-[6.5rem] rounded border px-2.5 py-2 text-left ${tone} ${
+                  active ? 'ring-2 ring-[var(--ink)]' : ''
+                }`}
+              >
+                <span className="block text-[0.65rem] font-semibold">{formatDayLabel(d.day)}</span>
+                <span className="mt-0.5 block text-sm font-black">{d.worst_verdict}</span>
+                <span className="block text-[0.65rem] opacity-80">
+                  {d.total_safe_hours.toFixed(0)}h safe
+                </span>
+              </button>
+            </li>
+          )
+        })}
+      </ul>
+    </section>
+  )
+}
+
 function customSeed(
   selected: SelectedShift | null,
   days: string[],

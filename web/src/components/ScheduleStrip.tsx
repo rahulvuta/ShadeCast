@@ -10,9 +10,11 @@ const CLASS: Record<Verdict, string> = {
 export function ScheduleStrip({
   hourly,
   embedded = false,
+  dayIsToday = true,
 }: {
   hourly: AssessResponse['hourly']
   embedded?: boolean
+  dayIsToday?: boolean
 }) {
   const body = (
     <>
@@ -21,10 +23,16 @@ export function ScheduleStrip({
           <h2 id="schedule-heading" className="text-lg font-bold">
             Hour-by-hour work / rest
           </h2>
-          <p className="text-sm text-[var(--muted)] mb-3">Swipe sideways. Current hour is outlined.</p>
+          <p className="text-sm text-[var(--muted)] mb-3">
+            Swipe sideways. {dayIsToday ? 'Current hour is outlined.' : 'Hours for this day.'}
+          </p>
         </>
       )}
-      {embedded && <p className="dash-section-label mb-2">Hour-by-hour (today)</p>}
+      {embedded && (
+        <p className="dash-section-label mb-2">
+          {dayIsToday ? 'Hour-by-hour (today)' : 'Hour-by-hour (this day)'}
+        </p>
+      )}
       <ul
         className="flex gap-1.5 overflow-x-auto pb-1 snap-x snap-mandatory"
         style={{ WebkitOverflowScrolling: 'touch' }}

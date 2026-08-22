@@ -1,5 +1,4 @@
-import type { AssessResponse, BriefResponse, FirePoint, SensitivityProfile, Workload } from './types'
-import { firesBboxString } from './lib/smokeGeometry'
+import type { AssessResponse, BriefResponse, SensitivityProfile, Workload } from './types'
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? ''
 
@@ -47,6 +46,7 @@ export function fetchAssess(opts: {
   acclimatized: boolean
   profile?: SensitivityProfile
   requiredHours?: number
+  skinType?: number
   corrupt?: boolean
   event?: string | null
   hourOffset?: number | null
@@ -57,6 +57,7 @@ export function fetchAssess(opts: {
     acclimatized: String(opts.acclimatized),
     profile: opts.profile ?? 'general',
     required_hours: String(opts.requiredHours ?? 4),
+    skin_type: String(opts.skinType ?? 3),
   })
   if (opts.event) {
     q.set('event', opts.event)
@@ -104,17 +105,6 @@ export function fetchAirGrid(
   if (opts?.startDate) q.set('start_date', opts.startDate)
   if (opts?.endDate) q.set('end_date', opts.endDate)
   return getJson(`/api/air-grid?${q}`)
-}
-
-export function fetchFires(
-  lat: number,
-  lon: number,
-  radiusKm: number,
-): Promise<{ fires: FirePoint[]; count: number }> {
-  const bbox = firesBboxString(lat, lon, radiusKm)
-  return getJson(
-    `/api/fires?bbox=${encodeURIComponent(bbox)}&lat=${lat}&lon=${lon}&radius_km=${radiusKm}`,
-  )
 }
 
 export type GeocodeHit = {

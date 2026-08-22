@@ -35,14 +35,19 @@ export function SidebarControls({
   workload,
   profile,
   acclimatized,
+  skinType,
   historicalEvents,
   activeEventId,
+  hourOffset,
+  idPrefix = 'sidebar',
   onSearchQuery,
   onLatInput,
   onLonInput,
   onWorkload,
   onProfile,
   onAcclimatized,
+  onSkinType,
+  onHourOffset,
   onApplyLocation,
   onSelectHistoricalEvent,
   onRunSearch,
@@ -59,14 +64,19 @@ export function SidebarControls({
   workload: Workload
   profile: SensitivityProfile
   acclimatized: boolean
+  skinType: number
   historicalEvents: HistoricalEventSummary[]
   activeEventId: string | null
+  hourOffset: number | null
+  idPrefix?: string
   onSearchQuery: (v: string) => void
   onLatInput: (v: string) => void
   onLonInput: (v: string) => void
   onWorkload: (v: Workload) => void
   onProfile: (v: SensitivityProfile) => void
   onAcclimatized: (v: boolean) => void
+  onSkinType: (v: number) => void
+  onHourOffset: (v: number | null) => void
   onApplyLocation: (next: ActiveLocation) => void
   onSelectHistoricalEvent: (eventId: string | null) => void
   onRunSearch: (e?: FormEvent) => void
@@ -74,6 +84,8 @@ export function SidebarControls({
 }) {
   const field =
     'touch-target mt-1 w-full rounded border border-[var(--border)] bg-[var(--input-bg)] px-2.5 text-sm'
+  const searchId = `${idPrefix}-place-search`
+  const skinLabels = ['I', 'II', 'III', 'IV', 'V', 'VI'] as const
 
   return (
     <nav aria-label="Location and settings" className="space-y-3">
@@ -125,16 +137,36 @@ export function SidebarControls({
               ))}
             </select>
           </label>
+          {activeEventId && (
+            <label className="mt-2 block text-xs font-semibold">
+              Archive hour index
+              <input
+                type="number"
+                min={0}
+                max={200}
+                className={field}
+                value={hourOffset ?? 0}
+                onChange={(e) => {
+                  const n = Number(e.target.value)
+                  onHourOffset(Number.isFinite(n) ? Math.max(0, Math.min(200, Math.round(n))) : 0)
+                }}
+              />
+              <span className="mt-1 block text-[0.65rem] font-normal text-[var(--muted)]">
+                Hour index into the archived bundle (0 = event start). Live mode re-assesses the
+                current coordinates.
+              </span>
+            </label>
+          )}
         </div>
       )}
 
       <form onSubmit={(e) => void onRunSearch(e)} className="space-y-1.5">
-        <label className="block text-xs font-semibold" htmlFor="place-search">
+        <label className="block text-xs font-semibold" htmlFor={searchId}>
           Search / coordinates
         </label>
         <div className="flex gap-1.5">
           <input
-            id="place-search"
+            id={searchId}
             className={`${field} min-w-0 flex-1 !mt-0`}
             value={searchQuery}
             onChange={(e) => onSearchQuery(e.target.value)}
@@ -251,6 +283,24 @@ export function SidebarControls({
           onChange={(e) => onAcclimatized(e.target.checked)}
         />
         Acclimatized (1–2+ weeks on the job)
+      </label>
+
+      <label className="block text-xs font-semibold">
+        UV skin type (Fitzpatrick)
+        <select
+          className={field}
+          value={skinType}
+          onChange={(e) => onSkinType(Number(e.target.value))}
+        >
+          {skinLabels.map((roman, i) => (
+            <option key={roman} value={i + 1}>
+              Type {roman}
+            </option>
+          ))}
+        </select>
+        <span className="mt-1 block text-[0.65rem] font-normal text-[var(--muted)]">
+          Minutes-to-burn uses this type. Default III.
+        </span>
       </label>
     </nav>
   )

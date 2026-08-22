@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections import OrderedDict
 from time import time
 
 import httpx
@@ -11,8 +12,24 @@ from fastapi import APIRouter, HTTPException, Query
 router = APIRouter(prefix="/api")
 logger = logging.getLogger(__name__)
 
-_CACHE: dict[str, tuple[float, list[dict]]] = {}
+_CACHE: OrderedDict[str, tuple[float, list[dict]]] = OrderedDict()
 _CACHE_TTL_S = 600.0
+_CACHE_MAX = 256
+
+
+def cache_get(key: str) -> tuple[float, list[dict]] | None:
+    hit = _CACHE.get(key)
+    if hit is None:
+        return None
+    _CACHE.move_to_end(key)
+    return hit
+
+
+def cache_set(key: str, value: tuple[float, list[dict]]) -> None:
+    _CACHE[key] = value
+    _CACHE.move_to_end(key)
+    while len(_CACHE) > _CACHE_MAX:
+        _CACHE.popitem(last=False)
 
 
 @router.get("/geocode")
@@ -21,7 +38,7 @@ def geocode(q: str = Query(..., min_length=2, max_length=120)) -> dict:
     if not key:
         raise HTTPException(status_code=400, detail="Query too short")
     now = time()
-    hit = _CACHE.get(key)
+    hit = cache_get(key)
     if hit and now - hit[0] < _CACHE_TTL_S:
         return {"results": hit[1], "cached": True}
 
@@ -50,5 +67,5 @@ def geocode(q: str = Query(..., min_length=2, max_length=120)) -> dict:
         for r in results
         if r.get("latitude") is not None and r.get("longitude") is not None
     ]
-    _CACHE[key] = (now, slim)
+    cache_set(key, (now, slim))
     return {"results": slim, "cached": False}

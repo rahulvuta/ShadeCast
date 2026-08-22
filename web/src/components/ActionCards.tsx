@@ -33,7 +33,7 @@ export function ActionCards({ actions }: { actions: ActionItem[] }) {
                         {chip.label}
                       </span>
                     </div>
-                    <p className="mt-0.5 truncate text-xs text-[var(--muted)]">{a.body}</p>
+                    <p className="mt-0.5 text-xs text-[var(--muted)]">{a.body}</p>
                     <WhySource body={a.body} sourceUrl={a.source_url} sourceName={a.source_name} />
                   </div>
                 </div>

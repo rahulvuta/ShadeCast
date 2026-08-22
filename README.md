@@ -50,7 +50,7 @@ Full write-up: [docs/validation.md](docs/validation.md) (unit · historical repl
 *Sunlight mode — max-contrast field theme for phone-in-sun use.*
 
 ![Map of nearby FIRMS fire detections with upwind cone](docs/screenshots/map_fires.png)  
-*Algorithm map: 300 km search radius, ±45° upwind cone, FRP-weighted detections (not AQI).*
+*Air-quality map: Open-Meteo CAMS PM2.5 / US AQI field (not FIRMS fire dots). FIRMS is used for concordance and, on historical events, a labeled heat-detection list.*
 
 ![Timeline / risk clock region](docs/screenshots/hourly_strip.png)  
 *5-day strip, work/rest schedule, and 24-hour risk clock (bars toggle available).*
@@ -59,7 +59,7 @@ Full write-up: [docs/validation.md](docs/validation.md) (unit · historical repl
 *`?corrupt=1` — staged integrity checklist, confidence gauge, and refusal path.*
 
 ![Spanish crew briefing ready to copy](docs/screenshots/briefing_spanish.png)  
-*Copyable crew briefing in English, Spanish, or Vietnamese, plus sourced action cards.*
+*Copyable English crew briefing plus sourced action cards. Briefings are English-only.*
 
 v4 adds NWS alerts, a storm hard-stop banner, 24h/120h condition charts, and clothing/PPE by body zone. **New screenshots of those panels are not in this repo yet** (no browser capture in the build environment) — capture locally after merge if you want them on Devpost.
 
@@ -87,7 +87,7 @@ FIRMS + Open-Meteo Forecast + Air Quality + POWER + NWS (US only)
 | **Open-Meteo Forecast** | Forward-looking hourly weather + UV — **schedule backbone everywhere** |
 | **Open-Meteo Air Quality** | CAMS PM2.5 / US AQI (slow refresh; cross-check vs FIRMS) |
 | **NASA POWER** | Climatological baseline ("is today hotter than usual here?") — **not a forecast** |
-| **NASA FIRMS** | Active fire detections for satellite-derived smoke pressure |
+| **NASA FIRMS** | Active fire detections for **concordance** with CAMS and historical heat lists — **not** the smoke term or the live map |
 | **NWS (api.weather.gov)** | US-only live alerts + near-term cross-check; never a hard dependency |
 | **Open-Meteo Geocoding** | Place search for arbitrary coordinates |
 
@@ -164,11 +164,12 @@ Solo project by **rahulvuta** ([GitHub](https://github.com/rahulvuta)). AI pair-
 
 Read [docs/limitations.md](docs/limitations.md). Linked from the app footer. Key points:
 
-- Smoke pressure is a satellite-derived proxy, **not PM2.5 or AQI**
+- Smoke pressure is **Open-Meteo CAMS PM2.5**, **not** a ground monitor and **not** FIRMS FRP
 - Heat index is a screening tool, **not WBGT**
 - POWER is climatology, **not a forecast**
 - NWS is **US-only**; outside the US we use global model data by design
 - Storm warnings outside the US are **model probabilities**, not official alerts
+- Briefings are **English only**
 - Not medical advice
 
 ## Run locally
