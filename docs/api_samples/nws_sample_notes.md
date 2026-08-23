@@ -10,13 +10,13 @@ Base URL: https://api.weather.gov. Accept: application/geo+json.
 - forecastHourly: https://api.weather.gov/gridpoints/PSR/159,58/forecast/hourly
 - forecastGridData, observationStations URLs present
 - relativeLocation city: Phoenix
-- Grid mapping is stable for a coordinate; cache permanently.
+- Grid mapping is cached 30 days (`GRID_TTL` in `api/services/nws.py`), then re-checked. A failed re-check keeps the row.
 
 ## /points — Oaxaca 17.07,-96.72 (outside NWS coverage)
 - HTTP 404
 - type: https://api.weather.gov/problems/InvalidPoint
 - title: Data Unavailable For Requested Point
-- Cache `nws_available: false` and never retry on the assess hot path.
+- Cache `nws_available: false`. Do not retry `/points` on the assess hot path until `GRID_TTL` (30 days).
 
 ## /gridpoints/{office}/{gridX},{gridY}/forecast/hourly
 - HTTP 200, 156 hourly periods (~6.5 days)

@@ -1,5 +1,7 @@
 # POWER probe notes
 
+Dated probe. Climatology only. `time-standard=LST`. The production fetch in `api/clients/power.py` does not send an API key.
+
 - lat=34.05, lon=-117.25
 - start=20260803, end=20260804
 - parameters=T2M,RH2M,WS10M,WD10M

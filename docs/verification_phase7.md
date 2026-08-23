@@ -1,43 +1,36 @@
 # Phase 7 live verification log
 
-Captured **2026-08-09** (local preview of `feat/v3-phase-*` stack against production API where noted).
+Captured **2026-08-09** against a V3 local web preview and the production API as it existed that day. Not a claim about the tree on 2026-08-22.
 
-## Live production endpoints
+## Production endpoints that day
 
-| Check | Result |
+| Check | Result that day |
 | --- | --- |
-| https://shadecast-web.onrender.com/ | HTTP **200** (~0.24s) |
-| https://shadecast-api.onrender.com/healthz | HTTP **200** — `status=ok`, `db=ok` |
-| `last_ingest_at` | **2026-08-09T19:20:57Z** (fresh vs capture time ~19:37Z) |
-| `firms_quota_remaining` | **4976** |
+| https://shadecast-web.onrender.com/ | HTTP 200 (~0.24s) |
+| https://shadecast-api.onrender.com/healthz | HTTP 200, `status=ok`, `db=ok` |
+| `last_ingest_at` | 2026-08-09T19:20:57Z |
+| `firms_quota_remaining` | 4976 |
 
-Note: production API at verification time had **not yet** deployed Phases 1–6 (`/api/events` → 404; no `waterfall` / `is_historical`). Cron + live assess remain healthy. Merge/deploy the stacked V3 PRs before judging Time Machine / waterfall on the public URL.
+The production API that afternoon had **not** deployed later phases (`/api/events` 404; no `waterfall` / `is_historical`). Treat this table as a timestamped ping, not current architecture.
 
-## Lighthouse accessibility (V3 UI local preview)
+## Lighthouse accessibility (V3 UI, local `:4173`)
 
-Preview: `web` build with `VITE_API_BASE=https://shadecast-api.onrender.com`, `vite preview` on `:4173`.
+`web` build with `VITE_API_BASE=https://shadecast-api.onrender.com`, `vite preview`. Fetch time on `docs/screenshots/lighthouse_ops.json`: 2026-08-09T19:40:07Z. Lighthouse 13.4.1.
 
 | Mode | Accessibility |
 | --- | --- |
-| Ops theme (`?theme=ops`) | **100** |
-| Sunlight theme (`?theme=sunlight`) | **100** |
-| Text-only (`?text=1`) | **100** |
+| Ops (`?theme=ops`) | 100 |
+| Sunlight (`?theme=sunlight`) | 100 |
+| Text-only (`?text=1`) | 100 |
 
-JSON artifacts: `docs/screenshots/lighthouse_{ops,sunlight,text}.json`. Re-run: `./scripts/capture_phase7_screens.sh`.
+JSON: `docs/screenshots/lighthouse_{ops,sunlight,text}.json`. Re-run script (if present): `./scripts/capture_phase7_screens.sh`.
 
-## Screenshots refreshed
+The UI has moved since: CAMS map, no language dropdown, Fitzpatrick I–VI, N/A NWS integrity rows, English-only brief. Do not put these 100s on a live-site slide without a new run.
 
-| File | Subject |
-| --- | --- |
-| `verdict_card.png` / `ops_theme.png` | Dark ops hero |
-| `sunlight_theme.png` | Sunlight mode |
-| `map_fires.png` | Algorithm map stage (cone/layers after API+fires load) |
-| `hourly_strip.png` | Timeline / risk clock region |
-| `integrity_theater.png` | `?corrupt=1` integrity theater |
-| `lighthouse_main.png` / `lighthouse_text.png` | Lighthouse a11y reports |
+## Screenshots in `docs/screenshots/`
 
-Time Machine / driver waterfall / shift-sheet PDF gallery shots require the Phase 1–6 API surface on the same host as the web build (or a local API). Capture again after Render deploy.
+`verdict_card.png`, `ops_theme.png`, `sunlight_theme.png`, `map_fires.png`, `hourly_strip.png`, and `integrity_theater.png` were captured in a **failed-to-fetch** state (empty main pane, "Could not load assessment"). They are not product shots of the verdict, map, or integrity theater. `lighthouse_*.png` are real Lighthouse reports from that preview.
 
-## Test count
+## Test count that day
 
-`poetry run pytest` → **141 passed** on this branch (includes Phase 7 contract tests).
+The log said `poetry run pytest` → 141 passed. This tree is **213** pytest + **48** vitest. Use the current numbers.

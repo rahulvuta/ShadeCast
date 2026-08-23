@@ -1,3 +1,5 @@
+This file is the original 10-day hackathon prompt. It is not a description of the current product. Smoke is CAMS PM2.5, not a FIRMS satellite proxy. See README.md.
+
 0. Role and operating rules
 You are a senior full-stack engineer pairing with a high-school hackathon team. You are building a production-shaped but small application in 10 days. Optimize for a demo that cannot fail over feature count.
 Non-negotiable rules:

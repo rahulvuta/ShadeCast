@@ -1,41 +1,41 @@
 # Q&A prep
 
-## "Is your smoke number AQI?"
+## Is your smoke number AQI?
 
-No. It is a 0–100 **smoke pressure** score from upwind FIRMS detections weighted by FRP and distance. We never label it AQI or use AQI colors. See `docs/limitations.md`.
+No. It is 0–100 `smoke_pressure` from Open-Meteo CAMS PM2.5 (`api/engine/smoke.py`). We do not paint it with AQI colors. FIRMS FRP is a separate heat score used for concordance, not for that number. See `docs/limitations.md`.
 
-## "Why not use NASA POWER as the forecast?"
+## Why not NASA POWER as the forecast?
 
-POWER is a reanalysis / near-real-time archive. A scheduler is forward-looking, so Open-Meteo drives the schedule. POWER answers the climatology question only.
+POWER is a reanalysis / near-real-time archive. A scheduler is forward-looking. Open-Meteo drives the hours. POWER answers climatology only. The POWER URL does not send `NASA_API_KEY`.
 
-## "Did the LLM decide the risk?"
+## Did the LLM decide the risk?
 
-No. The engine is deterministic Python. The LLM only rephrases structured output. If Featherless is down or the key is removed, template briefings still work (`api/llm/fallback.py`).
+No. Verdicts are Python. Featherless rephrases `POST /api/brief` JSON and can narrate integrity findings. It does not pick action IDs on the assess path (`select_actions` is called without `llm_chosen_ids`). Templates in `api/llm/fallback.py` still work if the key is missing.
 
-## "What if NASA is down during the demo?"
+## What if NASA is down during the demo?
 
-Ingest is cached in Postgres. `/api/assess` serves the last good rows with a staleness badge. `DEMO_MODE=1` serves only `assessment_cache`.
+Postgres cache. Staleness badge. `DEMO_MODE=1` serves only `assessment_cache`.
 
-## "How do you know wind direction isn't reversed?"
+## How do you know wind direction isn't reversed?
 
-Meteorological convention: wind direction is where the wind blows **from**. We have a unit test: fire due north + wind from north → upwind; wind from south → not upwind. Reverse the convention and the test fails.
+Meteorological convention: direction is where the wind blows **from**. `tests/test_smoke.py`: fire due north + wind from north → upwind; wind from south → not. Reverse the convention and those tests fail. The map caption says "Wind from (meteorological)."
 
-## "Is heat index good enough for OSHA?"
+## Is heat index good enough for OSHA?
 
-OSHA treats heat index as a **screening** tool. WBGT is the real standard. We say that in the UI disclaimer and in `docs/limitations.md`, and we expose workload + acclimatization.
+OSHA treats it as screening. WBGT is the occupational standard. The UI and `docs/limitations.md` say that. Workload and acclimatization are inputs. +8°F applies when cloud cover is missing or < 50%.
 
-## "Transaction quota on FIRMS?"
+## FIRMS transaction quota?
 
-Yes. Assess may soft-refresh FIRMS for new/stale coordinates (server-side, DB-cached, fail-soft). Cron ingest still does the primary pull for demo locations. `/healthz` reports remaining quota when available.
+Yes. Assess may soft-refresh FIRMS for new/stale coordinates. Cron still does the demo pins. `/healthz` reports remaining quota when the client parsed it. The live map does not fetch `/api/fires`.
 
-## "Show me every LLM call."
+## Show me every LLM call.
 
-Rows in the `llm_calls` table: prompt, response, model, latency, `used_fallback`, cache key.
+Rows in `llm_calls`: prompt, response, model, latency, `used_fallback`, cache key. Cache key includes crew-local hour, workload, profile, acclimatized, hourly fingerprint (`api/llm/client.py`).
 
-## "What languages?"
+## What languages?
 
-English, Spanish, Vietnamese — UI toggle, not auto-detect. Hardcoded template strings + LLM prompt language pin.
+The product UI is English. `BriefRequest.lang` allows `en`/`es`/`vi` and fallback templates exist for all three. `web/src/api.ts` hardcodes `lang: 'en'`.
 
-## "What's out of scope?"
+## What's out of scope?
 
-No auth, no push/SMS, no payments, no historical charts, no multi-location comparison, no native apps, no i18n framework.
+No auth, no push/SMS, no email, no payments, no native apps, no i18n framework, no multi-location comparison as a product feature (you can open multiple location tabs in one session). Time Machine and condition charts **are** in scope; they shipped. `/docs` is off unless `OPEN_API_DOCS=1`.

@@ -1,5 +1,7 @@
 # FIRMS probe notes
 
+Dated probe of the NRT area CSV. Not the smoke term. Concordance and `/api/fires` still parse this shape.
+
 - BBox (west,south,east,north): `-118.5,33.5,-116.5,35.0`
 - DAY_RANGE: 2
 - Sources: VIIRS_SNPP_NRT, VIIRS_NOAA20_NRT

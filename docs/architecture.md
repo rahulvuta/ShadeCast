@@ -1,87 +1,107 @@
-# ShadeCast architecture (v4)
+# ShadeCast architecture
 
-ShadeCast answers: **plan the next five days around every environmental stressor here, know exactly why, and know when the system does not trust its own inputs** — including **Time Machine** replay of real historical archives through the unmodified engine.
+ShadeCast answers: can this crew work outside, hour by hour, for the next five days, and should we refuse the inputs.
 
 ```text
 ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────┐
 │ NASA     │ │ Open-    │ │ Open-    │ │ NASA     │ │ NWS          │
 │ FIRMS    │ │ Meteo    │ │ Meteo AQ │ │ POWER    │ │ api.weather  │
-│ fires    │ │ forecast │ │ CAMS     │ │ clim.    │ │ .gov (US)    │
+│ heat     │ │ forecast │ │ CAMS     │ │ clim.    │ │ .gov (US)    │
+│ (concord)│ │ schedule │ │ smoke+AQI│ │ not fcst │ │ additive     │
 └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘ └──────┬───────┘
-     │            │            │            │              │
      └────────────┴──────┬─────┴────────────┴──────────────┘
                          ▼
-              Postgres cache / ingest · Historical bundles
+              Postgres cache / ingest / historical bundles
                          ▼
-              Data integrity layer (api/integrity)
-              → data_confidence (+ Integrity Theater)
+              api/integrity  →  data_confidence
                          ▼
-              Environmental load engine (api/engine)
-              → one verdict + waterfall + storm hard-stop
+              api/engine     →  one verdict + waterfall + storm floor
                          ▼
-              React UI — tokens, map, charts, clothing, PDF
+              React (web/)   →  tokens, CAMS map, charts, clothing, PDF
 ```
 
-NWS is the **fifth source**. It is additive and US-only. Open-Meteo remains the schedule backbone everywhere, including Phoenix.
+NWS is the fifth engine source. It is additive. Open-Meteo remains the schedule backbone in Phoenix and in Oaxaca.
 
-## NWS blending rule
+## Data path
 
-Implemented in `api/engine/nws_blend.py` (single source of truth, unit-tested):
+Live assess: `GET /api/assess` in `api/routes/assess.py` → `build_assessment` in `api/services/assess.py`. Historical: same function with `event=` and `is_historical=true`.
 
-1. **Alerts** — live `GET /alerts/active?point=` per assess call (5-minute cache floor). Not mixed into `load_score`.
-2. **Current-conditions cross-check** — integrity compares NWS vs Open-Meteo temperature and wind.
-3. **Near-term override (0–6 h only)** — if `|ΔT| ≥ 5 °C` or `|Δwind| ≥ 15 km/h`, that hour’s temperature, RH, and wind come from NWS. UV, gusts, cloud, and precip stay Open-Meteo.
+Smoke: `assess_smoke` maps CAMS PM2.5. FIRMS: `assess_fire_heat` (300 km, ±45°, wind-from). Concordance: `classify_concordance(fire_heat_pressure, us_aqi)`.
 
-Outside NWS coverage (e.g. Oaxaca), `/points` 404 is cached as `nws_available: false` and not retried on the hot path until the mapping TTL expires. The UI copy is designed: *“NWS unavailable outside the US — using global model data.”*
+Heat: Rothfusz in `api/engine/heat.py`. `full_sun` is true when `cloud_cover is None or cloud_cover < 50`.
 
-Grid mapping (`/points/{lat},{lon}`) is cached in `nws_grid_cache` with a 30-day TTL, because NWS warns a coordinate's grid or office can change. Each cache write commits its own unit of work — the request-scoped session only closes, so a flushed-but-uncommitted row would be silently discarded. A failed re-check keeps the cached mapping.
+Storm: `api/engine/storm.py`, independent of `load_score`. Wind gusts > 40 km/h are a separate hard stop in `api/engine/environmental_load.py`.
 
-Only a definitive weather.gov answer yields `outside_us`. An incomplete lookup yields `pending`, so a throttle or network blip is never shown as missing coverage. The client's token bucket is the single request budget: `api/services/nws.py` asks for whatever is stale, alerts first, and each call skips itself when the budget is spent.
+Actions: `select_actions` / `select_clothing`. Assess does not pass `llm_chosen_ids`.
 
-## Storm hazard class
+LLM: `POST /api/brief` rephrases engine JSON (`api/llm/prompts.py`, `max_tokens` 800). Cache key includes crew-local hour, workload, profile, acclimatized, and an hourly-verdict fingerprint (`api/llm/client.py`). Integrity narration is a second optional rephrase (`api/llm/integrity_narration.py`, `max_tokens` 180). Neither path computes risk.
 
-`api/engine/storm.py` is an independent hard-stop, like wind gusts — **not** a smooth `load_score` band.
+## NWS blend
 
-- Tornado Warning or Severe Thunderstorm Warning → immediate STOP (`storm_hard_stop`).
-- Lightning (NWS severe-tstorm warning, or Open-Meteo CAPE ≥ 1500 J/kg **and** precip ≥ 50%) → binary STOP. `thunderstorm_probability` is advertised by Open-Meteo but returned null in probes; we do not use it.
-- Watches escalate one verdict level and add “conditions may deteriorate rapidly”; they do not hard-stop.
-- Extreme Heat / Air Quality NWS alerts appear on the banner; heat and air engines still own those scores.
+Single implementation: `api/engine/nws_blend.py`.
 
-When NWS/storm inputs are absent, existing verdicts are unchanged (`tests/test_storm.py`).
+1. Alerts: `GET /alerts/active?point=` per assess, 5-minute cache floor (`ALERTS_MIN_CACHE_S`). Not mixed into `load_score`.
+2. Integrity compares NWS vs Open-Meteo temperature and wind.
+3. Hours 0–6: if \|ΔT\| ≥ 5°C or \|Δwind\| ≥ 15 km/h, that hour's temperature, RH, and wind come from NWS. UV, gusts, cloud, precip stay Open-Meteo.
 
-## Key packages
+Grid mapping lives in `nws_grid_cache` with `GRID_TTL = 30 days` (`api/services/nws.py`). Each write commits its own unit of work. A failed re-check keeps the cached mapping.
 
-| Path | Role |
-| --- | --- |
-| `api/clients/` | FIRMS, POWER, Open-Meteo forecast + air quality + **`historical.py`** + **`nws.py`** |
-| `api/engine/nws_blend.py` | Documented Open-Meteo/NWS merge (0–6 h material divergence only) |
-| `api/engine/storm.py` | Storm / lightning hard-stop class |
-| `api/events/` | Time Machine registry (`registry.yaml` + `loader.py`) |
-| `validation/fixtures/bundles/` | Committed real archive JSON per event (FIRMS may be empty archive fixture) |
-| `api/integrity/` | Pre-engine validity / confidence (includes NWS divergence / expired alerts / missing grid) |
-| `api/engine/` | Heat, smoke, UV, air, storm, environmental load (**waterfall steps**), schedule, explain |
-| `api/actions/` | Curated sourced action library + clothing/PPE (`category` / `body_zone`) |
-| `api/services/assess.py` | `/api/assess` — live **or** `?event=` historical via identical `build_assessment` |
-| `web/src/design/` | Tokens + theme (`ops` / `sunlight`) |
-| `web/src/lib/smokeGeometry.ts` | Client mirror of 300 km / ±45° upwind cone math |
-| `web/src/lib/shiftSheet.ts` | Shared supervisor sheet (preview, clipboard, PDF) |
-| `web/src/lib/shiftSheetPdf.ts` | Client-side supervisor PDF |
-| `web/src/` | Dashboard: hero, storm banner, map, condition charts, field-kit actions/clothing, shift sheet |
+`outside_us` vs `pending`: only a definitive `InvalidPoint` is coverage-absent. The UI shows `status.message` from the API (`NwsStatusBanner.tsx`).
+
+NWS client politeness: 1/s sustained, burst 5, cooldown on 403/429 (`api/clients/nws.py`).
+
+## Storm class
+
+Tornado Warning or Severe Thunderstorm Warning → STOP.
+
+Lightning: that NWS warning, or CAPE ≥ 1500 J/kg **and** precip ≥ 50%, or thunder weathercodes 95–99. `thunderstorm_probability` is unused.
+
+Watches escalate one level and add `conditions may deteriorate rapidly`.
+
+Extreme Heat / Air Quality alerts display; heat and air engines own the scores.
+
+When NWS is missing, weathercode fills in and the headline is tagged Open-Meteo (`tests/test_storm.py`).
+
+## HTTP surface
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/healthz` | `status`, `db`, `last_ingest_at`, `firms_quota_remaining` |
+| GET | `/api/assess` | Live or `?event=` |
+| GET | `/api/fires` | FIRMS points in a bbox. The web app does not call this for the live map. |
+| GET | `/api/air-grid` | CAMS field for `FireMap.tsx` |
+| GET | `/api/geocode` | Open-Meteo proxy, LRU 256, 600 s TTL |
+| GET | `/api/events` | Time Machine registry |
+| POST | `/api/brief` | Rephrase only |
+
+Rate limit: 60 requests / 60 s per IP per path, last `X-Forwarded-For` hop (`api/middleware/rate_limit.py`). Paths: assess, brief, fires, air-grid, geocode, events.
+
+OpenAPI (`/docs`, `/redoc`, `/openapi.json`) is off unless `OPEN_API_DOCS=1`.
+
+CORS: `allow_credentials` is true, so origins cannot be `*`. Default localhost:5173.
+
+## Map
+
+OSM tiles (`TileMosaic.tsx`) + CAMS overlay. `CAMS_VIEW_RADIUS_KM = 110`. Wind label is meteorological from. Reload retries a failed grid. `web/src/lib/smokeGeometry.ts` still has the 300 km cone math; the live map does not draw it. Mercator tests import `destinationPoint`.
 
 ## Historical path
 
-1. `GET /api/events` lists registry events.
-2. `GET /api/assess?event=<id>&hour_offset=` loads a fixture bundle, sets `is_historical=true`, skips live network/POWER climatology DB, and runs the **same** environmental-load engine as live.
-3. Response includes `expected_verdict` / `actual_vs_expected` for honest validation UX.
+1. `GET /api/events` lists `api/events/registry.yaml`.
+2. `GET /api/assess?event=<id>&hour_offset=` loads `validation/fixtures/bundles/<id>.json`.
+3. Response includes `expected_verdict` / `actual_vs_expected`.
+
+Five registry events: `quebec_2023_06`, `phoenix_2023_07`, `seattle_benign`, `dust_event`, `hot_but_clean`.
 
 ## Invariants
 
-1. **One verdict.** UV / AQI / heat / storm never compete as parallel traffic lights. Storm can hard-stop the same verdict.
-2. **Deterministic risk math.** The LLM never computes or ranks risk.
-3. **Integrity before trust.** Findings are never silently swallowed. NWS is checked like every other source.
-4. **LOW confidence never under-calls.** Escalation is one level more conservative.
-5. **MODEL_LEADS ≠ corruption.** High CAMS AQI with quiet FIRMS is signal.
-6. **Historical ≠ synthetic.** Time Machine uses real archive samples; documented CAMS-vs-ground gaps stay visible.
-7. **NWS never a hard dependency.** A crew in Oaxaca gets the same Open-Meteo-backed verdict quality as a crew in Phoenix, minus US-only extras.
+1. One verdict. Storm can hard-stop it. UV/AQI/heat are not parallel traffic lights.
+2. Risk math is Python. LLM rephrases.
+3. Integrity findings are not swallowed. NWS checks are N/A when NWS is not active, not fake-OK.
+4. LOW never under-calls (one-level escalate).
+5. MODEL_LEADS is signal, not corruption.
+6. Time Machine uses archive samples. NYC probe JSON is not a registry event.
+7. NWS is never required for a verdict.
 
-See also: [limitations.md](limitations.md), [validation.md](validation.md), [runbook.md](runbook.md), [verification_phase7.md](verification_phase7.md).
+Alembic head is `a9c4e7f1b2d0` (CAPE / weathercode / air-grid), on top of NWS tables `f2b5d8e3c1a0` and historical bundles `e1a4c9d2b0f7`.
+
+See [limitations.md](limitations.md), [validation.md](validation.md), [runbook.md](runbook.md).

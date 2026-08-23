@@ -1,91 +1,84 @@
 # ShadeCast runbook
 
-Concrete maintenance steps for whoever keeps the deployment running after the hackathon.
+Maintenance for whoever keeps Render alive after the hackathon.
 
-## Quarterly (every ~3 months)
+## Quarterly
 
-1. **Bump Python dependencies**
+1. Bump Python deps, then tests.
    ```bash
    pip install -r requirements.txt --upgrade
-   poetry run pytest -v
+   python -m pytest -q
    ```
-   Update pinned versions in `requirements.txt` and `pyproject.toml` if tests pass.
+   Pin what passed in `requirements.txt` / `pyproject.toml`.
 
-2. **Bump Node dependencies**
+2. Bump Node.
    ```bash
-   cd web && npm update && npm run build && npx tsc --noEmit
+   cd web && npm update && npm test && npm run build && npx tsc --noEmit
    ```
 
-3. **Review `docs/limitations.md`** — confirm disclaimers still match engine behavior after any threshold changes.
+3. Read `docs/limitations.md` against `api/engine/` if any threshold moved.
 
-## NASA FIRMS MAP_KEY
+## FIRMS MAP_KEY
 
-- The ingest cron and on-demand location fetch use `NASA_FIRMS_MAP_API_KEY`.
-- Check remaining quota via `GET /healthz` → `firms_quota_remaining`.
-- If quota errors appear in ingest logs or `/healthz` shows `null` quota with 403 responses:
-  1. Generate a new MAP_KEY at https://firms.modaps.eosdis.nasa.gov/api/map_key/
-  2. Update the key in Render env vars for `shadecast-api` and `shadecast-ingest`
-  3. Re-run ingest manually: `python -m ingest.job`
+Ingest and on-demand assess use `NASA_FIRMS_MAP_API_KEY`. Smoke itself is CAMS. The key still matters for concordance and the Quebec-style heat list.
 
-## Verify the cron is writing rows
+`GET /healthz` → `firms_quota_remaining`. If ingest logs 403s or quota is `null`:
 
-1. Open Render dashboard → `shadecast-ingest` → Logs. Confirm runs every 20 minutes without tracebacks.
-2. Hit `GET /healthz` — `last_ingest_at` should be within the last hour during fire season.
-3. If stale, SSH or use a one-off shell on Render:
-   ```bash
-   python -m ingest.job
-   ```
+1. New MAP_KEY at https://firms.modaps.eosdis.nasa.gov/api/map_key/
+2. Set it on `shadecast-api` and `shadecast-ingest`
+3. `python -m ingest.job`
 
-## Demo coordinates (seasonal check)
+## Cron
 
-Preset locations live in `web/src/types.ts` (`DEMO_LOCATIONS`). The smoky demo (Inland Empire) needs nearby FIRMS detections to show smoke pressure.
+`shadecast-ingest` is `*/20 * * * *` on the starter plan (`render.yaml`). Logs should not traceback. `last_ingest_at` on `/healthz` should move.
 
-**Fast swap if fires moved:**
+```bash
+python -m ingest.job
+```
 
-1. Open https://firms.modaps.eosdis.nasa.gov/map/ and find an active fire cluster in Southern California.
-2. Update `lat` / `lon` in `DEMO_LOCATIONS` for `hot_smoky`.
-3. Re-run `python -m ingest.seed` so `assessment_cache` has fresh rows.
-4. Redeploy web if coordinates changed.
+A quiet cron is how the UI goes stale with no red banner except `data_freshness.is_stale`.
 
-## Open-Meteo schema changes
+## Demo pins
 
-Forecast parsing lives in `api/clients/forecast.py`. Contract test: `tests/test_contracts.py::test_open_meteo_sample_parses` replays `docs/api_samples/open_meteo_sample.json`.
+`DEMO_LOCATIONS` in `api/config.py` and `web/src/types.ts`: Phoenix 33.45,−112.07; Inland Empire 34.05,−117.25; Seattle 47.61,−122.33. Corrupt demo: −89.9, 179.9 with `?corrupt=1`.
 
-If `/api/assess` starts failing with parse errors after an Open-Meteo update:
+Inland Empire smoke is CAMS, not "fires on the map." The sidebar label still says `hot + fires nearby`. If you need a smokier CAMS scene, move the pin; do not hunt FIRMS dots for the overlay.
 
-1. Capture a fresh response for a known coordinate and save to `docs/api_samples/`.
-2. Update `parse_open_meteo()` to match the new field names.
-3. Run `pytest tests/test_contracts.py -v` before deploying.
+`python -m ingest.seed` after coordinate changes.
+
+## Open-Meteo schema
+
+Parsers: `api/clients/forecast.py`, `api/clients/air_quality.py`. Contract: `tests/test_contracts.py` against `docs/api_samples/`.
+
+If assess starts failing on parse:
+
+1. Save a fresh JSON under `docs/api_samples/`
+2. Fix the parser
+3. `pytest tests/test_contracts.py -q`
 
 ## DEMO_MODE
 
-Set `DEMO_MODE=1` on `shadecast-api` for deterministic demos (serves only from `assessment_cache`, no live NASA calls). Required for recording the demo video with network disabled.
+`DEMO_MODE=1` on the API process. Serves `assessment_cache` only.
 
-Ensure seed data is current:
 ```bash
 python -m ingest.job
 python -m ingest.seed
 ```
 
-## Alembic / forecast upsert column errors
+## Alembic
 
-If Render logs show forecast or air-quality upsert failures about missing columns (e.g. `uv_index`, `wind_gusts_kmh`, `air_quality_hours`), the Phase 1 migration was not applied. From the API service shell:
+Head is `a9c4e7f1b2d0` (CAPE, weathercode, air-grid cache). Chain: `b454555bb773` → `c7e2a91f04b1` → `d8f3b2c1a0e9` (sensitivity_profile on assessment_cache) → `e1a4c9d2b0f7` (historical_bundles) → `f2b5d8e3c1a0` (NWS tables) → `a9c4e7f1b2d0`.
 
 ```bash
 alembic upgrade head
 ```
 
-The ingest cron start command also runs `alembic upgrade head` before `python -m ingest.job`.
+The ingest start command already runs that. Assess can still compute from live Open-Meteo if an upsert fails; cache and offline replay cannot.
 
-If assessment cache upserts fail after the sensitivity-profile unique-key change, ensure revision `d8f3b2c1a0e9` is applied (`sensitivity_profile` column on `assessment_cache`).
+## Featherless
 
-Assess still serves **live** Open-Meteo rows even when upsert fails (after the empty-location fix), but caching and offline fallback need the schema.
+Optional. UI always posts `lang: 'en'`. Fallback templates also exist for `es` and `vi` in `api/llm/fallback.py`; nothing in the web app selects them. JSON parse errors: one retry, then fallback.
 
-## Featherless LLM (optional)
+## Render free tier
 
-Briefings work without `FEATHERLESS_API_KEY` — the API falls back to `api/llm/fallback.py` templates in English, Spanish, and Vietnamese. If the key is set and briefings fail, check Render logs for JSON parse errors; the client retries once then falls back.
-
-## Render free-tier caveats
-
-- **Free Postgres** expires 30 days after creation. Upgrade to Basic-256mb ($6/mo) before the grace period ends or data is deleted.
-- **Free web service** spins down after 15 minutes of inactivity. First request after idle takes ~1 minute.
+Free Postgres expires 30 days after create. Upgrade or the cache is gone. Free API web sleeps after ~15 minutes idle. First request after sleep is slow.

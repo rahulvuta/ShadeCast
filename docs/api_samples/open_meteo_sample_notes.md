@@ -1,5 +1,7 @@
 # Open-Meteo Forecast probe notes (extended fields)
 
+Dated probe of the schedule backbone. `timezone=auto`.
+
 - lat=34.05, lon=-117.25
 - forecast_days=2
 - hourly=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m,uv_index,uv_index_clear_sky,wind_gusts_10m,precipitation_probability,cloud_cover,apparent_temperature

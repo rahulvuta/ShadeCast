@@ -1,68 +1,64 @@
-# ShadeCast limitations (required honesty)
+# ShadeCast limitations
 
-This document is linked from the README and the app footer. Judges should open it.
+Linked from the app footer. This is the honesty list, not a feature tour.
 
-## 1. Smoke pressure is modelled PM2.5, not FIRMS heat
+## Smoke is modelled PM2.5
 
-ShadeCast's smoke term is **Open-Meteo CAMS PM2.5** (µg/m³ mapped onto a 0–100 `smoke_pressure` scale). It is **modelled particulates** — wildfire smoke, dust, and urban aerosol — not a ground-station measurement and **not** NASA FIRMS fire radiative power (FRP).
+`smoke_pressure` is Open-Meteo CAMS PM2.5 (µg/m³) mapped onto 0–100 in `api/engine/smoke.py`. Wildfire smoke, dust, and urban aerosol. Not a ground station. Not FIRMS FRP.
 
-The map shades Open-Meteo CAMS PM2.5 / US AQI as a weather-style field (interpolated ~45 km cells). NASA FIRMS is **not** drawn on the map. The FRP score is used only for **concordance** with CAMS (fresh heat vs a lagged air-quality field). We never render `smoke_pressure` as an AQI number.
+The map shades that CAMS field (interpolated cells, ~110 km disc). FIRMS is not drawn there. Historical assessments that include detections show a labeled FRP list (`FIRMS heat detections (not smoke)`). Concordance in `api/engine/air.py` compares FIRMS **heat score** to CAMS US AQI (heat 30/10 vs AQI 101/51): AGREE, FIRMS_LEADS, or MODEL_LEADS. We never render `smoke_pressure` as an AQI number.
 
-## 2. Heat index is a screening tool, not WBGT
+## Heat index is not WBGT
 
-The NWS Rothfusz heat index is an **OSHA-acknowledged screening tool**. It does **not** replace a Wet Bulb Globe Temperature (WBGT) assessment, which is the actual occupational standard for heat stress. ShadeCast exposes workload and acclimatization inputs and applies a documented full-sun penalty, but this remains a screening schedule aid.
+NWS Rothfusz heat index, with workload / acclimatization shifts, and +8°F when cloud cover is missing or under 50% (`api/services/assess.py`). OSHA treats heat index as a screening tool. Wet Bulb Globe Temperature is the occupational standard. This app is the screening tool.
 
-## 3. Forecast vs climatology split
+## Forecast vs climatology
 
-- **Open-Meteo** supplies the forward-looking hourly forecast that drives the work/rest schedule.
-- **NASA POWER** supplies a climatological / near-real-time archive baseline so the UI can say "today is X°C above the recent POWER average for this date/hour."
-- POWER is **not** used as a forecast.
+Open-Meteo drives every forward hour. NASA POWER is the climatology baseline so the UI can say today is hotter than the recent POWER average for this date/hour. POWER uses `time-standard=LST` (15-degree solar swath). That can disagree with civil local time. Schedule timing uses Open-Meteo `timezone=auto`.
 
-## 4. FIRMS latency and missed fires
+`NASA_API_KEY` is unused. POWER fetch in `api/clients/power.py` has no key parameter.
 
-FIRMS detections have a latency window and can miss fires under cloud cover. VIIRS has an approximate **375 m** footprint. Small or short-lived fires may not appear. Ingestion is cron-driven and cached because MAP_KEY transaction quotas are real.
+## FIRMS latency
 
-## 5. POWER LST ≠ civil local time
+VIIRS footprint is about 375 m. Cloud cover hides fires. NRT retention is about a week, which is why 2023 Time Machine events use empty archive CSVs except Quebec's hand-authored fixture. Ingest is cron + on-demand, cached, because MAP_KEY quotas are real. `/healthz` reports `firms_quota_remaining` when the client has it.
 
-NASA POWER's `time-standard=LST` is a 15-degree solar-time swath. It may not match the location's civil time zone. We document this wherever POWER hours are shown and prefer Open-Meteo (with `timezone=auto`) for schedule timing.
+## Not medical advice
 
-## 6. Not medical advice
+If someone collapses, is confused, or stops sweating, seek emergency care. ShadeCast does not replace an employer's heat-illness program or on-site WBGT.
 
-ShadeCast is **not medical advice** and does not replace employer heat-illness prevention programs, on-site WBGT monitoring, or professional emergency judgment. If someone collapses, is confused, or stops sweating, seek emergency medical care.
+## Compound risk is not our discovery
 
-## 7. Compound risk is not our discovery
+Public-health agencies already warn that heat plus smoke is worse than either alone. What we ship is a per-crew schedule from global model feeds, with US NWS on top where it exists.
 
-Combined heat-and-smoke warning systems have been piloted by public health authorities because co-exposure is worse than either hazard alone. ShadeCast's contribution is **per-crew scheduling** and **global satellite coverage**, not the discovery of compound risk.
+## Cache and DEMO_MODE
 
-## 8. Demo / cache behavior
+When a live fetch fails, `/api/assess` can serve the last good Postgres row and mark `data_freshness.is_stale`. `DEMO_MODE=1` reads only `assessment_cache`. A dead ingest cron makes the data look stale. That is the failure mode.
 
-When live feeds are slow or down, the API serves the last good Postgres row and marks `data_freshness.is_stale`. `DEMO_MODE=1` serves only from `assessment_cache` so a severed network still yields a full demo.
+## CAMS licence and cadence
 
-## 9. Open-Meteo Air Quality (CAMS) licence and cadence
+Open-Meteo Air Quality is free for non-commercial use (10,000 calls/day, no uptime guarantee). We cache hourly rows in Postgres and pull from the 20-minute cron so volume stays under that. CAMS updates on the order of 24 hours at ~45 km globally. A new ignition can show in FIRMS hours before CAMS PM2.5 rises. That is why concordance exists. `us_aqi` and `european_aqi` are different scales. ShadeCast uses `us_aqi`.
 
-Open-Meteo's Air Quality API is free for **non-commercial** use (10,000 calls/day, no uptime guarantee). ShadeCast caches hourly responses in Postgres and pulls via the cron ingest job so call volume stays far under the free-tier limit. Do not treat this feed as a paid SLA.
+## UV minutes-to-burn is educational
 
-The underlying CAMS models update roughly every **24 hours** at ~45 km (global) / ~11 km (Europe). That slow refresh is why NASA FIRMS heat detections remain useful for **lag concordance** — a new ignition can appear in FIRMS hours before CAMS PM2.5 rises. FIRMS is **not** the smoke term. `us_aqi` and `european_aqi` are different scales and must never be mixed; ShadeCast defaults to `us_aqi`.
+Fitzpatrick I–VI via `skin_type` on `/api/assess` and the sidebar. Default III. WHO UV Index conversion plus representative MED values. The meter is 0–15; 11+ is Extreme (`api/engine/uv.py`, `UVPanel.tsx`). Altitude, reflection, medication, and sunscreen are not in the model. Not a phototherapy tool.
 
-## 10. UV minutes-to-burn is educational, not clinical
+## Sensitivity profiles are threshold shifts
 
-Minutes-to-burn uses representative Fitzpatrick Minimal Erythemal Dose (MED) values and the WHO UV Index irradiance conversion. The UI exposes Fitzpatrick types **I–VI** (`skin_type` on `/api/assess` and in the sidebar). Default is **III**. Real burn risk varies with altitude, reflection, photosensitizing medication, and application of sunscreen. This is **not** a phototherapy dosing tool. The UV meter is scaled **0–15** with **11+ labeled Extreme**.
+`asthma_respiratory`, `cardiovascular`, `children`, `athlete`, `over_65` move heat and/or AQI bands. They do not diagnose anyone.
 
-## 11. Sensitivity profiles are threshold shifts, not diagnoses
+## Five-day horizon
 
-Profiles (`asthma_respiratory`, `cardiovascular`, `children`, `athlete`, `over_65`) shift heat and/or AQI bands using published public-health guidance (EPA AirNow sensitive groups, CDC infants/children heat, NATA exertional heat illness for athletes, EPA active-outdoors AQI guidance, AHA/CDC older-adult heat guidance). They do **not** diagnose individuals or replace medical advice.
+`MAX_HORIZON_DAYS = 5` because CAMS air quality is a 5-day product. We do not extend the shared planner on heat-only forecast.
 
-## 12. Five-day horizon is bounded by air quality
+## Integrity reduces input risk. It does not delete model error.
 
-The multi-day schedule and shift planner are capped at **5 days** because the Open-Meteo Air Quality (CAMS) forecast is a 5-day product. Heat-only Open-Meteo forecast can extend further, but ShadeCast keeps the shared horizon honest.
+Findings land before the engine trusts a bundle. LOW (needs at least one ERROR; WARNING-only stays MODERATE) escalates the verdict one level. UNUSABLE refuses a verdict and falls back to last-good cache. POWER climatology is checked against the **current hour** only. Forecast stale 3–12 h is WARNING; missing or >12 h is ERROR.
 
-## 13. Integrity layer reduces — does not eliminate — input risk
+Forecast UV and CAMS UV are different models. Aerosols can suppress CAMS UV while weather UV stays high. We do not cross-check them. The UV check is forecast UV vs its own clear-sky ceiling.
 
-The data integrity layer catches range errors, cross-source disagreement, physical inconsistencies, and staleness before the engine trusts a bundle. It **reduces** the chance of confidently reporting garbage; it does **not** eliminate model error, sensor gaps, or FIRMS latency. LOW confidence escalates the verdict one level more conservative; UNUSABLE refuses a verdict and falls back to last-good cache. LOW requires at least one ERROR-class finding (WARNING-only stacks stay MODERATE). POWER climatology is checked against the **current hour** only. Mild forecast staleness (3–12h) is WARNING; missing or severe (>12h) forecast freshness is ERROR.
+Optional LLM text in `api/llm/integrity_narration.py` rephrases findings. It cannot add findings or change the score. Assess still selects clothing and actions in Python.
 
-Forecast UV (weather model) and CAMS air-quality UV are **not** cross-checked against each other. They are different models: aerosols can suppress CAMS UV while the weather UV stays high, which is physics, not a feed conflict. The UV integrity check is forecast UV vs its own clear-sky ceiling.
-
-Cross-derived checks use **magnitude-graduated** severity so minor, physically normal variance does not black out the assessment:
+Cross-derived checks are magnitude-graduated:
 
 | Check | No finding | WARNING | ERROR | CRITICAL (refuse) |
 |---|---|---|---|---|
@@ -73,47 +69,42 @@ Cross-derived checks use **magnitude-graduated** severity so minor, physically n
 | Temp vs POWER climatology | within ±15°C | 15–25°C beyond | 25–40°C beyond | >40°C beyond |
 | Absolute temp range | −90…60°C | — | — | outside |
 
-**Rothfusz low-RH note:** the NWS heat-index regression legitimately yields HI below air temperature in dry heat (gaps up to ~8–9°F at RH≈0%). That is a formula quirk, not corrupted data — those cases stay clean (no finding) so desert / arid locations remain usable.
+Rothfusz in dry heat can put HI a few degrees below air temperature (gaps around 8–9°F at RH≈0%). That is the formula, not corruption. Those cases stay clean so desert sites remain usable.
 
-CRITICAL is reserved for physically impossible inputs (POWER −999 sentinels, out-of-Earth-range temperatures, extreme consistency gaps, impossible RH, negative or absurd PM/AQI). US AQI above EPA's published 500 ceiling and PM2.5 above 1000 µg/m³ are **not** corruption — CAMS reports those in extreme dust and wildfire (e.g. Iraq, close-proximity smoke). Only negative values, AQI above 5000, or PM2.5 above 10000 µg/m³ refuse a verdict. Small formula quirks and model rounding never refuse a verdict. Integrity findings are collapsed per `check_id` before scoring so hour-count alone cannot force LOW confidence. Assess live-refetches forecast every time and air quality when empty or stale; staleness findings mainly mean the refresh failed soft.
+CRITICAL is for impossible inputs (POWER −999, out-of-Earth temperatures, impossible RH, negative or absurd PM/AQI). US AQI above EPA's 500 ceiling and PM2.5 above 1000 µg/m³ can be real CAMS in dust and wildfire. Only negative values, AQI above 5000, or PM2.5 above 10000 µg/m³ refuse a verdict. Findings collapse per `check_id` so hour-count alone cannot force LOW.
 
-## 14. On-demand FIRMS and offline helper
+## On-demand FIRMS and offline helper
 
-`/api/assess` may soft-refresh FIRMS (and forecast/AQ/POWER) for new or stale coordinates, writing into Postgres with fail-soft behavior. Cron remains the primary demo-location ingest. Place search goes through `/api/geocode` (server proxy).
+`/api/assess` may soft-refresh FIRMS, forecast, AQ, and POWER for new or stale coordinates. Fail-soft. Cron is still the primary pull for demo pins. Place search is `/api/geocode`.
 
-The web service worker caches the app shell and **per-URL** `/api/assess` responses for offline replay of a previously viewed location — not a full PWA product claim. Other `/api/*` routes are not cached. Share links persist `lat`/`lon` or `event`, plus `workload`, `profile`, `acclimatized`, `required_hours`, `skin_type`, `theme`, and (for historical replay) `hour_offset`. Text-only mode is `text=1` merged into the current query.
+The service worker (`web/public/sw.js`, cache `shadecast-shell-v14`) stores the app shell and successful `/api/assess` responses keyed by full URL. Other `/api/*` routes are not cached. That is offline replay of a location you already opened, not a PWA product.
 
-## 14b. Basemap tiles (OpenStreetMap)
+## Basemap tiles
 
-The air-quality map uses a static mosaic of [OpenStreetMap](https://www.openstreetmap.org/copyright) raster tiles (`tile.openstreetmap.org`) with a CAMS particulate field overlay — not a WebGL map library. We only request tiles for the viewport actually displayed (typically ~6–12 tiles), show visible attribution, and degrade to a neutral background if tiles fail. Bulk prefetch / regional tile warming is not done. **At real product scale a self-hosted or commercial tile provider would be required**; OSM's public tile servers are suitable for this demo only.
+OSM raster tiles (`tile.openstreetmap.org`) plus the CAMS overlay. Viewport only, typically a handful of tiles, visible attribution, neutral background if tiles fail. No regional prefetch. OSM's public servers are fine for this demo. A real product would need a self-hosted or commercial tile source.
 
-## 15. Time Machine historical replay
+## Time Machine
 
-`/api/assess?event=` replays committed Open-Meteo archive weather + CAMS air-quality bundles through the **same** engine as live assess (`is_historical=true`). 
+`/api/assess?event=` loads a committed bundle, sets `is_historical=true`, and runs the live engine. Weather from `archive-api.open-meteo.com`. Air quality from Open-Meteo AQ with `start_date`/`end_date`. FIRMS NRT does not retain 2023, so most events use `firms_archive_empty.csv`. `quebec_2023_06` uses `firms_archive_quebec_2023_06.csv` near Lebel-sur-Quévillon. Weather-archive UV is typically null; we backfill from the AQ archive and pick a daytime (10–16 local) focus hour.
 
-**Provenance:** weather from `archive-api.open-meteo.com`; air quality from Open-Meteo AQ with `start_date`/`end_date`. FIRMS NRT does not retain 2023 detections; those bundles use an **empty archive fixture** (labeled in `validation/fixtures/`) — not a claim that no fires existed. Weather-archive UV is typically null; Time Machine backfills UV from the AQ archive and selects a daytime (10–16 local) focus hour for the current snapshot while still returning the full hourly day.
+NYC June 2023 sample JSON is a probe, not a registry event.
 
-**Concordance** of FIRMS heat detections vs CAMS AQI on real bundle hours is a **consistency study** (satellite heat vs air-quality model), **not** ground-truth validation against measured PM2.5. See `docs/validation.md`. Ground-station validation remains future work.
+## NWS is US-only and not a radio
 
-**Quebec wildfires Time Machine:** placed at Lebel-sur-Quévillon (evacuated June 2023) with archive weather/AQ and a hand-authored FIRMS fixture. Live FIRMS NRT still cannot retain 2023 for other events.
+`api.weather.gov` covers the US, territories, and adjacent marine zones. Oaxaca 17.07, −96.72 returned `InvalidPoint` in probes. That is cached as unavailable and not retried on the hot path until the 30-day grid TTL. The UI prints `nws_status.message` from the API.
 
-## 16. NWS is US-only and not instantaneous
+Open-Meteo still owns the global schedule. Override is 0–6 h only, and only if temperature differs by ≥5°C or wind by ≥15 km/h.
 
-[api.weather.gov](https://www.weather.gov/documentation/services-web-api) covers the United States, territories, and adjacent marine zones. Coordinates outside that domain (probed: Oaxaca 17.07, −96.72) return `InvalidPoint`. ShadeCast caches that as `nws_available: false` and does **not** retry it on the hot path until the mapping TTL expires. The UI states this as designed behavior, not an outage.
+Alerts are fetched live per assess with a 5-minute cache floor. The NWS client uses a per-process token bucket (1/s sustained, burst 5) and backs off on 403/429. Issuance delay plus that cache floor means this is not a warning radio.
 
-NWS is **additive**: Open-Meteo still drives the global schedule. A 0–6 hour override happens only when temperature differs by ≥5 °C or wind by ≥15 km/h.
+`outside_us` is a definitive weather.gov answer. `pending` is an incomplete lookup (throttle, network, first visit). A blip is never shown as "no coverage." Failed `/points` re-checks keep the cached mapping. Integrity rows `nws_temp_divergence`, `nws_wind_divergence`, `nws_alert_expired`, `nws_missing_grid` show N/A when `nws_status.state !== 'active'`.
 
-Alert arrival is **not instantaneous**. We fetch `/alerts/active` live per assess call with a 5-minute cache floor, behind a per-process token bucket (1/s sustained, burst 5) that backs off when weather.gov returns 403/429. There is still NWS issuance latency, network delay, and that cache floor. Do not treat ShadeCast as a warning-radio replacement.
+## Storms
 
-A miss reports **which kind** of miss it is. `outside_us` means weather.gov gave a definitive answer for that coordinate; `pending` means the lookup itself did not complete (throttled, network error, or a first visit that has not resolved yet) and will retry on the next assess. A transient failure is never presented as absent coverage. NWS also asks clients to re-check `/points` periodically because a coordinate's grid or office can change, so the mapping carries a 30-day TTL — and a failed re-check keeps the cached mapping rather than downgrading the location. Integrity catalog rows that only apply when NWS is live (`nws_temp_divergence`, `nws_wind_divergence`, `nws_alert_expired`, `nws_missing_grid`) show **N/A** when `nws_status.state` is not `active` — they are not marked OK.
+Inside NWS: Tornado warning and severe thunderstorm warning are HARD_STOP. Flash-flood, high-wind, and winter warnings floor at RESTRICT (flash flood becomes STOP if the hour is already CAUTION+). Watches escalate one level. Extreme-heat and air-quality alerts are display-only. Alerts are filtered per hour with `onset` / `expires`.
 
-## 17. Storm signals: NWS typed floors, Open-Meteo when NWS is missing
+Outside NWS (and on historical replay): Open-Meteo weathercode plus CAPE ≥ 1500 J/kg and precip ≥ 50% for lightning. Thunder codes 95–99 are model HARD_STOP; heavy rain 65/82 and snow codes are WARNING floors. Headlines say Open-Meteo. `thunderstorm_probability` was null in Phoenix, Seattle, and Oaxaca probes. We do not use it. Tornado/severe-thunderstorm **warnings** cannot fire without NWS.
 
-Inside NWS coverage, alert **type** sets crew precautions and a **verdict floor**. Tornado warning and severe thunderstorm warning remain HARD_STOP. Flash-flood, high-wind, and winter **warnings** floor at RESTRICT (flash flood becomes STOP if the hour is already CAUTION+). Watches still escalate one level. Extreme-heat and air-quality alerts are display-only — heat and air engines own those scores. Alerts are filtered **per hour** with `onset` / `expires`.
+## Clothing is a library lookup
 
-Outside NWS (`outside_us` / `pending` / historical), storms use Open-Meteo **weathercode** plus CAPE and precipitation probability. Thunder codes 95–99 are a model HARD_STOP; heavy rain (65 / 82) and snow codes are WARNING floors with flood/winter precautions. That is a **model proxy**, not an official warning. `thunderstorm_probability` is advertised on the forecast API but was null in probes for Phoenix, Seattle, and Oaxaca — we do not use it. Tornado/severe-thunderstorm **warnings** therefore cannot fire outside NWS coverage.
-
-## 18. Clothing and PPE are library lookups, not a kit engine
-
-Clothing rows live in `api/actions/library.yaml` and are selected with the same deterministic trigger filter as other actions. They are decision-support reminders with source URLs, not a personal protective equipment program or an OSHA-compliance checklist.
-
+Rows in `api/actions/library.yaml`, same trigger filter as other actions. Reminders with source URLs. Not an OSHA PPE program.

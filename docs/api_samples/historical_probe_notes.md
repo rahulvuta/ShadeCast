@@ -1,5 +1,7 @@
 # Historical API probe notes
 
+Probe of archive endpoints at NYC 40.71, −74.01 for 2023-06-07..08. **Not a Time Machine registry event.** `us_aqi` max 161 in the saved sample. Do not treat this as a ground-monitor comparison.
+
 - Probe date: run locally; samples saved under docs/api_samples/
 - Target: NYC lat=40.71 lon=-74.01 2023-06-07..2023-06-08
 

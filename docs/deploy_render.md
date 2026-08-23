@@ -1,43 +1,45 @@
 # Render deploy notes
 
-ShadeCast ships a [`render.yaml`](../render.yaml) Blueprint with four resources:
+[`render.yaml`](../render.yaml) defines four resources:
 
-1. `shadecast-db` — Postgres
-2. `shadecast-api` — FastAPI web service (`/healthz`)
-3. `shadecast-web` — static Vite build
-4. `shadecast-ingest` — cron every 20 minutes (Starter plan; Free is not valid for cron on Render)
+1. `shadecast-db`: Postgres, plan `free`
+2. `shadecast-api`: FastAPI, plan `free`, health `/healthz`
+3. `shadecast-web`: static Vite build
+4. `shadecast-ingest`: cron `*/20 * * * *`, plan `starter` (Render does not allow Free cron)
 
-## Manual steps (no Render API key in this environment)
+## Blueprint steps
 
-1. Open https://dashboard.render.com → **New** → **Blueprint**
-2. Connect the `rahulvuta/ShadeCast` GitHub repo
-3. Confirm the blueprint services
-4. Fill secret env vars when prompted:
-   - `NASA_FIRMS_MAP_API_KEY`
-   - `NASA_API_KEY` (optional)
-   - `FEATHERLESS_API_KEY`
-   - `CORS_ORIGINS` = your `shadecast-web` URL
-   - `VITE_API_BASE` = your `shadecast-api` URL (no trailing slash)
-5. After first API deploy succeeds, from a machine with DB access run:
+1. Render dashboard → New → Blueprint
+2. Connect `rahulvuta/ShadeCast`
+3. Confirm the four resources
+4. Secrets when prompted:
+   - `NASA_FIRMS_MAP_API_KEY` (required for FIRMS concordance)
+   - `NASA_API_KEY` (optional, unused by POWER fetch)
+   - `FEATHERLESS_API_KEY` (optional)
+   - `CORS_ORIGINS` = the `shadecast-web` origin (not `*` with credentials)
+   - `VITE_API_BASE` = the `shadecast-api` origin, no trailing slash
+5. After the API is up, from a machine that can reach the DB:
    ```bash
-   poetry run python -m ingest.job
-   poetry run python -m ingest.seed
+   python -m ingest.job
+   python -m ingest.seed
    ```
-6. For the hard demo, set `DEMO_MODE=1` on `shadecast-api` so the app serves only cached assessments (works with a severed NASA network).
+6. Hard demo: `DEMO_MODE=1` on `shadecast-api`
 
-## Local demo hardening
+`OPEN_API_DOCS` is unset in the blueprint, so `/docs` stays off.
+
+## Local hard demo
 
 ```bash
-poetry run python -m ingest.job
-poetry run python -m ingest.seed
-# in .env
+python -m ingest.job
+python -m ingest.seed
+# .env
 DEMO_MODE=1
-poetry run uvicorn api.main:app --reload --port 8000
+uvicorn api.main:app --reload --port 8000
 cd web && npm run dev
 ```
 
-## Render build notes
+## Build notes
 
-API and ingest install from `requirements.txt` (not Poetry) to avoid slow/fragile
-`pip install poetry` builds. `DATABASE_URL` from Render is auto-normalized to
-`postgresql+psycopg://` in `api/config.py`.
+API and ingest install `requirements.txt`, not Poetry. Render's `DATABASE_URL` is rewritten to `postgresql+psycopg://` in `api/config.py`.
+
+Public URLs we use in the README: https://shadecast-web.onrender.com/ and https://shadecast-api.onrender.com/healthz. Free tier sleeps; do not assume a live 200 without hitting them.

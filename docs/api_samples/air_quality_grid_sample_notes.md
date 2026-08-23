@@ -1,5 +1,7 @@
 # Open-Meteo air-grid + weathercode probe notes
 
+Dated probe of the multi-point AQ grid used by `/api/air-grid` and of forecast weathercode/CAPE. `pm10_wildfires` was requested here and returned all-null; the live overlay uses `pm2_5` / `us_aqi`.
+
 - center=(34.05, -117.25) step_deg=0.4
 - aq_url=https://air-quality-api.open-meteo.com/v1/air-quality?latitude=34.0500,34.4500,33.6500,34.0500,34.0500&longitude=-117.2500,-117.2500,-117.2500,-116.8500,-117.6500&hourly=pm2_5,pm10,us_aqi,dust,aerosol_optical_depth,pm10_wildfires&timezone=auto&forecast_days=1
 - wx_url=https://api.open-meteo.com/v1/forecast?latitude=34.05&longitude=-117.25&hourly=temperature_2m,relative_humidity_2m,weathercode,cape,precipitation_probability,cloud_cover,wind_gusts_10m&forecast_days=2&timezone=auto

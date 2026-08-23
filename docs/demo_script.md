@@ -1,45 +1,45 @@
 # 90-second demo script
 
-**Setup before the round:** `DEMO_MODE=1`, seed cache loaded, phone on the web UI, terminal ready with `poetry run pytest -q`.
+**Setup:** `DEMO_MODE=1`, seed cache loaded, phone on the web UI, terminal ready with `python -m pytest -q`.
 
 ---
 
-**(0:00–0:25) Hot + clear — Phoenix**
+**(0:00–0:25) Phoenix, hot and clear**
 
-> "Outdoor crews don't get one answer today — heat apps ignore smoke, smoke maps ignore heat. ShadeCast combines both into a work/rest schedule."
+> "Outdoor crews don't get one answer today. Heat apps ignore smoke. Smoke maps ignore heat. ShadeCast is a work/rest schedule from both."
 
-Select **Phoenix, AZ**. Show the big verdict card (color + icon + word), the hard-stop window, and the hour-by-hour strip.
+Select **Phoenix, AZ**. Verdict card, hard-stop window, hour strip.
 
-> "Open-Meteo drives the forward schedule. NASA POWER only answers 'is today hotter than usual here.'"
+> "Open-Meteo drives the forward hours. NASA POWER only answers whether today is hotter than usual here."
 
 ---
 
-**(0:25–0:55) Hot + smoky — Inland Empire + Spanish briefing**
+**(0:25–0:55) Inland Empire + English briefing**
 
-Switch to **Inland Empire, CA**. Watch the verdict escalate if smoke pressure rises. Expand the map briefly (FIRMS points + wind arrow).
+Switch to **Inland Empire, CA**. Smoke on this pin is CAMS PM2.5, not FIRMS dots. Open the map: OSM tiles plus a CAMS field, ~110 km disc, wind from (meteorological). Reload field if the grid failed.
 
-Toggle briefing language to **Spanish**. Tap **Copy briefing for crew**.
+Copy the English briefing. There is no language toggle.
 
-> "No push notifications — the supervisor copies a plain-text briefing and pastes it to the crew chat. That's the whole notification strategy."
+> "No push notifications. The supervisor copies plain text into crew chat. That is the whole notification path."
 
 ---
 
 **(0:55–1:20) Tests + honesty**
 
-Flip to the terminal:
-
 ```bash
-poetry run pytest -q
+python -m pytest -q
 ```
 
-> "The graded core is pure Python — heat index against NWS references, a reversed-wind test so we can't get meteorology backwards, and contract tests against real NASA samples."
+> "213 Python tests this tree. Heat index against NWS tables. A reversed-wind test so meteorological 'from' cannot flip. Time Machine replays 2023 archives through the same engine."
 
-Open **How we calculate this** or the footer link to `docs/limitations.md`.
+Open **How we calculate** or the footer link to `docs/limitations.md`.
 
 > "Smoke pressure is not AQI. Heat index is not WBGT. We wrote that down on purpose."
+
+Optional: `?corrupt=1` for integrity theater. `?event=quebec_2023_06` for Lebel-sur-Quévillon.
 
 ---
 
 **(1:20–1:30) Close**
 
-> "Three locations cached so the demo survives a dead network. ShadeCast: one verdict, one schedule, one briefing — globally."
+> "Three live pins plus a corrupt demo in cache, so a dead NASA network still demos. One verdict, one schedule, one English briefing."

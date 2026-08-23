@@ -1,69 +1,73 @@
 # ShadeCast validation
 
-Results below separate three different kinds of evidence. Do not conflate them.
+Three different kinds of evidence. Do not mix them.
 
-Source fixtures: [`validation/fixtures/bundles/`](../validation/fixtures/bundles/) (Open-Meteo archive + air-quality historical). Most events use empty FIRMS placeholders (NRT does not retain 2023). `quebec_2023_06` includes a hand-authored FIRMS archive near Lebel-sur-Quévillon — see [`validation/fixtures/README.md`](../validation/fixtures/README.md).
+Source fixtures: [`validation/fixtures/bundles/`](../validation/fixtures/bundles/). Most events use `firms_archive_empty.csv` because FIRMS NRT does not retain 2023. Quebec uses `firms_archive_quebec_2023_06.csv`. See [`validation/fixtures/README.md`](../validation/fixtures/README.md).
 
-## 1. Unit-level validation
+This session: `poetry run pytest` → **213 passed**. `cd web && npm test` → **48 passed**.
 
-These checks are independent of historical APIs. They confirm the engine implements published reference tables.
+## 1. Unit tables
+
+Independent of historical APIs. Confirms the engine implements published bands.
 
 | Check | Evidence |
 | --- | --- |
-| NWS Rothfusz heat index | `tests/test_heat.py` vs published NWS reference values |
-| WHO UV band boundaries | `tests/test_uv.py` |
-| EPA US AQI band boundaries | `tests/test_air.py` |
-| Integrity CRITICAL / LOW / MODERATE policy | `tests/test_integrity_*.py` |
-| Corrupt feed refuses verdict | RH=250 / PM=-5 / POWER −999 → UNUSABLE |
+| NWS Rothfusz heat index | `tests/test_heat.py` vs NWS reference values |
+| WHO UV bands (11+ Extreme) | `tests/test_uv.py` |
+| EPA US AQI bands | `tests/test_air.py` |
+| Upwind geometry (wind-from) | `tests/test_smoke.py`: fire due north + wind from north → upwind; wind from south → not |
+| Integrity CRITICAL / LOW / MODERATE | `tests/test_integrity_*.py` |
+| Corrupt feed refuses verdict | RH=250 / PM=−5 / POWER −999 → UNUSABLE |
 
-## 2. Historical event replay (real data)
+A second, **synthetic** harness lives in `validation/events.py` (`quebec_wildfires_2023`, `phoenix_july_heat_2023`, …). Those payloads are hand-set temps/AQI/smoke, not archive JSON. `tests/test_validation.py` runs that harness. Do not quote those verdicts as Time Machine actuals.
 
-Same unmodified `build_assessment` / environmental-load path as live requests, driven by committed Open-Meteo archive bundles (`is_historical=true`).
+## 2. Time Machine replay (archive JSON)
 
-| Event | Window | Real inputs (CAMS / archive) | Engine verdict | Expected (real-world claim) | Pass |
+Unmodified `build_assessment`, `is_historical=true`, committed Open-Meteo archive + CAMS.
+
+Actuals from this session (`tests/test_historical_replay.py`):
+
+| Event | Window | Inputs | Verdict | Expected | Pass |
 | --- | --- | --- | --- | --- | --- |
-| `quebec_2023_06` | 2023-06-07..08 | Lebel-sur-Quévillon; FIRMS archive fixture + CAMS AQI ~167; mild HI | STOP | STOP / RESTRICT | pass |
-| `phoenix_2023_07` | 2023-07-15..16 | Archive T_max ~46°C; HI ~111°F; AQI ~52 | RESTRICT | STOP / RESTRICT | pass |
-| `seattle_benign` | 2023-10-10..11 | Mild T / AQI ~25; light workload | GO | GO | pass |
-| `dust_event` | 2023-08-20..21 | Archive Phoenix window; quiet FIRMS | (see CI) | elevated / not UNUSABLE | pass\* |
-| `hot_but_clean` | 2023-06-20..21 | Hot clear; smoke_pressure 0 | CAUTION | heat-driven, not smoke-STOP | pass |
+| `quebec_2023_06` | 2023-06-07..08 | Lebel-sur-Quévillon; FIRMS fixture listed; CAMS drives smoke | RESTRICT | STOP or RESTRICT | pass |
+| `phoenix_2023_07` | 2023-07-15..16 | Archive heat | RESTRICT | STOP or RESTRICT | pass |
+| `seattle_benign` | 2023-10-10..11 | Mild; light workload | GO | GO | pass |
+| `dust_event` | 2023-08-20..21 | Phoenix window; quiet FIRMS | STOP | not UNUSABLE | pass |
+| `hot_but_clean` | 2023-06-20..21 | Hot; `smoke_pressure` < 10 | CAUTION | heat, not smoke-STOP | pass |
 
-\*Registry allows a range; CI asserts the event is not UNUSABLE and smoke does not dominate a clean FIRMS scene incorrectly.
+`dust_event` registry `expected_concordance` is MODEL_LEADS. CI does not assert it. Replay concordance was AGREE. Quiet FIRMS is still not treated as corruption.
 
-### Provenance notes
+Quebec: `smoke_pressure == pm25_to_smoke_pressure(pm2_5)`. The FIRMS fixture cannot inflate smoke.
 
-- **Weather:** `https://archive-api.open-meteo.com/v1/archive` with the same hourly variables as live forecast.
-- **Air quality:** Open-Meteo air-quality API with `start_date` / `end_date` (lookback to 2023 confirmed by probe).
-- **FIRMS:** NRT area CSV with trailing date returns header-only for 2023 (retention ~7 days). `quebec_2023_06` uses `firms_archive_quebec_2023_06.csv` (representative high-FRP detections near the evacuated town). Other events keep the empty archive placeholder.
-- **UV / focus hour:** Open-Meteo weather archive returns null UV for these windows. Time Machine backfills UV from the air-quality archive and auto-selects a daytime focus hour (local 10:00–16:00, max heat index) so the current snapshot is not midnight.
+Provenance:
 
-### Quebec wildfires (hard-hit location)
+- Weather: `https://archive-api.open-meteo.com/v1/archive`
+- Air quality: Open-Meteo AQ `start_date` / `end_date`
+- FIRMS: NRT dated pull is header-only for 2023. Quebec's CSV is hand-authored near the evacuated town.
+- UV: weather archive UV is null on these windows. Time Machine backfills from AQ and focuses 10:00–16:00 local.
 
-Time Machine places this event at **Lebel-sur-Quévillon, QC** — a community evacuated during the June 2023 Quebec wildfire complex — rather than a distant smoke-receptor city. Engine concordance is **AGREE** when the archive fixture fires and CAMS AQI are both elevated.
+NYC June 2023 (`docs/api_samples/historical_*nyc*`) is a probe. `us_aqi` max 161 in that file. It is not in `registry.yaml`. We have no ground-monitor comparison in this repo.
 
 Re-run:
 
 ```bash
-poetry run python scripts/seed_historical_bundles.py   # refresh fixtures (network)
+poetry run python scripts/seed_historical_bundles.py   # network; refreshes fixtures
 poetry run pytest tests/test_historical_replay.py -q
 ```
 
-## 3. Concordance study (real coordinate-hours)
+## 3. Concordance
 
-Spearman rank correlation of `smoke_pressure` vs CAMS `us_aqi` across **real** hours from the committed historical bundles (empty FIRMS → smoke_pressure mostly 0; AQI varies). This is a **consistency** check between the satellite-fire proxy and the CAMS model — **not** validation against ground-station PM2.5.
+Two checks, different questions.
 
-| Metric | Value |
-| --- | --- |
-| Sample | Real hours from registry bundles (n reported by test) |
-| Spearman | See `tests/test_historical_replay.py` / latest CI log (publish the computed number; do not quote a flattering synthetic figure) |
+**Classifier.** FIRMS heat score vs CAMS US AQI. Thresholds in `api/engine/air.py`: heat elevated ≥ 30, quiet < 10; AQI elevated ≥ 101, quiet < 51. States: AGREE / FIRMS_LEADS / MODEL_LEADS.
 
-**Explicit limitation:** comparing a FIRMS-based smoke proxy to CAMS AQI cannot prove either matches measured PM2.5. Ground-truth validation against EPA monitors is the next step.
+**Spearman on real bundle hours.** `test_real_concordance_spearman_from_bundles` runs `assess_smoke(pm2_5=…)` vs that hour's `us_aqi`. This session: **n=80, ρ=0.54**. Same CAMS field, two encodings. Not FIRMS. Not EPA monitors.
 
-### Synthetic generator (CI-only, not empirical)
+`validation/concordance_study.synthetic_sample(60)` is a CI unit test of the classifier. Any ~0.83 figure from it is **synthetic**.
 
-`validation/concordance_study.synthetic_sample(60)` remains available as a **deterministic unit test** of the concordance classifier. It must never be presented as an observational result. Any mention of its ~0.83 Spearman must include the word **synthetic** in the same sentence.
+Ground-station validation against EPA monitors is not in this repo.
 
-## How to re-run offline unit harness
+## Offline unit harness
 
 ```bash
 poetry run pytest tests/test_validation.py tests/test_historical_replay.py -q

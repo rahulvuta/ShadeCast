@@ -11,7 +11,7 @@ SOURCES: list[SourceAttribution] = [
     SourceAttribution(
         name="NASA FIRMS",
         url="https://firms.modaps.eosdis.nasa.gov/",
-        role="Active fire detections (smoke term)",
+        role="Active fire detections (concordance only; not the smoke term)",
     ),
     SourceAttribution(
         name="NASA POWER",

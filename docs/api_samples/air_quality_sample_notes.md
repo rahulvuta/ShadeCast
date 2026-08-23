@@ -1,5 +1,7 @@
 # Open-Meteo Air Quality probe notes
 
+Dated probe. This CAMS feed is the smoke term (`pm2_5` → `smoke_pressure`) and the US AQI term. `european_aqi` is a different scale; the client keeps it only for European coordinates (`api/clients/air_quality.py`).
+
 - lat=34.05, lon=-117.25
 - used_url=https://air-quality-api.open-meteo.com/v1/air-quality?latitude=34.05&longitude=-117.25&hourly=pm2_5,pm10,us_aqi,uv_index,uv_index_clear_sky,dust,aerosol_optical_depth,ozone,nitrogen_dioxide,carbon_monoxide,european_aqi,us_aqi_pm2_5,us_aqi_pm10,us_aqi_nitrogen_dioxide,us_aqi_carbon_monoxide,us_aqi_ozone,us_aqi_sulphur_dioxide&timezone=auto
 
