@@ -6,11 +6,11 @@ No. It is 0–100 `smoke_pressure` from Open-Meteo CAMS PM2.5 (`api/engine/smoke
 
 ## Why not NASA POWER as the forecast?
 
-POWER is a reanalysis / near-real-time archive. A scheduler is forward-looking. Open-Meteo drives the hours. POWER answers climatology only. The POWER URL does not send `NASA_API_KEY`.
+POWER is a reanalysis / near-real-time archive. A scheduler is forward-looking. Open-Meteo drives the hours. POWER answers climatology only.
 
 ## Did the LLM decide the risk?
 
-No. Verdicts are Python. Featherless rephrases `POST /api/brief` JSON and can narrate integrity findings. It does not pick action IDs on the assess path (`select_actions` is called without `llm_chosen_ids`). Templates in `api/llm/fallback.py` still work if the key is missing.
+No. Verdicts are Python. Featherless rephrases `POST /api/brief` JSON and can narrate integrity findings. Action IDs come from `api/actions/select.py`. Templates in `api/llm/fallback.py` still work if the key is missing.
 
 ## What if NASA is down during the demo?
 

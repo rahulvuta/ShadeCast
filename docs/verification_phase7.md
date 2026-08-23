@@ -29,10 +29,10 @@ The UI has moved since: CAMS map, no language dropdown, Fitzpatrick I–VI, N/A 
 
 ## Screenshots in `docs/screenshots/`
 
-Product shots from **2026-08-23** (live Phoenix, sunlight theme): `phoenix_verdict.png`, `cams_map.png`, `shift_sheet.png`. Those replace the 2026-08-09 failed-fetch PNGs.
+Product shots from **2026-08-23** (live Phoenix, sunlight theme): `phoenix_verdict.png`, `cams_map.png`, `shift_sheet.png`, `clothing_ppe.png`, `conditions_chart.png`, `risk_clock.png`.
 
 `lighthouse_*.png` / `.json` are still the V3 local preview from 2026-08-09.
 
 ## Test count that day
 
-The log said `poetry run pytest` → 141 passed. This tree is **213** pytest + **48** vitest. Use the current numbers.
+The log said `poetry run pytest` → 141 passed. This tree is **212** pytest + **48** vitest. Use the current numbers.

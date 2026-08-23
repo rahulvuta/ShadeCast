@@ -6,7 +6,7 @@ A work/rest scheduler for outdoor crews. One GO / CAUTION / RESTRICT / STOP verd
 
 Built for supervisors who currently check a heat app and an air-quality map and then guess.
 
-**Live:** https://shadecast-web.onrender.com/ (Render free tier sleeps; the first hit after idle can take about a minute.)
+**Live:** https://shadecast-web.onrender.com/
 
 ![Phoenix live assessment: RESTRICT, NWS Extreme Heat Warning, load 44](docs/screenshots/phoenix_verdict.png)
 *Live Phoenix, 33.45, −112.07, 2026-08-23. RESTRICT, heat index 99°F, smoke 20/100, load 44. Official NWS Extreme Heat Warning. Time Machine is off. The yellow bar is last-good cache (POWER was stale in this capture).*
@@ -15,9 +15,16 @@ Built for supervisors who currently check a heat app and an air-quality map and 
 *Same pin. OSM tiles plus a CAMS PM2.5 / US AQI disc (~110 km ring). Caption in the UI: not sample-site markers. Wind from 88° (meteorological), 13 km/h. Smoke at the crew point is 20/100.*
 
 ![Supervisor shift sheet and English template briefing](docs/screenshots/shift_sheet.png)
-*Copy/PDF sheet for that Phoenix plan: hard-stop 09:00–21:00, best work 07:00–09:00, NWS heat warning, 5-day STOP hours, sourced actions and PPE. Briefing footer says template summary (LLM offline) — Featherless was not used here.*
+*Copy/PDF sheet for that Phoenix plan: hard-stop 09:00–21:00, best work 07:00–09:00, NWS heat warning, 5-day STOP hours, sourced actions and PPE. Briefing footer says template summary (LLM offline). Featherless was not used here.*
 
-`?corrupt=1` still stages a garbage feed. We did not capture a refused verdict in this round because live inputs were passing.
+![Clothing and PPE by body zone](docs/screenshots/clothing_ppe.png)
+*Library rows from `api/actions/library.yaml`. Jeans and a tee are the base silhouette. Hands are not drawn as gloves.*
+
+![24-hour hazard lines and stacked load score](docs/screenshots/conditions_chart.png)
+*Heat, UV, US AQI, smoke pressure, and wind on one 24h chart. Stack height equals `load_score`. Click an hour to inspect it on the verdict card.*
+
+![Hour-by-hour work/rest and 24-hour risk clock](docs/screenshots/risk_clock.png)
+*Same Phoenix day. RESTRICT 20/40m early, STOP 0/60m from 09:00. Dashed ring is the hard-stop window.*
 
 ## The problem
 
@@ -30,6 +37,8 @@ Heat stress is also a production problem. A [*Nature Cities* study](https://hsph
 British Columbia has piloted a [combined wildfire-smoke and extreme-heat action plan](https://www.vchri.ca/stories/2026/04/20/helping-people-breathe-easier-changing-climate) because [co-exposure is worse than either hazard alone](https://www.bccdc.ca/resource-gallery/Documents/Guidelines%20and%20Forms/Guidelines%20and%20Manuals/Health-Environment/BCCDC_WildFire_FactSheet_HotWeather.pdf). The [University of Minnesota Extension farm safety guide](https://extension.umn.edu/climate-resilience-resources-vegetable-growers-minnesota/heat-and-air-quality-safety-plan) still tells growers to check the OSHA-NIOSH Heat Safety Tool **and** an air-quality forecast.
 
 ShadeCast's job is that combined check, as a per-crew schedule. Combined heat-and-smoke warnings already exist in public health. We did not invent the premise.
+
+Today a supervisor merges a heat reading and an air-quality reading and guesses. ShadeCast returns 20 minutes on, 40 in shade, hard-stop 09:00–21:00, for that crew's workload, acclimatization, and sensitivity profile — live Phoenix, 2026-08-23, RESTRICT at moderate / regular / not acclimatized.
 
 ## Why not AirNow or the OSHA app?
 
@@ -55,6 +64,23 @@ Crew briefings are English. `POST /api/brief` still accepts `es` / `vi` and `api
 
 Share URLs persist `lat`/`lon` or `event`, plus `workload`, `profile`, `acclimatized`, `required_hours`, `skin_type`, `theme`, `text`, `corrupt`, and (historical) `hour_offset`. Text-only is `text=1` merged into the current query.
 
+## What we changed after user feedback
+
+Early testers used the heat-and-smoke core and asked for what the first build skipped.
+
+| They asked for | We built |
+|---|---|
+| Real-time weather, not only the model | NWS live alerts and the 0–6 h blend in `api/engine/nws_blend.py`; storm hard-stops from Tornado / Severe Thunderstorm warnings |
+| Verifiable data accuracy | Integrity layer with a visible checklist and confidence score (`IntegrityTheater`, `?corrupt=1`) |
+| Account for medical conditions | Six profiles in `api/engine/sensitivity.py`: general, asthma/respiratory, cardiovascular, children, athlete, over 65 |
+| Clothing recommendations | Body-zone PPE from `api/actions/library.yaml` via `ClothingPanel` |
+| Easy settings customization | `SidebarControls` with URL-persisted workload, profile, acclimatization, hours, skin type, theme, text mode |
+| View the shift without downloading | On-screen shift sheet preview in `ShiftSheetExport` before copy / PDF |
+| Shifts suited to crew needs | `ShiftPlanner` with typed `required_hours` blocks and daypart windows |
+| Chart of conditions and score impact | `ConditionsChart` plus driver breakdowns; risk clock for the hour stack |
+
+Fitzpatrick I–VI landed on the UV panel with the same pass. Email was asked for. We did not build it. Copy the briefing or export the PDF.
+
 ## How it works
 
 ```text
@@ -77,7 +103,7 @@ Open-Meteo forecast + CAMS AQ + POWER climatology + FIRMS heat + NWS (US)
 |---|---|
 | Open-Meteo Forecast | Hourly weather + UV. Schedule backbone. `timezone=auto`. |
 | Open-Meteo Air Quality | CAMS PM2.5 mapped to 0–100 `smoke_pressure` in `api/engine/smoke.py`. US AQI for the air term. 5-day product, which is why the planner stops at 5 days. |
-| NASA POWER | Climatology only (`time-standard=LST`). Not a forecast. The fetch URL in `api/clients/power.py` does not send `NASA_API_KEY`. |
+| NASA POWER | Climatology only (`time-standard=LST`). Not a forecast. |
 | NASA FIRMS | Fire radiative power for **concordance** with CAMS AQI (`api/engine/air.py`). 300 km search, ±45° upwind, meteorological “from”. Needs a MAP_KEY. |
 | NWS | Live alerts + 0–6 h override when \|ΔT\| ≥ 5°C or \|Δwind\| ≥ 15 km/h (`api/engine/nws_blend.py`). No API key; User-Agent required. |
 | Open-Meteo Geocoding | Place search via `/api/geocode` (in-process LRU 256, 10-minute TTL). |
@@ -86,21 +112,23 @@ POWER is a reanalysis archive. Using it as this afternoon's forecast would be a 
 
 The 5-day bound is `MAX_HORIZON_DAYS = 5` in `api/engine/schedule.py`. Heat-only Open-Meteo can go further. CAMS cannot, so we do not pretend.
 
-Actions come from `api/actions/select.py`. `build_assessment` does not pass `llm_chosen_ids`. The LLM path in `select_actions` is unused.
+Actions come from `api/actions/select.py` (deterministic top-N). Featherless only rephrases the briefing JSON.
 
 ## Validation snapshot
 
-`poetry run pytest` this session: **213 passed**. `cd web && npm test`: **48 passed** across 9 files. CI (`.github/workflows/ci.yml`) runs both, plus `tsc --noEmit` and `npm run build`.
+`poetry run pytest` this session: **212 passed**. `cd web && npm test`: **48 passed** across 9 files. CI (`.github/workflows/ci.yml`) runs both, plus `tsc --noEmit` and `npm run build`.
 
-Time Machine (`GET /api/assess?event=`) replays committed Open-Meteo archive bundles through the same `build_assessment` path. This session's actuals:
+Time Machine (`GET /api/assess?event=`) replays committed Open-Meteo archive bundles through the same `build_assessment` path. Quebec, Phoenix, and Seattle assert a real-world band (STOP/RESTRICT, STOP/RESTRICT, GO). `dust_event` and `hot_but_clean` are mechanism tests: the daytime focus hour is max heat index between 10:00 and 16:00 local, not a published "this hour was STOP," so we pin the claim (must not refuse; smoke must stay below 10) rather than a single letter.
 
-| Event | Engine verdict | Registry expected | Notes |
-|---|---|---|---|
-| `quebec_2023_06` | RESTRICT | STOP or RESTRICT | Lebel-sur-Quévillon. CAMS drives smoke (`smoke_pressure` matches `pm25_to_smoke_pressure`). FIRMS fixture is listed, not mixed into smoke. Concordance AGREE. |
-| `phoenix_2023_07` | RESTRICT | STOP or RESTRICT | Archive heat. |
-| `seattle_benign` | GO | GO | Light workload control. |
-| `hot_but_clean` | CAUTION | wide range | `smoke_pressure` < 10. Heat, not smoke-STOP. |
-| `dust_event` | STOP | not UNUSABLE | CI does not assert MODEL_LEADS. Replay concordance was AGREE. |
+This session's actuals:
+
+| Event | Engine verdict | What CI asserts |
+|---|---|---|
+| `quebec_2023_06` | RESTRICT | STOP or RESTRICT. CAMS drives smoke. FIRMS fixture listed, not mixed into smoke. Concordance AGREE. |
+| `phoenix_2023_07` | RESTRICT | STOP or RESTRICT. Archive heat. |
+| `seattle_benign` | GO | GO. Light workload control. |
+| `hot_but_clean` | CAUTION | `smoke_pressure` < 10. Heat may still CAUTION/RESTRICT/STOP. |
+| `dust_event` | STOP | Not UNUSABLE. Quiet FIRMS is not treated as corruption. |
 
 NYC June 2023 is **not** a Time Machine event. `docs/api_samples/historical_*nyc*` is a probe of archive weather + CAMS (`us_aqi` max 161 in that sample). Do not treat it as a replay fail against ground monitors.
 
@@ -153,17 +181,27 @@ http://127.0.0.1:5173
 `DEMO_MODE=1` serves only `assessment_cache`. Useful when NASA is down.
 
 ```bash
-pytest -q          # 213 collected this session
+pytest -q          # 212 collected this session
 cd web && npm test # 48
 ```
 
 Deploy: [docs/deploy_render.md](docs/deploy_render.md) and [render.yaml](render.yaml). Ops: [docs/runbook.md](docs/runbook.md).
 
-## Cost and keys
+## Cost
 
-`render.yaml`: free Postgres, free API web, static web, starter cron every 20 minutes. Free Postgres on Render expires; upgrade or lose the cache. Free web spins down after idle.
+`render.yaml` matches production: `shadecast-api` and `shadecast-ingest` on Starter ($7/service/month, always on), Postgres `basic-256mb` (Render's current ~$7 paid name; older dashboards still say Starter), static site for the UI. The API does not spin down after idle. First hit is not a minute of cold start. A deploy or a slow Open-Meteo fetch can still take time.
 
-FIRMS needs `NASA_FIRMS_MAP_API_KEY`. Open-Meteo forecast, air quality, and geocoding, NASA POWER, and NWS do not. `NASA_API_KEY` is in the env template and unused. Featherless is optional; templates in `api/llm/fallback.py` still brief in English.
+### Maintenance
+
+I keep this through the next school year: dependency bumps (~2 hours/quarter), FIRMS `MAP_KEY` rotation if `/healthz` shows quota errors, and a monthly check that the Render cron is writing rows (~30 minutes). [docs/runbook.md](docs/runbook.md) is the handoff if that stops.
+
+Wrong answers are possible. ShadeCast is decision support, not a compliance tool and not a substitute for an employer's heat-illness program or on-site WBGT. The integrity layer exists because we would rather refuse a verdict (`UNUSABLE`, `?corrupt=1`) than print GO on garbage inputs.
+
+### Scale
+
+Extra assess traffic is cheap while weather and CAMS stay server-side and Postgres-cached (`*/20` ingest). The wall is OSM: public `tile.openstreetmap.org` is demo-only (`docs/limitations.md`). A real user base needs a tile provider and, if the cron ever dies, a stale-data page that does not look like a healthy GO.
+
+FIRMS needs `NASA_FIRMS_MAP_API_KEY`. Open-Meteo forecast, air quality, geocoding, NASA POWER, and NWS do not. Featherless is optional; `api/llm/fallback.py` still briefs in English.
 
 ## How this was built
 
@@ -171,4 +209,8 @@ Cursor as a pair programmer. **92 of 116** commits carry a `Co-authored-by: Curs
 
 Human calls that still matter: POWER is not a forecast; smoke is CAMS not FIRMS; NWS must not become a hard dependency; limits live in `docs/limitations.md` and the app footer.
 
-Solo, [rahulvuta](https://github.com/rahulvuta). High-school hackathon project. There is no `LICENSE` file; NASA FIRMS, NASA POWER, Open-Meteo, and OpenStreetMap still require attribution.
+Solo, [rahulvuta](https://github.com/rahulvuta). High-school hackathon project.
+
+## License
+
+[MIT](LICENSE). NASA FIRMS, NASA POWER, Open-Meteo, NWS, and OpenStreetMap still require attribution (app footer).

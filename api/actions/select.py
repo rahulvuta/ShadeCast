@@ -1,25 +1,17 @@
 """Select grounded actions from the curated library.
 
-Flow:
-  1. Deterministic filter by trigger + audience → candidate set
-  2. Optional LLM picks 3–5 IDs from the candidate set
-  3. Pydantic validates chosen IDs exist in the library
-  4. Hallucinated IDs are discarded; gaps filled with deterministic top-N
-
-Never silently fails — always returns a validated list.
+Deterministic filter by trigger + audience, then top-N by priority.
+Clothing rows are selected separately via `select_clothing`.
 """
 
 from __future__ import annotations
 
-import logging
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
 import yaml
-from pydantic import BaseModel, Field, ValidationError
-
-logger = logging.getLogger(__name__)
+from pydantic import BaseModel, Field
 
 LIBRARY_PATH = Path(__file__).with_name("library.yaml")
 
@@ -180,33 +172,6 @@ def deterministic_top_n(candidates: list[ActionEntry], n: int = 4) -> list[Selec
     return [_as_selected(a) for a in candidates[:n]]
 
 
-def validate_selected_ids(
-    chosen_ids: list[str],
-    candidates: list[ActionEntry],
-    *,
-    n: int = 4,
-) -> list[SelectedAction]:
-    """Keep only IDs that exist in candidates; fill gaps with deterministic top-N."""
-    by_id = {a.id: a for a in candidates}
-    selected: list[SelectedAction] = []
-    seen: set[str] = set()
-    for cid in chosen_ids:
-        if cid in by_id and cid not in seen:
-            selected.append(_as_selected(by_id[cid]))
-            seen.add(cid)
-        else:
-            logger.info("Discarding hallucinated or unknown action id: %s", cid)
-    if len(selected) < n:
-        for a in candidates:
-            if a.id in seen:
-                continue
-            selected.append(_as_selected(a))
-            seen.add(a.id)
-            if len(selected) >= n:
-                break
-    return selected[:n]
-
-
 def _operational_candidates(candidates: list[ActionEntry]) -> list[ActionEntry]:
     return [a for a in candidates if a.category != "clothing"]
 
@@ -264,7 +229,6 @@ def select_actions(
     storm_band: str | None = None,
     lightning_risk: bool = False,
     overnight: bool = False,
-    llm_chosen_ids: list[str] | None = None,
     n: int = 4,
     hazard_classes: list[str] | None = None,
 ) -> list[SelectedAction]:
@@ -285,6 +249,4 @@ def select_actions(
     candidates = _operational_candidates(filter_candidates(triggers, audience=profile))
     if not candidates:
         candidates = _operational_candidates(filter_candidates(["heat"], audience="general"))
-    if llm_chosen_ids:
-        return validate_selected_ids(llm_chosen_ids, candidates, n=n)
     return deterministic_top_n(candidates, n=n)

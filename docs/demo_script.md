@@ -30,7 +30,7 @@ Copy the English briefing. There is no language toggle.
 python -m pytest -q
 ```
 
-> "213 Python tests this tree. Heat index against NWS tables. A reversed-wind test so meteorological 'from' cannot flip. Time Machine replays 2023 archives through the same engine."
+> "212 Python tests this tree. Heat index against NWS tables. A reversed-wind test so meteorological 'from' cannot flip. Time Machine replays 2023 archives through the same engine."
 
 Open **How we calculate** or the footer link to `docs/limitations.md`.
 

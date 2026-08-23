@@ -27,7 +27,6 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://rahulvuta@localhost:5432/shadecast"
 
     nasa_firms_map_api_key: str = ""
-    nasa_api_key: str = ""
 
     featherless_api_key: str = ""
     featherless_model_id: str = "zai-org/GLM-5.2"

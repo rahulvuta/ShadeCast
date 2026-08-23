@@ -1,11 +1,11 @@
 # Render deploy notes
 
-[`render.yaml`](../render.yaml) defines four resources:
+[`render.yaml`](../render.yaml) defines four resources. Live API and ingest are Starter (always on). Postgres is paid, not the 30-day free instance. The web UI is a static site.
 
-1. `shadecast-db`: Postgres, plan `free`
-2. `shadecast-api`: FastAPI, plan `free`, health `/healthz`
+1. `shadecast-db`: Postgres, plan `basic-256mb`
+2. `shadecast-api`: FastAPI, plan `starter`, health `/healthz`
 3. `shadecast-web`: static Vite build
-4. `shadecast-ingest`: cron `*/20 * * * *`, plan `starter` (Render does not allow Free cron)
+4. `shadecast-ingest`: cron `*/20 * * * *`, plan `starter`
 
 ## Blueprint steps
 
@@ -14,7 +14,6 @@
 3. Confirm the four resources
 4. Secrets when prompted:
    - `NASA_FIRMS_MAP_API_KEY` (required for FIRMS concordance)
-   - `NASA_API_KEY` (optional, unused by POWER fetch)
    - `FEATHERLESS_API_KEY` (optional)
    - `CORS_ORIGINS` = the `shadecast-web` origin (not `*` with credentials)
    - `VITE_API_BASE` = the `shadecast-api` origin, no trailing slash
@@ -42,4 +41,4 @@ cd web && npm run dev
 
 API and ingest install `requirements.txt`, not Poetry. Render's `DATABASE_URL` is rewritten to `postgresql+psycopg://` in `api/config.py`.
 
-Public URLs we use in the README: https://shadecast-web.onrender.com/ and https://shadecast-api.onrender.com/healthz. Free tier sleeps; do not assume a live 200 without hitting them.
+Public URLs: https://shadecast-web.onrender.com/ and https://shadecast-api.onrender.com/healthz. The Starter API stays up after idle.

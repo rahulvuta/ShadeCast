@@ -4,13 +4,13 @@
 
 databases:
   - name: shadecast-db
-    plan: free
+    plan: basic-256mb
 
 services:
   - type: web
     name: shadecast-api
     runtime: python
-    plan: free
+    plan: starter
     rootDir: .
     buildCommand: pip install --upgrade pip && pip install -r requirements.txt
     startCommand: alembic upgrade head && uvicorn api.main:app --host 0.0.0.0 --port $PORT
@@ -21,8 +21,6 @@ services:
           name: shadecast-db
           property: connectionString
       - key: NASA_FIRMS_MAP_API_KEY
-        sync: false
-      - key: NASA_API_KEY
         sync: false
       - key: FEATHERLESS_API_KEY
         sync: false
@@ -71,8 +69,6 @@ services:
           name: shadecast-db
           property: connectionString
       - key: NASA_FIRMS_MAP_API_KEY
-        sync: false
-      - key: NASA_API_KEY
         sync: false
       - key: NWS_USER_AGENT
         value: "ShadeCast/1.0 (+https://github.com/rahulvuta/ShadeCast)"

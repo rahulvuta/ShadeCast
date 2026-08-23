@@ -4,7 +4,7 @@ Three different kinds of evidence. Do not mix them.
 
 Source fixtures: [`validation/fixtures/bundles/`](../validation/fixtures/bundles/). Most events use `firms_archive_empty.csv` because FIRMS NRT does not retain 2023. Quebec uses `firms_archive_quebec_2023_06.csv`. See [`validation/fixtures/README.md`](../validation/fixtures/README.md).
 
-This session: `poetry run pytest` → **213 passed**. `cd web && npm test` → **48 passed**.
+This session: `poetry run pytest` → **212 passed**. `cd web && npm test` → **48 passed**.
 
 ## 1. Unit tables
 
@@ -27,13 +27,15 @@ Unmodified `build_assessment`, `is_historical=true`, committed Open-Meteo archiv
 
 Actuals from this session (`tests/test_historical_replay.py`):
 
-| Event | Window | Inputs | Verdict | Expected | Pass |
+Quebec, Phoenix, and Seattle pin a real-world band. `dust_event` and `hot_but_clean` pin a mechanism: the focus hour is max heat index between 10:00 and 16:00 local, so the letter can move while the claim (not UNUSABLE; smoke < 10) stays.
+
+| Event | Window | Inputs | Verdict | What CI asserts | Pass |
 | --- | --- | --- | --- | --- | --- |
 | `quebec_2023_06` | 2023-06-07..08 | Lebel-sur-Quévillon; FIRMS fixture listed; CAMS drives smoke | RESTRICT | STOP or RESTRICT | pass |
 | `phoenix_2023_07` | 2023-07-15..16 | Archive heat | RESTRICT | STOP or RESTRICT | pass |
 | `seattle_benign` | 2023-10-10..11 | Mild; light workload | GO | GO | pass |
 | `dust_event` | 2023-08-20..21 | Phoenix window; quiet FIRMS | STOP | not UNUSABLE | pass |
-| `hot_but_clean` | 2023-06-20..21 | Hot; `smoke_pressure` < 10 | CAUTION | heat, not smoke-STOP | pass |
+| `hot_but_clean` | 2023-06-20..21 | Hot; `smoke_pressure` < 10 | CAUTION | heat-driven, not smoke-STOP | pass |
 
 `dust_event` registry `expected_concordance` is MODEL_LEADS. CI does not assert it. Replay concordance was AGREE. Quiet FIRMS is still not treated as corruption.
 

@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 from api.actions.select import (
-    filter_candidates,
     load_library,
     select_actions,
     select_clothing,
-    validate_selected_ids,
 )
 from api.engine.environmental_load import Driver
 from api.engine.explain import explain_from_drivers
@@ -58,21 +56,6 @@ def test_every_clothing_entry_has_source_and_zone():
     for a in clothing:
         assert a.source_url.startswith("http"), a.id
         assert a.body_zone
-
-
-def test_hallucinated_action_id_rejected():
-    candidates = filter_candidates(["heat"], audience="general")
-    assert candidates
-    selected = validate_selected_ids(
-        ["totally_fake_action", candidates[0].id, "also_fake"],
-        candidates,
-        n=3,
-    )
-    ids = [s.id for s in selected]
-    assert "totally_fake_action" not in ids
-    assert "also_fake" not in ids
-    assert candidates[0].id in ids
-    assert len(selected) == 3
 
 
 def test_select_actions_deterministic():

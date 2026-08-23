@@ -3,6 +3,7 @@ name = "shadecast"
 version = "0.1.0"
 description = "Crew-level work/rest scheduler for compound heat and wildfire-smoke risk"
 authors = ["ShadeCast Team"]
+license = "MIT"
 readme = "README.md"
 package-mode = false
 packages = [

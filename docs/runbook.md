@@ -79,6 +79,6 @@ The ingest start command already runs that. Assess can still compute from live O
 
 Optional. UI always posts `lang: 'en'`. Fallback templates also exist for `es` and `vi` in `api/llm/fallback.py`; nothing in the web app selects them. JSON parse errors: one retry, then fallback.
 
-## Render free tier
+## Render plans
 
-Free Postgres expires 30 days after create. Upgrade or the cache is gone. Free API web sleeps after ~15 minutes idle. First request after sleep is slow.
+`shadecast-api` and `shadecast-ingest` are Starter. They do not sleep after 15 minutes idle. `shadecast-db` is paid `basic-256mb` (`render.yaml`). `shadecast-web` is static. Keep the paid API: dropping it back to Free brings back the ~1 minute cold start.

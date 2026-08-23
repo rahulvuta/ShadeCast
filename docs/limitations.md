@@ -14,9 +14,7 @@ NWS Rothfusz heat index, with workload / acclimatization shifts, and +8°F when 
 
 ## Forecast vs climatology
 
-Open-Meteo drives every forward hour. NASA POWER is the climatology baseline so the UI can say today is hotter than the recent POWER average for this date/hour. POWER uses `time-standard=LST` (15-degree solar swath). That can disagree with civil local time. Schedule timing uses Open-Meteo `timezone=auto`.
-
-`NASA_API_KEY` is unused. POWER fetch in `api/clients/power.py` has no key parameter.
+Open-Meteo drives every forward hour. NASA POWER is the climatology baseline so the UI can say today is hotter than the recent POWER average for this date/hour. POWER uses `time-standard=LST` (15-degree solar swath). That can disagree with civil local time. Schedule timing uses Open-Meteo `timezone=auto`. POWER fetch in `api/clients/power.py` needs no API key.
 
 ## FIRMS latency
 

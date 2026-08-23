@@ -32,7 +32,7 @@ Heat: Rothfusz in `api/engine/heat.py`. `full_sun` is true when `cloud_cover is 
 
 Storm: `api/engine/storm.py`, independent of `load_score`. Wind gusts > 40 km/h are a separate hard stop in `api/engine/environmental_load.py`.
 
-Actions: `select_actions` / `select_clothing`. Assess does not pass `llm_chosen_ids`.
+Actions: `select_actions` / `select_clothing` (deterministic top-N from `library.yaml`).
 
 LLM: `POST /api/brief` rephrases engine JSON (`api/llm/prompts.py`, `max_tokens` 800). Cache key includes crew-local hour, workload, profile, acclimatized, and an hourly-verdict fingerprint (`api/llm/client.py`). Integrity narration is a second optional rephrase (`api/llm/integrity_narration.py`, `max_tokens` 180). Neither path computes risk.
 
