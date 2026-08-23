@@ -8,7 +8,16 @@ Built for supervisors who currently check a heat app and an air-quality map and 
 
 **Live:** https://shadecast-web.onrender.com/ (Render free tier sleeps; the first hit after idle can take about a minute.)
 
-There is no current product screenshot in this repo. The UI PNGs under `docs/screenshots/` (`verdict_card.png`, `map_fires.png`, and the rest) are a 2026-08-09 local preview that failed to fetch the API. `lighthouse_*.png` / `.json` are real Lighthouse reports from that same preview, not pictures of the live app.
+![Phoenix live assessment: RESTRICT, NWS Extreme Heat Warning, load 44](docs/screenshots/phoenix_verdict.png)
+*Live Phoenix, 33.45, −112.07, 2026-08-23. RESTRICT, heat index 99°F, smoke 20/100, load 44. Official NWS Extreme Heat Warning. Time Machine is off. The yellow bar is last-good cache (POWER was stale in this capture).*
+
+![CAMS air-quality map over Phoenix, not FIRMS fire dots](docs/screenshots/cams_map.png)
+*Same pin. OSM tiles plus a CAMS PM2.5 / US AQI disc (~110 km ring). Caption in the UI: not sample-site markers. Wind from 88° (meteorological), 13 km/h. Smoke at the crew point is 20/100.*
+
+![Supervisor shift sheet and English template briefing](docs/screenshots/shift_sheet.png)
+*Copy/PDF sheet for that Phoenix plan: hard-stop 09:00–21:00, best work 07:00–09:00, NWS heat warning, 5-day STOP hours, sourced actions and PPE. Briefing footer says template summary (LLM offline) — Featherless was not used here.*
+
+`?corrupt=1` still stages a garbage feed. We did not capture a refused verdict in this round because live inputs were passing.
 
 ## The problem
 

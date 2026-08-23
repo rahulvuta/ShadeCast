@@ -18,13 +18,9 @@ shot() {
     "$BASE$path" >/dev/null 2>&1 || true
 }
 
-# Inland Empire — fires nearby for cone/map
-shot "verdict_card" "/?lat=34.05&lon=-117.25&workload=moderate&profile=general"
-shot "map_fires" "/?lat=34.05&lon=-117.25&workload=moderate&profile=general"
-shot "hourly_strip" "/?lat=47.61&lon=-122.33&workload=light&profile=general"
-shot "integrity_theater" "/?corrupt=1&lat=-89.9&lon=179.9"
-shot "ops_theme" "/?lat=33.45&lon=-112.07&theme=ops"
-shot "sunlight_theme" "/?lat=33.45&lon=-112.07&theme=sunlight"
+# Phoenix live — matches README product shots (wait for assess to finish if you re-run)
+shot "phoenix_verdict" "/?lat=33.45&lon=-112.07&theme=sunlight&workload=moderate&profile=general"
+shot "cams_map" "/?lat=33.45&lon=-112.07&theme=sunlight&workload=moderate&profile=general"
 
 echo "lighthouse accessibility…"
 npx --yes lighthouse "$BASE/?lat=47.61&lon=-122.33&theme=ops" \

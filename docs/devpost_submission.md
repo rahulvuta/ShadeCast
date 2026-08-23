@@ -8,6 +8,17 @@ The gap against named tools: the OSHA heat app has no smoke or UV. AirNow has no
 
 One verdict from heat (Rothfusz, not WBGT), CAMS PM2.5 smoke pressure, UV, US AQI, wind, and US NWS alerts. 5-day planner. Integrity gate. English briefing you copy. Client-side PDF with a QR to the share URL.
 
+Captures from 2026-08-23, live Phoenix (not Time Machine):
+
+![RESTRICT verdict with NWS Extreme Heat Warning](screenshots/phoenix_verdict.png)
+*RESTRICT, HI 99°F, smoke 20/100, load 44. NWS Extreme Heat Warning. Cache banner: POWER was stale.*
+
+![CAMS particulate field, not FIRMS dots](screenshots/cams_map.png)
+*OSM + CAMS disc, 110 km ring, wind from 88°.*
+
+![Shift sheet plus template briefing](screenshots/shift_sheet.png)
+*Hard-stop 09:00–21:00. Briefing is the English template (LLM offline).*
+
 What is on screen:
 
 - Time Machine: `?event=` through the same `build_assessment` path.

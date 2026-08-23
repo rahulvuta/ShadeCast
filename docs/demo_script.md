@@ -8,7 +8,7 @@
 
 > "Outdoor crews don't get one answer today. Heat apps ignore smoke. Smoke maps ignore heat. ShadeCast is a work/rest schedule from both."
 
-Select **Phoenix, AZ**. Verdict card, hard-stop window, hour strip.
+Select **Phoenix, AZ**. Same frame as `docs/screenshots/phoenix_verdict.png`: RESTRICT, hard-stop 09:00–21:00, NWS Extreme Heat Warning if it is still up.
 
 > "Open-Meteo drives the forward hours. NASA POWER only answers whether today is hotter than usual here."
 

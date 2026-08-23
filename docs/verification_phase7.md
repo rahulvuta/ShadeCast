@@ -29,7 +29,9 @@ The UI has moved since: CAMS map, no language dropdown, Fitzpatrick I–VI, N/A 
 
 ## Screenshots in `docs/screenshots/`
 
-`verdict_card.png`, `ops_theme.png`, `sunlight_theme.png`, `map_fires.png`, `hourly_strip.png`, and `integrity_theater.png` were captured in a **failed-to-fetch** state (empty main pane, "Could not load assessment"). They are not product shots of the verdict, map, or integrity theater. `lighthouse_*.png` are real Lighthouse reports from that preview.
+Product shots from **2026-08-23** (live Phoenix, sunlight theme): `phoenix_verdict.png`, `cams_map.png`, `shift_sheet.png`. Those replace the 2026-08-09 failed-fetch PNGs.
+
+`lighthouse_*.png` / `.json` are still the V3 local preview from 2026-08-09.
 
 ## Test count that day
 
