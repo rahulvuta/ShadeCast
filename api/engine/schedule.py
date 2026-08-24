@@ -97,20 +97,70 @@ class MultiDaySchedule:
     best_windows: list[ShiftWindow]
 
 
-def _daypart_for_hour(hour: int) -> str:
-    """Bucket a local start hour into a realistic daypart for shift variety.
+_RANK = {Verdict.GO: 0, Verdict.CAUTION: 1, Verdict.RESTRICT: 2, Verdict.STOP: 3}
 
-    morning 6–11, afternoon 12–15 (noon–3pm), evening 16–20 (4–8pm),
-    overnight 21–5 (9pm–5am).
-    """
+# Hours that belong to each recommended slot. A window must sit entirely
+# inside one of these sets — no spilling into the next period.
+_DAYPART_HOURS: dict[str, frozenset[int]] = {
+    "morning": frozenset(range(6, 12)),
+    "afternoon": frozenset(range(12, 16)),
+    "evening": frozenset(range(16, 21)),
+    "overnight": frozenset({21, 22, 23, 0, 1, 2, 3, 4, 5}),
+}
+_DAYPART_ORDER = ("morning", "afternoon", "evening", "overnight")
+
+
+def _daypart_for_hour(hour: int) -> str:
+    """Bucket a local hour: morning 6–11, afternoon 12–15, evening 16–20, night 21–5."""
     h = hour % 24
-    if 6 <= h <= 11:
-        return "morning"
-    if 12 <= h <= 15:
-        return "afternoon"
-    if 16 <= h <= 20:
-        return "evening"
+    for name, hours in _DAYPART_HOURS.items():
+        if h in hours:
+            return name
     return "overnight"
+
+
+def _plans_contiguous(prev: HourPlan, cur: HourPlan) -> bool:
+    if prev.day is None or cur.day is None:
+        return False
+    if prev.day == cur.day:
+        return cur.hour == prev.hour + 1
+    return prev.hour == 23 and cur.hour == 0
+
+
+def _exclusive_end_hour(last_hour: int) -> int:
+    return (last_hour + 1) % 24
+
+
+def _windows_in_run(
+    run: Sequence[HourPlan],
+    need: int,
+    required_hours: float,
+    daypart: str,
+) -> list[ShiftWindow]:
+    """Exact-length GO/CAUTION slices. Shorter runs yield nothing."""
+    if len(run) < need:
+        return []
+    out: list[ShiftWindow] = []
+    for i in range(len(run) - need + 1):
+        chunk = run[i : i + need]
+        start = chunk[0]
+        end = chunk[-1]
+        if start.day is None:
+            continue
+        mean_rank = sum(_RANK[p.verdict] for p in chunk) / need
+        end_hour = _exclusive_end_hour(end.hour)
+        out.append(
+            ShiftWindow(
+                day=start.day,
+                start_hour=start.hour,
+                end_hour=end_hour,
+                required_hours=required_hours,
+                mean_rank=mean_rank,
+                label=f"{start.day.isoformat()} {start.hour:02d}:00–{end_hour:02d}:00",
+                daypart=daypart,
+            )
+        )
+    return out
 
 
 def _fmt_window(hours: Sequence[int]) -> str | None:
@@ -191,9 +241,6 @@ def build_schedule(
     )
 
 
-_RANK = {Verdict.GO: 0, Verdict.CAUTION: 1, Verdict.RESTRICT: 2, Verdict.STOP: 3}
-
-
 def build_multiday_schedule(
     daily: Sequence[tuple[date, Sequence[tuple[int, Verdict]]]],
     workload: Workload = "moderate",
@@ -224,89 +271,49 @@ def shift_planner(
     hourly: Sequence[HourPlan],
     required_hours: float,
     *,
-    max_results: int = 5,
+    max_results: int = 4,
 ) -> list[ShiftWindow]:
-    """Rank contiguous work windows that can fit `required_hours` of GO/CAUTION time.
+    """One recommended block per daypart, each exactly `required_hours` long.
 
-    Walks the multi-day hourly series and scores each candidate by mean verdict
-    rank (lower is better). Returns the best window per daypart (overnight /
-    morning / afternoon / evening) so recommendations are not five near-identical
-    dawn starts. Empty dayparts are skipped. STOP hours break a window.
+    Morning 6–11, afternoon 12–15, evening 16–20, night 21–5. A window must
+    sit entirely in that slot and be contiguous GO/CAUTION hours. STOP and
+    RESTRICT break a run. If a daypart cannot fit the block, it is omitted
+    rather than filled with a window from another period.
     """
     if required_hours <= 0:
         return []
     need = max(1, int(round(required_hours)))
-    # Build flat list with day+hour
-    usable = [p for p in hourly if p.day is not None]
-    if len(usable) < need:
+    block_hours = float(need)
+    series = [p for p in hourly if p.day is not None]
+    if len(series) < need:
         return []
 
-    windows: list[ShiftWindow] = []
-    n = len(usable)
-    for i in range(n):
-        if usable[i].verdict == Verdict.STOP:
-            continue
-        acc_hours = 0.0
-        ranks: list[int] = []
-        j = i
-        while j < n and acc_hours < need:
-            p = usable[j]
-            if p.verdict == Verdict.STOP:
-                break
-            # Contiguity: same day and sequential hours, or next day hour 0 after 23
-            if j > i:
-                prev = usable[j - 1]
-                if p.day == prev.day:
-                    if p.hour != prev.hour + 1:
-                        break
-                else:
-                    if not (prev.hour == 23 and p.hour == 0):
-                        break
-            if p.verdict in (Verdict.GO, Verdict.CAUTION):
-                acc_hours += 1
-                ranks.append(_RANK[p.verdict])
-            elif p.verdict == Verdict.RESTRICT:
-                acc_hours += 0.25
-                ranks.append(_RANK[p.verdict])
-            j += 1
-        if acc_hours >= need and ranks:
-            start = usable[i]
-            end = usable[j - 1]
-            mean_rank = sum(ranks) / len(ranks)
-            assert start.day is not None and end.day is not None
-            daypart = _daypart_for_hour(start.hour)
-            windows.append(
-                ShiftWindow(
-                    day=start.day,
-                    start_hour=start.hour,
-                    end_hour=end.hour + 1,
-                    required_hours=required_hours,
-                    mean_rank=mean_rank,
-                    label=(
-                        f"{start.day.isoformat()} {start.hour:02d}:00–"
-                        f"{end.day.isoformat()} {end.hour + 1:02d}:00"
-                    ),
-                    daypart=daypart,
-                )
+    best: dict[str, ShiftWindow] = {}
+    for daypart in _DAYPART_ORDER:
+        hours_set = _DAYPART_HOURS[daypart]
+        run: list[HourPlan] = []
+        candidates: list[ShiftWindow] = []
+
+        def flush() -> None:
+            candidates.extend(_windows_in_run(run, need, block_hours, daypart))
+            run.clear()
+
+        for p in series:
+            in_part = (p.hour % 24) in hours_set
+            ok = in_part and p.verdict in (Verdict.GO, Verdict.CAUTION)
+            if ok and run and not _plans_contiguous(run[-1], p):
+                flush()
+                run.append(p)
+            elif ok:
+                run.append(p)
+            elif run:
+                flush()
+        if run:
+            flush()
+        if candidates:
+            best[daypart] = min(
+                candidates, key=lambda w: (w.mean_rank, w.day, w.start_hour)
             )
 
-    # Deduplicate by (day, start_hour); keep best mean_rank
-    by_start: dict[tuple[date, int], ShiftWindow] = {}
-    for w in windows:
-        key = (w.day, w.start_hour)
-        if key not in by_start or w.mean_rank < by_start[key].mean_rank:
-            by_start[key] = w
-
-    # One best window per daypart across the horizon
-    by_daypart: dict[str, ShiftWindow] = {}
-    for w in by_start.values():
-        prev = by_daypart.get(w.daypart)
-        if prev is None or (w.mean_rank, w.day, w.start_hour) < (
-            prev.mean_rank,
-            prev.day,
-            prev.start_hour,
-        ):
-            by_daypart[w.daypart] = w
-
-    ranked = sorted(by_daypart.values(), key=lambda w: (w.mean_rank, w.day, w.start_hour))
-    return ranked[:max_results]
+    ordered = [best[name] for name in _DAYPART_ORDER if name in best]
+    return ordered[:max_results]

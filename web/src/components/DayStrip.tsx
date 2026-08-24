@@ -36,7 +36,7 @@ function daypartFromHour(hour: number): string {
 }
 
 const DAYPART_LABEL: Record<string, string> = {
-  overnight: 'Overnight',
+  overnight: 'Night',
   morning: 'Morning',
   afternoon: 'Afternoon',
   evening: 'Evening',
@@ -302,7 +302,7 @@ export function ShiftPlanner({
             Shift planner
           </h2>
           <p className="mt-1 text-xs leading-snug text-[var(--muted)]">
-            Best block per time of day when conditions allow.
+            One morning, afternoon, evening, and night block when that slot is safe enough.
           </p>
         </div>
         <div className="flex items-center gap-1 rounded border border-[var(--border)] bg-[var(--chip-bg)] p-0.5">

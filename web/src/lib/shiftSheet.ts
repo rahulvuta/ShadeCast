@@ -150,7 +150,7 @@ export function buildShiftSheet(input: ShiftSheetInput): ShiftSheetContent {
     rank: i + 1,
     day: w.day,
     block: `${fmtHour(w.start_hour)}–${fmtHour(w.end_hour)}`,
-    daypart: (w.daypart ?? '—').replace(/_/g, ' '),
+    daypart: ((w.daypart === 'overnight' ? 'night' : w.daypart) ?? '—').replace(/_/g, ' '),
     hours: `${w.required_hours}h`,
     label: w.label || '',
   }))
