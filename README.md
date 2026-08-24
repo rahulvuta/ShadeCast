@@ -191,10 +191,6 @@ Deploy: [docs/deploy_render.md](docs/deploy_render.md) and [render.yaml](render.
 
 `render.yaml` matches production: `shadecast-api` and `shadecast-ingest` on Starter ($7/service/month, always on), Postgres `basic-256mb` (Render's current ~$7 paid name; older dashboards still say Starter), static site for the UI. The API does not spin down after idle. First hit is not a minute of cold start. A deploy or a slow Open-Meteo fetch can still take time.
 
-### Maintenance
-
-I keep this through the next school year: dependency bumps (~2 hours/quarter), FIRMS `MAP_KEY` rotation if `/healthz` shows quota errors, and a monthly check that the Render cron is writing rows (~30 minutes). [docs/runbook.md](docs/runbook.md) is the handoff if that stops.
-
 Wrong answers are possible. ShadeCast is decision support, not a compliance tool and not a substitute for an employer's heat-illness program or on-site WBGT. The integrity layer exists because we would rather refuse a verdict (`UNUSABLE`, `?corrupt=1`) than print GO on garbage inputs.
 
 ### Scale
@@ -205,9 +201,7 @@ FIRMS needs `NASA_FIRMS_MAP_API_KEY`. Open-Meteo forecast, air quality, geocodin
 
 ## How this was built
 
-Cursor as a pair programmer. **92 of 116** commits carry a `Co-authored-by: Cursor` trailer, not every commit. History runs 2026-08-06 through 2026-08-22, not one sitting.
-
-Human calls that still matter: POWER is not a forecast; smoke is CAMS not FIRMS; NWS must not become a hard dependency; limits live in `docs/limitations.md` and the app footer.
+Cursor as a pair programmer. I chose the vast majority of: the stack, the features, the layout/ux, the UI and graphics, the purpose, etc.
 
 Solo, [rahulvuta](https://github.com/rahulvuta). High-school hackathon project.
 
